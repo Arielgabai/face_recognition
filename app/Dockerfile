@@ -2,6 +2,7 @@ FROM python:3.11-slim-bullseye
 
 # Installer uniquement les libs système nécessaires à l'exécution (pas à la compilation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
@@ -9,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     libgomp1 \
     libatlas-base-dev \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_ONLY_BINARY=:all:
