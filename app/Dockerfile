@@ -20,8 +20,9 @@ WORKDIR /app
 # Copier les fichiers de dépendances Python
 COPY requirements.txt .
 
-# Installer les dépendances via conda et pip
-RUN conda install -c conda-forge dlib=19.24.2 opencv=4.8.1 numpy=1.24.3 -y && \
+# Installer les dépendances via conda et pip avec une version Python compatible
+RUN conda install python=3.11 -y && \
+    conda install -c conda-forge dlib opencv numpy -y && \
     pip install --no-cache-dir face-recognition==1.3.0 && \
     pip install --no-cache-dir -r requirements.txt
 
