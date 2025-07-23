@@ -40,5 +40,4 @@ RUN mkdir -p static/uploads/selfies static/uploads/photos
 # Exposer le port
 EXPOSE 8000
 
-# Démarrage de l’application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT}
