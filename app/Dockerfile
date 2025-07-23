@@ -1,7 +1,7 @@
-# Utiliser une image avec les outils de compilation nécessaires
-FROM python:3.11-slim
+# Utiliser une image avec conda pour de meilleurs wheels pré-compilés
+FROM continuumio/miniconda3:latest
 
-# Installer les dépendances système et outils de compilation
+# Installer les dépendances système
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -9,13 +9,6 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    libblas3 \
-    liblapack3 \
-    libatlas-base-dev \
-    libhdf5-103 \
-    cmake \
-    build-essential \
-    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Variables d'environnement pour optimiser la compilation
@@ -27,11 +20,8 @@ WORKDIR /app
 # Copier les fichiers de dépendances Python
 COPY requirements.txt .
 
-# Installer les dépendances Python en une seule étape pour éviter les conflits
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir numpy==1.24.3 && \
-    pip install --no-cache-dir dlib==19.24.2 && \
-    pip install --no-cache-dir opencv-python-headless==4.8.1.78 && \
+# Installer les dépendances via conda et pip
+RUN conda install -c conda-forge dlib=19.24.2 opencv=4.8.1 numpy=1.24.3 -y && \
     pip install --no-cache-dir face-recognition==1.3.0 && \
     pip install --no-cache-dir -r requirements.txt
 
