@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     libgomp1 \
     libatlas-base-dev \
+    libpng-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV PIP_NO_CACHE_DIR=1
