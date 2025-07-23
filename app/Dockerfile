@@ -23,6 +23,8 @@ COPY requirements.txt ./
 # Injecter dlib déjà compilé (venant du build local)
 COPY dlib /usr/local/lib/python3.11/site-packages/dlib
 COPY dlib-20.0.0.dist-info /usr/local/lib/python3.11/site-packages/dlib-20.0.0.dist-info
+COPY _dlib_pybind11.cpython-311-x86_64-linux-gnu.so /usr/local/lib/python3.11/site-packages/
+
 
 # Installer les autres packages Python
 RUN pip install --upgrade pip setuptools wheel && \
