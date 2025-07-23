@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Face Recognition App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button.danger {
+            background-color: #dc3545;
+        }
+        button.danger:hover {
+            background-color: #c82333;
+        }
+        button.success {
+            background-color: #28a745;
+        }
+        button.success:hover {
+            background-color: #218838;
+        }
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #666;
+            white-space: nowrap;
+        }
+        .tab.active {
+            color: #007bff;
+            border-bottom: 2px solid #007bff;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .qr-code {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .qr-code img {
+            max-width: 200px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .card-actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .card-actions button {
+            flex: 1;
+            min-width: 80px;
+            font-size: 14px;
+            padding: 8px 12px;
+        }
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            .card-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>👑 Administration - Face Recognition App</h1>
+        
+        <div id="loginForm">
+            <h2>Connexion Admin</h2>
+            <div class="form-group">
+                <label for="username">Nom d'utilisateur:</label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Mot de passe:</label>
+                <input type="password" id="password" required>
+            </div>
+            <button onclick="login()">Se connecter</button>
+        </div>
+
+        <div id="dashboard" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>Tableau de bord Admin</h2>
+                <button onclick="logout()" class="danger">Déconnexion</button>
+            </div>
+            
+            <div class="stats" id="stats">
+                <!-- Les statistiques seront chargées ici -->
+            </div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('photographers')">📸 Photographes</button>
+                <button class="tab" onclick="showTab('events')">🎉 Événements</button>
+                <button class="tab" onclick="showTab('qr-codes')">📱 QR Codes</button>
+                <button class="tab" onclick="showTab('create-admin')">👤 Créer Admin</button>
+            </div>
+
+            <div id="photographers" class="tab-content active">
+                <h3>Gestion des Photographes</h3>
+                <div class="card">
+                    <h4>Liste des photographes</h4>
+                    <p style="color: #666; margin-bottom: 20px;">
+                        💡 Les photographes sont créés directement par l'administrateur via la base de données ou l'API.
+                    </p>
+                    <div id="photographersList">Chargement...</div>
+                </div>
+            </div>
+
+            <div id="events" class="tab-content">
+                <h3>Gestion des Événements</h3>
+                <div class="card">
+                    <h4>Créer un nouvel événement</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="eventName">Nom de l'événement:</label>
+                            <input type="text" id="eventName" placeholder="ex: Mariage de Marie et Paul" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="eventCode">Code événement:</label>
+                            <input type="text" id="eventCode" placeholder="ex: MARIAGE2024" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="eventDate">Date:</label>
+                            <input type="date" id="eventDate">
+                        </div>
+                        <div class="form-group">
+                            <label for="eventPhotographer">Photographe assigné:</label>
+                            <select id="eventPhotographer" required>
+                                <option value="">Sélectionner un photographe</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button onclick="createNewEvent()" class="success">Créer l'événement</button>
+                </div>
+                
+                <div class="card">
+                    <h4>Liste des événements</h4>
+                    <div id="eventsList">Chargement...</div>
+                </div>
+            </div>
+
+            <div id="qr-codes" class="tab-content">
+                <h3>Génération de QR Codes</h3>
+                <div class="card">
+                    <h4>Générer un QR Code pour un événement</h4>
+                    <div class="form-group">
+                        <label for="qrEventCode">Code événement:</label>
+                        <select id="qrEventCode" required>
+                            <option value="">Sélectionner un événement</option>
+                        </select>
+                    </div>
+                    <button onclick="generateQRCode()" class="success">Générer le QR Code</button>
+                    <div id="qrCodeResult"></div>
+                </div>
+            </div>
+
+            <div id="create-admin" class="tab-content">
+                <h3>Créer un compte Admin</h3>
+                <div class="card">
+                    <h4>Nouveau compte administrateur</h4>
+                    <p style="color: #666; margin-bottom: 20px;">
+                        ⚠️ Cette fonctionnalité ne peut être utilisée qu'une seule fois, 
+                        uniquement si aucun admin n'existe encore dans le système.
+                    </p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="adminUsername">Nom d'utilisateur:</label>
+                            <input type="text" id="adminUsername" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="adminEmail">Email:</label>
+                            <input type="email" id="adminEmail" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="adminPassword">Mot de passe:</label>
+                        <input type="password" id="adminPassword" required>
+                    </div>
+                    <button onclick="createAdmin()" class="success">Créer l'admin</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="alert"></div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let token = localStorage.getItem('token');
+
+        if (token) {
+            loadDashboard();
+        }
+
+        function showAlert(message, type = 'success') {
+            const alertDiv = document.getElementById('alert');
+            alertDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => {
+                alertDiv.innerHTML = '';
+            }, 5000);
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('token', data.access_token);
+                    token = data.access_token;
+                    loadDashboard();
+                } else {
+                    showAlert(data.detail || 'Erreur de connexion', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur de connexion', 'error');
+            }
+        }
+
+        async function loadDashboard() {
+            try {
+                const response = await fetch('/api/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    },
+                });
+
+                if (response.ok) {
+                    currentUser = await response.json();
+                    
+                    if (currentUser.user_type !== 'admin') {
+                        showAlert('Accès refusé. Seuls les admins peuvent accéder à cette interface.', 'error');
+                        logout();
+                        return;
+                    }
+
+                    document.getElementById('loginForm').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                    
+                    loadStats();
+                    loadPhotographers();
+                    loadEvents();
+                } else {
+                    localStorage.removeItem('token');
+                    token = null;
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement du dashboard:', error);
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const [photographersResponse, eventsResponse] = await Promise.all([
+                    fetch('/api/admin/photographers', {
+                        headers: { 'Authorization': `Bearer ${token}` },
+                    }),
+                    fetch('/api/admin/events', {
+                        headers: { 'Authorization': `Bearer ${token}` },
+                    })
+                ]);
+
+                const photographers = photographersResponse.ok ? await photographersResponse.json() : [];
+                const events = eventsResponse.ok ? await eventsResponse.json() : [];
+
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${photographers.length}</div>
+                        <div class="stat-label">Photographes</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${events.length}</div>
+                        <div class="stat-label">Événements</div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Erreur lors du chargement des stats:', error);
+            }
+        }
+
+        async function loadPhotographers() {
+            try {
+                const response = await fetch('/api/admin/photographers', {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    const photographers = await response.json();
+                    displayPhotographers(photographers);
+                    updatePhotographerSelects(photographers);
+                } else {
+                    document.getElementById('photographersList').innerHTML = 'Erreur lors du chargement des photographes.';
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement des photographes:', error);
+            }
+        }
+
+        function displayPhotographers(photographers) {
+            const container = document.getElementById('photographersList');
+            
+            if (!photographers || photographers.length === 0) {
+                container.innerHTML = 'Aucun photographe trouvé.';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="grid">
+                    ${photographers.map(photographer => `
+                        <div class="card">
+                            <h4>${photographer.username}</h4>
+                            <p><strong>Email:</strong> ${photographer.email}</p>
+                            <p><strong>ID:</strong> ${photographer.id}</p>
+                            <div class="card-actions">
+                                <button onclick="editPhotographer(${photographer.id}, '${photographer.username}', '${photographer.email}')" class="success">Modifier</button>
+                                <button onclick="deletePhotographer(${photographer.id}, '${photographer.username}')" class="danger">Supprimer</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function updatePhotographerSelects(photographers) {
+            const eventPhotographerSelect = document.getElementById('eventPhotographer');
+            eventPhotographerSelect.innerHTML = '<option value="">Sélectionner un photographe</option>';
+            
+            photographers.forEach(photographer => {
+                const option = document.createElement('option');
+                option.value = photographer.id;
+                option.textContent = `${photographer.username} (${photographer.email})`;
+                eventPhotographerSelect.appendChild(option);
+            });
+        }
+
+        async function loadEvents() {
+            try {
+                const response = await fetch('/api/admin/events', {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    const events = await response.json();
+                    displayEvents(events);
+                    updateEventSelects(events);
+                } else {
+                    document.getElementById('eventsList').innerHTML = 'Erreur lors du chargement des événements.';
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement des événements:', error);
+            }
+        }
+
+        function displayEvents(events) {
+            const container = document.getElementById('eventsList');
+            
+            if (!events || events.length === 0) {
+                container.innerHTML = 'Aucun événement trouvé.';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="grid">
+                    ${events.map(event => `
+                        <div class="card">
+                            <h4>${event.name}</h4>
+                            <p><strong>Code:</strong> ${event.event_code}</p>
+                            <p><strong>Date:</strong> ${event.date ? new Date(event.date).toLocaleDateString() : 'Non définie'}</p>
+                            <p><strong>Photographe ID:</strong> ${event.photographer_id}</p>
+                            <div class="card-actions">
+                                <button onclick="editEvent(${event.id}, '${event.name}', '${event.event_code}', '${event.date || ''}', ${event.photographer_id})" class="success">Modifier</button>
+                                <button onclick="deleteEvent(${event.id}, '${event.name}')" class="danger">Supprimer</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function updateEventSelects(events) {
+            const qrEventSelect = document.getElementById('qrEventCode');
+            qrEventSelect.innerHTML = '<option value="">Sélectionner un événement</option>';
+            
+            events.forEach(event => {
+                const option = document.createElement('option');
+                option.value = event.event_code;
+                option.textContent = `${event.name} (${event.event_code})`;
+                qrEventSelect.appendChild(option);
+            });
+        }
+
+        async function createNewEvent() {
+            console.log('createNewEvent() appelée');
+            const name = document.getElementById('eventName').value;
+            const eventCode = document.getElementById('eventCode').value;
+            const date = document.getElementById('eventDate').value;
+            const photographerId = document.getElementById('eventPhotographer').value;
+
+            console.log('Valeurs:', { name, eventCode, date, photographerId, token });
+
+            if (!name || !eventCode || !photographerId) {
+                showAlert('Veuillez remplir tous les champs obligatoires', 'error');
+                return;
+            }
+
+            try {
+                console.log('Envoi de la requête...');
+                const response = await fetch('/api/admin/create-event', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ 
+                        name, 
+                        event_code: eventCode, 
+                        date: date || null, 
+                        photographer_id: parseInt(photographerId) 
+                    }),
+                });
+
+                console.log('Réponse reçue:', response.status);
+                const data = await response.json();
+                console.log('Données reçues:', data);
+
+                if (response.ok) {
+                    showAlert('Événement créé avec succès !', 'success');
+                    // Vider les champs
+                    document.getElementById('eventName').value = '';
+                    document.getElementById('eventCode').value = '';
+                    document.getElementById('eventDate').value = '';
+                    document.getElementById('eventPhotographer').value = '';
+                    // Recharger les listes
+                    loadEvents();
+                    loadStats();
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la création', 'error');
+                }
+            } catch (error) {
+                console.error('Erreur dans createNewEvent:', error);
+                showAlert('Erreur lors de la création', 'error');
+            }
+        }
+
+        async function generateQRCode() {
+            const eventCode = document.getElementById('qrEventCode').value;
+
+            if (!eventCode) {
+                showAlert('Veuillez sélectionner un événement', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/event-qr/${eventCode}`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const imageUrl = URL.createObjectURL(blob);
+                    
+                    document.getElementById('qrCodeResult').innerHTML = `
+                        <div class="qr-code">
+                            <h4>QR Code pour l'événement ${eventCode}</h4>
+                            <img src="${imageUrl}" alt="QR Code">
+                            <p style="margin-top: 10px; color: #666;">
+                                Les invités peuvent scanner ce QR code pour s'inscrire à l'événement.
+                            </p>
+                        </div>
+                    `;
+                } else {
+                    showAlert('Erreur lors de la génération du QR code', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la génération du QR code', 'error');
+            }
+        }
+
+        async function createAdmin() {
+            const username = document.getElementById('adminUsername').value;
+            const email = document.getElementById('adminEmail').value;
+            const password = document.getElementById('adminPassword').value;
+
+            if (!username || !email || !password) {
+                showAlert('Veuillez remplir tous les champs', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/register-admin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, email, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Admin créé avec succès !', 'success');
+                    // Vider les champs
+                    document.getElementById('adminUsername').value = '';
+                    document.getElementById('adminEmail').value = '';
+                    document.getElementById('adminPassword').value = '';
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la création', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la création', 'error');
+            }
+        }
+
+        // === FONCTIONS POUR LA GESTION DES PHOTOGRAPHES ===
+
+        async function deletePhotographer(photographerId, photographerName) {
+            console.log('deletePhotographer() appelée:', photographerId, photographerName);
+            if (!confirm(`Êtes-vous sûr de vouloir supprimer le photographe "${photographerName}" ?`)) {
+                return;
+            }
+
+            try {
+                console.log('Envoi de la requête DELETE...');
+                const response = await fetch(`/api/admin/photographers/${photographerId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                console.log('Réponse DELETE reçue:', response.status);
+                const data = await response.json();
+                console.log('Données DELETE reçues:', data);
+
+                if (response.ok) {
+                    showAlert('Photographe supprimé avec succès !', 'success');
+                    loadPhotographers();
+                    loadStats();
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la suppression', 'error');
+                }
+            } catch (error) {
+                console.error('Erreur dans deletePhotographer:', error);
+                showAlert('Erreur lors de la suppression', 'error');
+            }
+        }
+
+        async function editPhotographer(photographerId, currentUsername, currentEmail) {
+            const newUsername = prompt('Nouveau nom d\'utilisateur:', currentUsername);
+            if (!newUsername) return;
+
+            const newEmail = prompt('Nouvel email:', currentEmail);
+            if (!newEmail) return;
+
+            try {
+                const response = await fetch(`/api/admin/photographers/${photographerId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ username: newUsername, email: newEmail }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Photographe modifié avec succès !', 'success');
+                    loadPhotographers();
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la modification', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la modification', 'error');
+            }
+        }
+
+        // === FONCTIONS POUR LA GESTION DES ÉVÉNEMENTS ===
+
+        async function deleteEvent(eventId, eventName) {
+            if (!confirm(`Êtes-vous sûr de vouloir supprimer l'événement "${eventName}" ?\n\n⚠️ ATTENTION: Cette action supprimera également toutes les photos associées à cet événement !`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/events/${eventId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Événement supprimé avec succès !', 'success');
+                    loadEvents();
+                    loadStats();
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la suppression', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la suppression', 'error');
+            }
+        }
+
+        async function editEvent(eventId, currentName, currentEventCode, currentDate, currentPhotographerId) {
+            const newName = prompt('Nouveau nom de l\'événement:', currentName);
+            if (!newName) return;
+
+            const newEventCode = prompt('Nouveau code événement:', currentEventCode);
+            if (!newEventCode) return;
+
+            const newDate = prompt('Nouvelle date (YYYY-MM-DD, laissez vide si pas de date):', currentDate);
+            
+            // Charger les photographes pour la sélection
+            try {
+                const photographersResponse = await fetch('/api/admin/photographers', {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                
+                if (!photographersResponse.ok) {
+                    showAlert('Erreur lors du chargement des photographes', 'error');
+                    return;
+                }
+                
+                const photographers = await photographersResponse.json();
+                const photographerOptions = photographers.map(p => `${p.id}: ${p.username}`).join('\n');
+                const newPhotographerId = prompt(`Nouveau photographe (ID actuel: ${currentPhotographerId}):\n\nPhotographes disponibles:\n${photographerOptions}`, currentPhotographerId);
+                
+                if (!newPhotographerId) return;
+
+                const response = await fetch(`/api/admin/events/${eventId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ 
+                        name: newName, 
+                        event_code: newEventCode, 
+                        date: newDate || null, 
+                        photographer_id: parseInt(newPhotographerId) 
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Événement modifié avec succès !', 'success');
+                    loadEvents();
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la modification', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la modification', 'error');
+            }
+        }
+
+        function showTab(tabName) {
+            // Masquer tous les contenus d'onglets
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Désactiver tous les onglets
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Afficher le contenu de l'onglet sélectionné
+            document.getElementById(tabName).classList.add('active');
+            
+            // Activer l'onglet sélectionné
+            event.target.classList.add('active');
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            token = null;
+            currentUser = null;
+            document.getElementById('dashboard').style.display = 'none';
+            document.getElementById('loginForm').style.display = 'block';
+        }
+    </script>
+</body>
+</html> 

@@ -1,0 +1,11 @@
+<h1>Galerie de l'utilisateur: {{ user_id }}</h1>
+
+<h2>📸 Photos où vous apparaissez :</h2>
+{% for photo in photos_match %}
+    <img src="/static/uploads/sorted/{{ user_id }}/match/{{ photo }}" width="200">
+{% endfor %}
+
+<h2>🖼 Toutes les photos :</h2>
+{% for photo in photos_all %}
+    <img src="/static/uploads/groupes/{{ photo }}" width="200">
+{% endfor %}
