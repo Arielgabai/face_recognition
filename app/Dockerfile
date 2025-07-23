@@ -27,6 +27,7 @@ COPY dlib-20.0.0.dist-info /usr/local/lib/python3.11/site-packages/dlib-20.0.0.d
 RUN pip install --upgrade pip setuptools wheel && \
     pip install numpy==1.24.3 && \
     pip install opencv-python-headless==4.8.1.78 && \
+    pip install face-recognition-models==0.3.0 && \
     pip install face-recognition==1.3.0 && \
     pip install -r requirements.txt
 
