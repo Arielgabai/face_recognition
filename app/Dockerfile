@@ -12,7 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatlas-base-dev \
     libpng-dev \
     libjpeg62-turbo \
+    libwebp-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 
 
 ENV PIP_NO_CACHE_DIR=1
