@@ -1,15 +1,8 @@
-# Stage final pour l'application Python
+# Utiliser une image avec dlib pré-compilé
 FROM python:3.11-slim
 
-# Installer les dépendances système nécessaires pour dlib et opencv
+# Installer les dépendances système nécessaires
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    pkg-config \
-    libx11-dev \
-    libatlas-base-dev \
-    libgtk-3-dev \
-    libboost-python-dev \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
