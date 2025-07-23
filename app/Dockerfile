@@ -29,7 +29,7 @@ RUN pip install --upgrade pip setuptools wheel && \
     pip install numpy==1.24.3 && \
     pip install opencv-python-headless==4.8.1.78 && \
     pip install face-recognition-models==0.1.3 && \
-    pip install git+https://github.com/ageitgey/face_recognition.git@master && \
+    pip install --no-deps git+https://github.com/ageitgey/face_recognition.git@master && \
     pip install -r requirements.txt
 # Copier le code source de l'application
 COPY . .
