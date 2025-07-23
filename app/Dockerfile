@@ -11,7 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libatlas-base-dev \
     libpng-dev \
+    libjpeg62-turbo \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_ONLY_BINARY=:all:
