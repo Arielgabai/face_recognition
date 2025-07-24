@@ -2,7 +2,6 @@ FROM python:3.11-slim-bullseye
 
 # Installer uniquement les libs système nécessaires à l'exécution (pas à la compilation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libwebp7 \
     git \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -14,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev \
     libjpeg62-turbo \
     libwebp-dev \
+    libwebp6 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 
