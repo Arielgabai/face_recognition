@@ -589,6 +589,146 @@ async def delete_multiple_photos(
 
 # === ADMINISTRATION ===
 
+@app.get("/api/admin/photographers")
+async def admin_get_photographers(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer tous les photographes (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    
+    photographers = db.query(User).filter(User.user_type == UserType.PHOTOGRAPHER).all()
+    return photographers
+
+@app.post("/api/admin/photographers")
+async def admin_create_photographer(
+    username: str = Body(...),
+    email: str = Body(...),
+    password: str = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Créer un nouveau photographe (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent créer des photographes")
+    
+    # Vérifier si l'utilisateur existe déjà
+    existing_user = db.query(User).filter(
+        (User.username == username) | (User.email == email)
+    ).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
+    
+    # Créer le nouveau photographe
+    hashed_password = get_password_hash(password)
+    db_photographer = User(
+        username=username,
+        email=email,
+        hashed_password=hashed_password,
+        user_type=UserType.PHOTOGRAPHER
+    )
+    
+    db.add(db_photographer)
+    db.commit()
+    db.refresh(db_photographer)
+    
+    return {"message": "Photographe créé avec succès", "photographer_id": db_photographer.id}
+
+@app.put("/api/admin/photographers/{photographer_id}")
+async def admin_update_photographer(
+    photographer_id: int,
+    username: str = Body(...),
+    email: str = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Modifier un photographe (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent modifier des photographes")
+    
+    # Récupérer le photographe
+    photographer = db.query(User).filter(
+        User.id == photographer_id,
+        User.user_type == UserType.PHOTOGRAPHER
+    ).first()
+    
+    if not photographer:
+        raise HTTPException(status_code=404, detail="Photographe non trouvé")
+    
+    # Vérifier si le nouveau username/email n'est pas déjà utilisé par un autre utilisateur
+    existing_user = db.query(User).filter(
+        (User.username == username) | (User.email == email),
+        User.id != photographer_id
+    ).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
+    
+    # Mettre à jour le photographe
+    photographer.username = username
+    photographer.email = email
+    db.commit()
+    db.refresh(photographer)
+    
+    return {"message": "Photographe modifié avec succès"}
+
+@app.delete("/api/admin/photographers/{photographer_id}")
+async def admin_delete_photographer(
+    photographer_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Supprimer un photographe (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer des photographes")
+    
+    # Récupérer le photographe
+    photographer = db.query(User).filter(
+        User.id == photographer_id,
+        User.user_type == UserType.PHOTOGRAPHER
+    ).first()
+    
+    if not photographer:
+        raise HTTPException(status_code=404, detail="Photographe non trouvé")
+    
+    # Vérifier s'il y a des événements associés
+    events = db.query(Event).filter(Event.photographer_id == photographer_id).all()
+    if events:
+        event_names = [event.name for event in events]
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Impossible de supprimer le photographe car il est associé aux événements: {', '.join(event_names)}"
+        )
+    
+    # Supprimer les photos uploadées par ce photographe
+    photos = db.query(Photo).filter(Photo.photographer_id == photographer_id).all()
+    for photo in photos:
+        # Supprimer les correspondances de visages
+        db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()
+        # Supprimer le fichier physique
+        if photo.file_path and os.path.exists(photo.file_path):
+            os.remove(photo.file_path)
+        # Supprimer l'enregistrement photo
+        db.delete(photo)
+    
+    # Supprimer le photographe
+    db.delete(photographer)
+    db.commit()
+    
+    return {"message": "Photographe supprimé avec succès"}
+
+@app.get("/api/admin/events")
+async def admin_get_events(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer tous les événements (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    
+    events = db.query(Event).all()
+    return events
+
 @app.post("/api/admin/create-event")
 async def admin_create_event(
     name: str = Body(...),
@@ -672,49 +812,6 @@ async def create_photographer(
     db.refresh(db_user)
     return {"message": "Photographe créé", "user_id": db_user.id}
 
-@app.get("/api/admin/events")
-async def list_events(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Lister tous les événements (admin uniquement)"""
-    if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette ressource")
-    events = db.query(Event).all()
-    return [{"id": e.id, "name": e.name, "event_code": e.event_code, "date": e.date, "photographer_id": e.photographer_id} for e in events]
-
-@app.get("/api/admin/photographers")
-async def list_photographers(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Lister tous les photographes (admin uniquement)"""
-    if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette ressource")
-    photographers = db.query(User).filter(User.user_type == UserType.PHOTOGRAPHER).all()
-    return [{"id": p.id, "username": p.username, "email": p.email} for p in photographers]
-
-@app.get("/api/photographer/my-event")
-async def get_photographer_event(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Récupérer l'événement assigné au photographe connecté"""
-    if current_user.user_type != UserType.PHOTOGRAPHER:
-        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent accéder à cette ressource")
-    
-    event = db.query(Event).filter(Event.photographer_id == current_user.id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Aucun événement assigné à ce photographe")
-    
-    return {
-        "id": event.id,
-        "name": event.name,
-        "event_code": event.event_code,
-        "date": event.date,
-        "photographer_id": event.photographer_id
-    }
-
 @app.get("/api/admin/event-qr/{event_code}")
 async def generate_event_qr(event_code: str, current_user: User = Depends(get_current_user)):
     """Générer un QR code pour l'inscription à un événement (admin uniquement)"""
@@ -736,63 +833,6 @@ async def generate_event_qr(event_code: str, current_user: User = Depends(get_cu
     return StreamingResponse(buf, media_type="image/png")
 
 # === NOUVELLES ROUTES POUR LA GESTION DES PHOTOGRAPHES ET ÉVÉNEMENTS ===
-
-@app.delete("/api/admin/photographers/{photographer_id}")
-async def delete_photographer(
-    photographer_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Supprimer un photographe (admin uniquement)"""
-    if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer un photographe")
-    
-    photographer = db.query(User).filter(User.id == photographer_id, User.user_type == UserType.PHOTOGRAPHER).first()
-    if not photographer:
-        raise HTTPException(status_code=404, detail="Photographe non trouvé")
-    
-    # Vérifier s'il y a des événements associés
-    events = db.query(Event).filter(Event.photographer_id == photographer_id).all()
-    if events:
-        event_names = [event.name for event in events]
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Impossible de supprimer le photographe car il est assigné aux événements: {', '.join(event_names)}"
-        )
-    
-    db.delete(photographer)
-    db.commit()
-    return {"message": "Photographe supprimé avec succès"}
-
-@app.put("/api/admin/photographers/{photographer_id}")
-async def update_photographer(
-    photographer_id: int,
-    username: str = Body(...),
-    email: str = Body(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Modifier un photographe (admin uniquement)"""
-    if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent modifier un photographe")
-    
-    photographer = db.query(User).filter(User.id == photographer_id, User.user_type == UserType.PHOTOGRAPHER).first()
-    if not photographer:
-        raise HTTPException(status_code=404, detail="Photographe non trouvé")
-    
-    # Vérifier si le username ou email existe déjà
-    existing_user = db.query(User).filter(
-        (User.username == username) | (User.email == email),
-        User.id != photographer_id
-    ).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
-    
-    photographer.username = username
-    photographer.email = email
-    db.commit()
-    db.refresh(photographer)
-    return {"message": "Photographe modifié avec succès", "photographer": {"id": photographer.id, "username": photographer.username, "email": photographer.email}}
 
 @app.delete("/api/admin/events/{event_id}")
 async def delete_event(
@@ -831,7 +871,7 @@ async def delete_event(
     return {"message": "Événement supprimé avec succès"}
 
 @app.put("/api/admin/events/{event_id}")
-async def update_event(
+async def admin_update_event(
     event_id: int,
     name: str = Body(...),
     event_code: str = Body(...),
@@ -842,74 +882,92 @@ async def update_event(
 ):
     """Modifier un événement (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent modifier un événement")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent modifier des événements")
     
+    # Récupérer l'événement
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
     
-    # Vérifier si le code événement existe déjà
-    existing_event = db.query(Event).filter(Event.event_code == event_code, Event.id != event_id).first()
+    # Vérifier unicité du code (sauf pour l'événement actuel)
+    existing_event = db.query(Event).filter(
+        Event.event_code == event_code,
+        Event.id != event_id
+    ).first()
     if existing_event:
-        raise HTTPException(status_code=400, detail="Code événement déjà utilisé")
+        raise HTTPException(status_code=400, detail="event_code déjà utilisé")
     
-    # Vérifier si le photographe existe
-    photographer = db.query(User).filter(User.id == photographer_id, User.user_type == UserType.PHOTOGRAPHER).first()
+    # Vérifier que le photographe existe
+    photographer = db.query(User).filter_by(id=photographer_id, user_type=UserType.PHOTOGRAPHER).first()
     if not photographer:
         raise HTTPException(status_code=404, detail="Photographe non trouvé")
     
+    # Mettre à jour l'événement
+    from datetime import datetime as dt
     event.name = name
     event.event_code = event_code
-    event.date = date if date else None
+    event.date = dt.fromisoformat(date) if date else None
     event.photographer_id = photographer_id
     
     db.commit()
     db.refresh(event)
-    return {
-        "message": "Événement modifié avec succès", 
-        "event": {
-            "id": event.id, 
-            "name": event.name, 
-            "event_code": event.event_code, 
-            "date": event.date, 
-            "photographer_id": event.photographer_id
-        }
-    }
+    
+    return {"message": "Événement modifié avec succès"}
 
-@app.post("/api/admin/fix-photos-event")
-async def fix_photos_event(
-    photographer_id: int = Body(...),
-    event_id: int = Body(...),
+@app.delete("/api/admin/events/{event_id}")
+async def admin_delete_event(
+    event_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Corriger l'association des photos d'un photographe avec son événement (admin uniquement)"""
+    """Supprimer un événement (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent corriger les associations")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer des événements")
     
-    # Vérifier que l'événement existe
+    # Récupérer l'événement
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
     
-    # Vérifier que le photographe existe
-    photographer = db.query(User).filter(User.id == photographer_id, User.user_type == UserType.PHOTOGRAPHER).first()
-    if not photographer:
-        raise HTTPException(status_code=404, detail="Photographe non trouvé")
+    # Supprimer toutes les photos associées à cet événement
+    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    for photo in photos:
+        # Supprimer les correspondances de visages
+        db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()
+        # Supprimer le fichier physique
+        if photo.file_path and os.path.exists(photo.file_path):
+            os.remove(photo.file_path)
+        # Supprimer l'enregistrement photo
+        db.delete(photo)
     
-    # Mettre à jour toutes les photos du photographe sans event_id
-    photos_updated = db.query(Photo).filter(
-        Photo.photographer_id == photographer_id,
-        Photo.event_id.is_(None)
-    ).update({Photo.event_id: event_id})
+    # Supprimer les associations utilisateur-événement
+    db.query(UserEvent).filter(UserEvent.event_id == event_id).delete()
     
+    # Supprimer l'événement
+    db.delete(event)
     db.commit()
     
+    return {"message": "Événement supprimé avec succès"}
+
+@app.get("/api/photographer/my-event")
+async def get_photographer_event(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer l'événement assigné au photographe connecté"""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent accéder à cette ressource")
+    
+    event = db.query(Event).filter(Event.photographer_id == current_user.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Aucun événement assigné à ce photographe")
+    
     return {
-        "message": f"Association corrigée pour {photos_updated} photos",
-        "photographer_id": photographer_id,
-        "event_id": event_id,
-        "photos_updated": photos_updated
+        "id": event.id,
+        "name": event.name,
+        "event_code": event.event_code,
+        "date": event.date,
+        "photographer_id": event.photographer_id
     }
 
 # === ROUTE CATCH-ALL POUR LE FRONTEND ===

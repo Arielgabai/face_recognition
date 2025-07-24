@@ -215,10 +215,26 @@
             <div id="photographers" class="tab-content active">
                 <h3>Gestion des Photographes</h3>
                 <div class="card">
+                    <h4>Créer un nouveau photographe</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="photographerUsername">Nom d'utilisateur:</label>
+                            <input type="text" id="photographerUsername" placeholder="ex: photographe1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="photographerEmail">Email:</label>
+                            <input type="email" id="photographerEmail" placeholder="ex: photographe@example.com" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="photographerPassword">Mot de passe:</label>
+                        <input type="password" id="photographerPassword" placeholder="Mot de passe sécurisé" required>
+                    </div>
+                    <button onclick="createPhotographer()" class="success">Créer le photographe</button>
+                </div>
+                
+                <div class="card">
                     <h4>Liste des photographes</h4>
-                    <p style="color: #666; margin-bottom: 20px;">
-                        💡 Les photographes sont créés directement par l'administrateur via la base de données ou l'API.
-                    </p>
                     <div id="photographersList">Chargement...</div>
                 </div>
             </div>
@@ -641,6 +657,44 @@
         }
 
         // === FONCTIONS POUR LA GESTION DES PHOTOGRAPHES ===
+
+        async function createPhotographer() {
+            const username = document.getElementById('photographerUsername').value;
+            const email = document.getElementById('photographerEmail').value;
+            const password = document.getElementById('photographerPassword').value;
+
+            if (!username || !email || !password) {
+                showAlert('Veuillez remplir tous les champs', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/photographers', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ username, email, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Photographe créé avec succès !', 'success');
+                    // Vider les champs
+                    document.getElementById('photographerUsername').value = '';
+                    document.getElementById('photographerEmail').value = '';
+                    document.getElementById('photographerPassword').value = '';
+                    loadPhotographers(); // Recharger la liste des photographes
+                    loadStats(); // Mettre à jour les statistiques
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la création', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la création', 'error');
+            }
+        }
 
         async function deletePhotographer(photographerId, photographerName) {
             console.log('deletePhotographer() appelée:', photographerId, photographerName);
