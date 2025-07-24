@@ -1,4 +1,5 @@
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
+
 
 # Installer uniquement les libs système nécessaires à l'exécution (pas à la compilation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
