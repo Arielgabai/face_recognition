@@ -2,6 +2,7 @@ FROM python:3.11-slim-bullseye
 
 # Installer uniquement les libs système nécessaires à l'exécution (pas à la compilation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libwebp7 \
     git \
     libgl1-mesa-glx \
     libglib2.0-0 \
