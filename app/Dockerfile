@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev \
     libjpeg62-turbo \
     libwebp-dev \
-    libwebp6 \
+    libwebp7 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 
