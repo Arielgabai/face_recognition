@@ -2,7 +2,7 @@ import requests
 import json
 
 # Configuration
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://facerecognition-d0r8.onrender.com"
 
 def fix_photos_event():
     print("=== Correction Association Photos-Événement ===")

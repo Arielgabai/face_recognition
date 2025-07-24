@@ -31,7 +31,11 @@ app = FastAPI(title="Face Recognition API", version="1.0.0")
 # Configuration CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React dev servers
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://localhost:5173",  # React dev servers
+        "https://facerecognition-d0r8.onrender.com"  # Production domain
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -824,8 +828,8 @@ async def generate_event_qr(event_code: str, current_user: User = Depends(get_cu
     if not event:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
     
-    # Générer l'URL d'inscription vers localhost:8000
-    url = f"http://localhost:8000/register?event_code={event_code}"
+    # Générer l'URL d'inscription vers le domaine de production
+    url = f"https://facerecognition-d0r8.onrender.com/register?event_code={event_code}"
     img = qrcode.make(url)
     buf = BytesIO()
     img.save(buf, format="PNG")

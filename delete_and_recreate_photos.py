@@ -3,7 +3,7 @@ import json
 import os
 
 # Configuration
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://facerecognition-d0r8.onrender.com"
 
 def delete_and_recreate_photos():
     print("=== Suppression et Recréation des Photos ===")

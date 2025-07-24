@@ -2,7 +2,7 @@ import requests
 import json
 
 # Configuration
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://facerecognition-d0r8.onrender.com"
 
 def debug_user_event():
     print("=== Debug Association Utilisateur-Événement ===")
