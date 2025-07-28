@@ -16,7 +16,6 @@ def apply_face_recognition_patch():
         # Liste des attributs manquants et leurs équivalents
         missing_attributes = {
             'pose_predictor_five_point_model_location': 'pose_predictor_model_location',
-            'cnn_face_detector_model_location': 'pose_predictor_model_location',  # Utiliser pose_predictor_model_location comme fallback
             'shape_predictor_model_location': 'pose_predictor_model_location'
         }
         
@@ -35,6 +34,17 @@ def apply_face_recognition_patch():
             else:
                 print(f"✅ L'attribut {missing_attr} existe déjà")
         
+        # Gérer le cas spécial de cnn_face_detector_model_location
+        if not hasattr(face_recognition_models, 'cnn_face_detector_model_location'):
+            # Créer un attribut qui retourne un chemin vers un fichier inexistant
+            def dummy_cnn_model():
+                return "/tmp/nonexistent_cnn_model.dat"
+            face_recognition_models.cnn_face_detector_model_location = dummy_cnn_model
+            print("✅ CNN face detector patché (modèle non disponible)")
+            patches_applied += 1
+        else:
+            print("✅ L'attribut cnn_face_detector_model_location existe déjà")
+        
         if patches_applied > 0:
             print(f"✅ {patches_applied} patch(es) appliqué(s) avec succès")
             return True
@@ -47,6 +57,33 @@ def apply_face_recognition_patch():
         return False
     except Exception as e:
         print(f"❌ Erreur lors de l'application du patch : {e}")
+        return False
+
+def patch_face_recognition_api():
+    """Patch le module face_recognition.api pour gérer l'absence du modèle CNN"""
+    try:
+        import face_recognition.api as api
+        
+        # Sauvegarder la fonction originale
+        original_cnn_face_detection_model_v1 = None
+        if hasattr(api, 'dlib'):
+            original_cnn_face_detection_model_v1 = getattr(api.dlib, 'cnn_face_detection_model_v1', None)
+        
+        # Créer une fonction de remplacement qui lève une exception explicite
+        def dummy_cnn_face_detection_model_v1(model_path):
+            raise RuntimeError("CNN face detection model not available in face_recognition_models==0.1.3. Please use HOG face detection instead.")
+        
+        # Appliquer le patch si dlib est disponible
+        if hasattr(api, 'dlib'):
+            api.dlib.cnn_face_detection_model_v1 = dummy_cnn_face_detection_model_v1
+            print("✅ face_recognition.api patché pour CNN")
+            return True
+        else:
+            print("⚠️  dlib non disponible dans face_recognition.api")
+            return False
+            
+    except Exception as e:
+        print(f"⚠️  Erreur lors du patch de face_recognition.api : {e}")
         return False
 
 # Appliquer le patch automatiquement lors de l'importation
@@ -62,6 +99,10 @@ if __name__ == "__main__":
         try:
             import face_recognition
             print("✅ face_recognition importé avec succès après le patch")
+            
+            # Appliquer le patch API
+            patch_face_recognition_api()
+            
             print("🎉 Le problème d'attribut est résolu !")
         except Exception as e:
             print(f"❌ Erreur lors de l'importation de face_recognition : {e}")
