@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: face-recognition-app
+    env: docker
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./start.sh
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: DATABASE_URL
+        value: sqlite:///./face_recognition.db
+      - key: SECRET_KEY
+        generateValue: true
+    healthCheckPath: /api
+    autoDeploy: true 

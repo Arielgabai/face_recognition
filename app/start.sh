@@ -1,44 +1,30 @@
 #!/bin/bash
 
-echo "🚀 Démarrage de l'application Face Recognition..."
+echo "🚀 Démarrage de l'application Face Recognition sur Render..."
 
-# Vérifier si Docker est installé
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker n'est pas installé. Veuillez installer Docker d'abord."
+# Test des importations Python
+echo "📋 Test des importations Python..."
+python test_imports.py
+
+if [ $? -eq 0 ]; then
+    echo "✅ Toutes les importations sont OK"
+else
+    echo "❌ Erreur dans les importations Python"
+    echo "📊 Logs d'erreur détaillés :"
+    python test_imports.py 2>&1
     exit 1
 fi
 
-# Vérifier si Docker Compose est installé
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ Docker Compose n'est pas installé. Veuillez installer Docker Compose d'abord."
-    exit 1
-fi
+# Créer les dossiers nécessaires
+echo "📁 Création des dossiers nécessaires..."
+mkdir -p static/uploads/selfies
+mkdir -p static/uploads/photos
 
-# Arrêter les conteneurs existants
-echo "🛑 Arrêt des conteneurs existants..."
-docker-compose down
+# Vérifier les variables d'environnement
+echo "🔧 Configuration :"
+echo "  - PORT: ${PORT:-8000}"
+echo "  - DATABASE_URL: ${DATABASE_URL:-sqlite:///./face_recognition.db}"
 
-# Construire et démarrer les conteneurs
-echo "🔨 Construction et démarrage des conteneurs..."
-docker-compose up --build -d
-
-# Attendre que les services soient prêts
-echo "⏳ Attente du démarrage des services..."
-sleep 30
-
-# Vérifier le statut des conteneurs
-echo "📊 Statut des conteneurs :"
-docker-compose ps
-
-echo ""
-echo "✅ Application démarrée avec succès !"
-echo ""
-echo "🌐 Accès à l'application :"
-echo "   - Frontend : http://localhost:8000"
-echo "   - API Documentation : http://localhost:8000/docs"
-echo ""
-echo "📝 Pour voir les logs :"
-echo "   docker-compose logs -f"
-echo ""
-echo "🛑 Pour arrêter l'application :"
-echo "   docker-compose down" 
+# Démarrer l'application
+echo "🌐 Démarrage du serveur sur le port ${PORT:-8000}..."
+exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info 
