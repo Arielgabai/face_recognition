@@ -30,7 +30,7 @@ RUN pip install --upgrade pip setuptools wheel && \
     pip install numpy==1.24.3 && \
     pip install opencv-python-headless==4.8.1.78 && \
     pip install Pillow==10.0.1 && \
-    pip install face-recognition-models==0.1.3
+    pip install face-recognition-models==0.3.0
 
 # Injecter dlib déjà compilé (venant du build local)
 COPY dlib /usr/local/lib/python3.11/site-packages/dlib
