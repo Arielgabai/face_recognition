@@ -13,18 +13,33 @@ def apply_face_recognition_patch():
         # Importer face_recognition_models
         import face_recognition_models
         
-        # Vérifier si l'attribut problématique existe
-        if not hasattr(face_recognition_models, 'pose_predictor_five_point_model_location'):
-            if hasattr(face_recognition_models, 'pose_predictor_model_location'):
-                # Créer l'alias manquant
-                face_recognition_models.pose_predictor_five_point_model_location = face_recognition_models.pose_predictor_model_location
-                print("✅ Patch face_recognition_models appliqué : pose_predictor_five_point_model_location créé")
-                return True
+        # Liste des attributs manquants et leurs équivalents
+        missing_attributes = {
+            'pose_predictor_five_point_model_location': 'pose_predictor_model_location',
+            'cnn_face_detector_model_location': 'face_detector_model_location',
+            'shape_predictor_model_location': 'pose_predictor_model_location'
+        }
+        
+        patches_applied = 0
+        
+        # Appliquer tous les patches nécessaires
+        for missing_attr, existing_attr in missing_attributes.items():
+            if not hasattr(face_recognition_models, missing_attr):
+                if hasattr(face_recognition_models, existing_attr):
+                    # Créer l'alias manquant
+                    setattr(face_recognition_models, missing_attr, getattr(face_recognition_models, existing_attr))
+                    print(f"✅ Patch appliqué : {missing_attr} = {existing_attr}")
+                    patches_applied += 1
+                else:
+                    print(f"❌ Attribut source {existing_attr} non trouvé pour {missing_attr}")
             else:
-                print("❌ Aucun attribut de modèle trouvé dans face_recognition_models")
-                return False
+                print(f"✅ L'attribut {missing_attr} existe déjà")
+        
+        if patches_applied > 0:
+            print(f"✅ {patches_applied} patch(es) appliqué(s) avec succès")
+            return True
         else:
-            print("✅ L'attribut pose_predictor_five_point_model_location existe déjà")
+            print("✅ Aucun patch nécessaire")
             return True
             
     except ImportError as e:
