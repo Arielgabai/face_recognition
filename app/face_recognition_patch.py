@@ -16,7 +16,7 @@ def apply_face_recognition_patch():
         # Liste des attributs manquants et leurs équivalents
         missing_attributes = {
             'pose_predictor_five_point_model_location': 'pose_predictor_model_location',
-            'cnn_face_detector_model_location': 'face_detector_model_location',
+            'cnn_face_detector_model_location': 'pose_predictor_model_location',  # Utiliser pose_predictor_model_location comme fallback
             'shape_predictor_model_location': 'pose_predictor_model_location'
         }
         
