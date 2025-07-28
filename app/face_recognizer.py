@@ -1,5 +1,6 @@
 import face_recognition
 import os
+import cv2
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 from sqlalchemy.orm import Session
@@ -137,6 +138,108 @@ class FaceRecognizer:
         
         db.commit()
         return photo
+
+    def process_and_save_photo_for_event(self, photo_path: str, original_filename: str, 
+                                       photographer_id: int, event_id: int, db: Session) -> Photo:
+        """Traite une photo pour un événement spécifique, sauvegarde les correspondances et retourne l'objet Photo"""
+        
+        # Générer un nom de fichier unique
+        file_extension = os.path.splitext(original_filename)[1]
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        
+        # Créer le dossier de destination
+        upload_dir = "static/uploads/photos"
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Copier le fichier
+        new_path = os.path.join(upload_dir, unique_filename)
+        import shutil
+        shutil.copy2(photo_path, new_path)
+        
+        # Créer l'enregistrement Photo avec l'event_id spécifique
+        photo = Photo(
+            filename=unique_filename,
+            original_filename=original_filename,
+            file_path=new_path,
+            photo_type="uploaded",
+            photographer_id=photographer_id,
+            event_id=event_id
+        )
+        print(f"📸 Photo créée pour événement {event_id}: {original_filename}")
+        db.add(photo)
+        db.commit()
+        db.refresh(photo)
+        
+        # Traiter la reconnaissance faciale pour cet événement spécifique
+        matches = self.process_photo_for_event(new_path, event_id, db)
+        
+        # Sauvegarder les correspondances
+        for match in matches:
+            face_match = FaceMatch(
+                photo_id=photo.id,
+                user_id=match['user_id'],
+                confidence_score=match['confidence_score']
+            )
+            db.add(face_match)
+        
+        db.commit()
+        return photo
+
+    def process_photo_for_event(self, photo_path: str, event_id: int, db: Session) -> List[Dict]:
+        """Traite une photo et retourne les correspondances trouvées pour un événement spécifique"""
+        if not os.path.exists(photo_path):
+            return []
+
+        try:
+            # Charger l'image
+            image = face_recognition.load_image_file(photo_path)
+            face_locations = face_recognition.face_locations(image)
+            face_encodings = face_recognition.face_encodings(image, face_locations)
+            
+            if not face_encodings:
+                return []
+
+            # Récupérer les utilisateurs inscrits à cet événement qui ont une selfie
+            from models import UserEvent
+            user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+            user_ids = [ue.user_id for ue in user_events]
+            
+            users_with_selfies = db.query(User).filter(
+                User.id.in_(user_ids),
+                User.selfie_path.isnot(None)
+            ).all()
+            
+            # Charger les encodages des utilisateurs de cet événement
+            user_encodings = {}
+            for user in users_with_selfies:
+                encoding = self.load_user_encoding(user)
+                if encoding is not None:
+                    user_encodings[user.id] = encoding
+            
+            matches = []
+            
+            for face_encoding in face_encodings:
+                # Comparer avec tous les utilisateurs de l'événement
+                for user_id, user_encoding in user_encodings.items():
+                    # Calculer la distance
+                    distance = face_recognition.face_distance([user_encoding], face_encoding)[0]
+                    
+                    # Convertir la distance en score de confiance (0-100)
+                    confidence_score = max(0, int((1 - distance) * 100))
+                    
+                    # Vérifier si c'est une correspondance
+                    if distance <= self.tolerance:
+                        matches.append({
+                            'user_id': user_id,
+                            'confidence_score': confidence_score,
+                            'distance': distance
+                        })
+            
+            return matches
+            
+        except Exception as e:
+            print(f"Erreur lors du traitement de {photo_path}: {e}")
+            return []
 
     def get_user_photos_with_face(self, user_id: int, db: Session) -> List[Photo]:
         """Récupère toutes les photos où un utilisateur apparaît"""

@@ -19,6 +19,9 @@ import { photoService } from '../services/api';
 import { Photo, UserProfile } from '../types';
 import SelfieUpload from './SelfieUpload';
 import PhotoUpload from './PhotoUpload';
+import EventSelector from './EventSelector';
+import JoinEvent from './JoinEvent';
+import PhotographerEventManager from './PhotographerEventManager';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -50,28 +53,53 @@ const Dashboard: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [currentEventId, setCurrentEventId] = useState<number | undefined>();
 
   useEffect(() => {
     loadDashboardData();
-  }, []);
+  }, [currentEventId]);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [profileData, myPhotosData, allPhotosData] = await Promise.all([
-        photoService.getProfile(),
-        photoService.getMyPhotos(),
-        photoService.getAllPhotos(),
-      ]);
       
-      setProfile(profileData.data);
-      setMyPhotos(myPhotosData.data);
-      setAllPhotos(allPhotosData.data);
+      if (user?.user_type === 'user' && currentEventId) {
+        // Pour les utilisateurs, charger les photos de l'événement sélectionné
+        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
+          photoService.getProfile(),
+          photoService.getUserEventPhotos(currentEventId),
+          photoService.getAllEventPhotos(currentEventId),
+        ]);
+        
+        setProfile(profileData.data);
+        setMyPhotos(myPhotosData.data);
+        setAllPhotos(allPhotosData.data);
+      } else {
+        // Chargement normal pour les photographes ou sans événement sélectionné
+        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
+          photoService.getProfile(),
+          photoService.getMyPhotos(),
+          photoService.getAllPhotos(),
+        ]);
+        
+        setProfile(profileData.data);
+        setMyPhotos(myPhotosData.data);
+        setAllPhotos(allPhotosData.data);
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEventChange = (eventId: number) => {
+    setCurrentEventId(eventId);
+  };
+
+  const handleEventJoined = () => {
+    // Recharger les données après avoir rejoint un événement
+    loadDashboardData();
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -119,6 +147,20 @@ const Dashboard: React.FC = () => {
           )}
         </Paper>
 
+        {/* Gestion des événements selon le type d'utilisateur */}
+        {user?.user_type === 'user' && (
+          <Box sx={{ mb: 3 }}>
+            <EventSelector onEventChange={handleEventChange} currentEventId={currentEventId} />
+            <JoinEvent onEventJoined={handleEventJoined} />
+          </Box>
+        )}
+
+        {user?.user_type === 'photographer' && (
+          <Box sx={{ mb: 3 }}>
+            <PhotographerEventManager onEventChange={handleEventChange} currentEventId={currentEventId} />
+          </Box>
+        )}
+
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={tabValue} onChange={handleTabChange}>
             <Tab label="Mes Photos" />
@@ -134,6 +176,11 @@ const Dashboard: React.FC = () => {
         <TabPanel value={tabValue} index={0}>
           <Typography variant="h6" gutterBottom>
             Photos où vous apparaissez
+            {currentEventId && user?.user_type === 'user' && (
+              <Typography variant="body2" color="text.secondary">
+                (pour l'événement sélectionné)
+              </Typography>
+            )}
           </Typography>
           {myPhotos.length === 0 ? (
             <Typography color="text.secondary">
@@ -165,6 +212,11 @@ const Dashboard: React.FC = () => {
         <TabPanel value={tabValue} index={1}>
           <Typography variant="h6" gutterBottom>
             Toutes les photos disponibles
+            {currentEventId && user?.user_type === 'user' && (
+              <Typography variant="body2" color="text.secondary">
+                (pour l'événement sélectionné)
+              </Typography>
+            )}
           </Typography>
           {allPhotos.length === 0 ? (
             <Typography color="text.secondary">
@@ -199,7 +251,7 @@ const Dashboard: React.FC = () => {
 
         {user?.user_type === 'photographer' && (
           <TabPanel value={tabValue} index={3}>
-            <PhotoUpload onSuccess={loadDashboardData} />
+            <PhotoUpload onSuccess={loadDashboardData} eventId={currentEventId} />
           </TabPanel>
         )}
 

@@ -12,39 +12,50 @@ import { photoService } from '../services/api';
 
 interface PhotoUploadProps {
   onSuccess: () => void;
+  eventId?: number; // Nouveau prop pour spécifier l'événement
 }
 
-const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess }) => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess, eventId }) => {
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        setError('Veuillez sélectionner une image');
-        return;
-      }
-      
-      setSelectedFile(file);
-      setError('');
-      setSuccess('');
-      
-      // Créer un aperçu
+    const files = Array.from(event.target.files || []);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length !== files.length) {
+      setError('Certains fichiers ne sont pas des images et ont été ignorés');
+    }
+    
+    if (imageFiles.length === 0) {
+      setError('Veuillez sélectionner au moins une image');
+      return;
+    }
+    
+    setSelectedFiles(imageFiles);
+    setError('');
+    setSuccess('');
+    
+    // Créer des aperçus
+    const newPreviews: string[] = [];
+    imageFiles.forEach(file => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        setPreview(e.target?.result as string);
+        newPreviews.push(e.target?.result as string);
+        if (newPreviews.length === imageFiles.length) {
+          setPreviews(newPreviews);
+        }
       };
       reader.readAsDataURL(file);
-    }
+    });
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) {
-      setError('Veuillez sélectionner une image');
+    if (selectedFiles.length === 0) {
+      setError('Veuillez sélectionner au moins une image');
       return;
     }
 
@@ -53,10 +64,17 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess }) => {
     setSuccess('');
 
     try {
-      await photoService.uploadPhoto(selectedFile);
-      setSuccess('Photo uploadée et traitée avec succès !');
-      setSelectedFile(null);
-      setPreview(null);
+      if (eventId) {
+        // Upload vers un événement spécifique
+        await photoService.uploadPhotoToEvent(selectedFiles, eventId);
+      } else {
+        // Upload normal (une seule photo)
+        await photoService.uploadPhoto(selectedFiles[0]);
+      }
+      
+      setSuccess(`${selectedFiles.length} photo(s) uploadée(s) et traitée(s) avec succès !`);
+      setSelectedFiles([]);
+      setPreviews([]);
       onSuccess();
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Erreur lors de l\'upload');
@@ -71,7 +89,10 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess }) => {
         Upload de photos
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Uploadez des photos qui seront analysées pour détecter les visages des utilisateurs
+        {eventId 
+          ? `Uploadez des photos pour cet événement qui seront analysées pour détecter les visages des utilisateurs`
+          : 'Uploadez des photos qui seront analysées pour détecter les visages des utilisateurs'
+        }
       </Typography>
 
       {error && (
@@ -99,6 +120,7 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess }) => {
           style={{ display: 'none' }}
           id="photo-file"
           type="file"
+          multiple={!!eventId} // Multiple files seulement pour les événements
           onChange={handleFileSelect}
         />
         <label htmlFor="photo-file">
@@ -108,29 +130,39 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess }) => {
             startIcon={<CloudUpload />}
             disabled={uploading}
           >
-            Sélectionner une image
+            {eventId ? 'Sélectionner des images' : 'Sélectionner une image'}
           </Button>
         </label>
 
-        {preview && (
+        {previews.length > 0 && (
           <Box sx={{ mt: 2 }}>
-            <img
-              src={preview}
-              alt="Aperçu"
-              style={{
-                maxWidth: '300px',
-                maxHeight: '300px',
-                objectFit: 'cover',
-              }}
-            />
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              {selectedFile?.name}
+            <Typography variant="body2" gutterBottom>
+              {selectedFiles.length} image(s) sélectionnée(s):
             </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center' }}>
+              {previews.map((preview, index) => (
+                <Box key={index} sx={{ textAlign: 'center' }}>
+                  <img
+                    src={preview}
+                    alt={`Aperçu ${index + 1}`}
+                    style={{
+                      width: '100px',
+                      height: '100px',
+                      objectFit: 'cover',
+                      borderRadius: '4px',
+                    }}
+                  />
+                  <Typography variant="caption" display="block">
+                    {selectedFiles[index]?.name}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
           </Box>
         )}
       </Paper>
 
-      {selectedFile && (
+      {selectedFiles.length > 0 && (
         <Button
           variant="contained"
           onClick={handleUpload}
@@ -143,7 +175,7 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess }) => {
               Upload et traitement en cours...
             </>
           ) : (
-            'Uploader la photo'
+            `Uploader ${selectedFiles.length} photo(s)`
           )}
         </Button>
       )}

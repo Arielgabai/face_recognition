@@ -5,6 +5,7 @@ import { CssBaseline } from '@mui/material';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
+import RegisterWithEventCode from './components/RegisterWithEventCode';
 import Dashboard from './components/Dashboard';
 
 const theme = createTheme({
@@ -39,6 +40,8 @@ const AppContent: React.FC = () => {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/register-with-code" element={<RegisterWithEventCode />} />
+        <Route path="/register-with-code/:eventCode" element={<RegisterWithEventCode />} />
         <Route
           path="/dashboard"
           element={

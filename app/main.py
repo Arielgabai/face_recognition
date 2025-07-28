@@ -427,8 +427,11 @@ async def get_my_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Récupérer toutes les photos où l'utilisateur apparaît pour son événement"""
-    # Trouver l'événement de l'utilisateur (on suppose un seul événement par user)
+    """Récupérer toutes les photos où l'utilisateur apparaît pour son événement principal"""
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+    
+    # Trouver le premier événement de l'utilisateur (événement principal)
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
     if not user_event:
         raise HTTPException(status_code=404, detail="Aucun événement associé à cet utilisateur")
@@ -445,7 +448,10 @@ async def get_all_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Récupérer toutes les photos de l'événement de l'utilisateur"""
+    """Récupérer toutes les photos de l'événement principal de l'utilisateur"""
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+    
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
     if not user_event:
         raise HTTPException(status_code=404, detail="Aucun événement associé à cet utilisateur")
@@ -835,6 +841,299 @@ async def generate_event_qr(event_code: str, current_user: User = Depends(get_cu
     img.save(buf, format="PNG")
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/png")
+
+# === NOUVELLES ROUTES POUR LA GESTION DES ÉVÉNEMENTS ===
+
+@app.get("/api/photographer/events")
+async def get_photographer_events(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer tous les événements du photographe connecté"""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent accéder à cette route")
+    
+    events = db.query(Event).filter(Event.photographer_id == current_user.id).all()
+    return events
+
+@app.get("/api/photographer/events/{event_id}/photos")
+async def get_event_photos(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer toutes les photos d'un événement spécifique pour un photographe"""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent accéder à cette route")
+    
+    # Vérifier que l'événement appartient au photographe
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.photographer_id == current_user.id
+    ).first()
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    
+    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    return photos
+
+@app.post("/api/photographer/events/{event_id}/upload-photos")
+async def upload_photos_to_event(
+    event_id: int,
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload de photos pour un événement spécifique"""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent uploader des photos")
+    
+    # Vérifier que l'événement appartient au photographe
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.photographer_id == current_user.id
+    ).first()
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    
+    if not files:
+        raise HTTPException(status_code=400, detail="Aucun fichier fourni")
+    
+    uploaded_photos = []
+    
+    for file in files:
+        if not file.content_type.startswith("image/"):
+            continue
+        
+        # Sauvegarder temporairement le fichier
+        temp_path = f"/tmp/{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        try:
+            # Traiter la photo avec reconnaissance faciale pour l'événement spécifique
+            photo = face_recognizer.process_and_save_photo_for_event(
+                temp_path, file.filename, current_user.id, event_id, db
+            )
+            uploaded_photos.append({
+                "filename": photo.filename,
+                "original_filename": photo.original_filename
+            })
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    
+    return {
+        "message": f"{len(uploaded_photos)} photos uploadées et traitées avec succès",
+        "uploaded_photos": uploaded_photos
+    }
+
+@app.get("/api/user/events")
+async def get_user_events(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer tous les événements auxquels l'utilisateur est inscrit"""
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+    
+    user_events = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).all()
+    events = []
+    for user_event in user_events:
+        event = db.query(Event).filter(Event.id == user_event.event_id).first()
+        if event:
+            events.append({
+                "id": event.id,
+                "name": event.name,
+                "event_code": event.event_code,
+                "date": event.date,
+                "joined_at": user_event.joined_at
+            })
+    
+    return events
+
+@app.get("/api/user/events/{event_id}/photos")
+async def get_user_event_photos(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer les photos d'un événement spécifique pour un utilisateur"""
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+    
+    # Vérifier que l'utilisateur est inscrit à cet événement
+    user_event = db.query(UserEvent).filter(
+        UserEvent.user_id == current_user.id,
+        UserEvent.event_id == event_id
+    ).first()
+    
+    if not user_event:
+        raise HTTPException(status_code=403, detail="Vous n'êtes pas inscrit à cet événement")
+    
+    # Récupérer les photos où l'utilisateur apparaît dans cet événement
+    photos = db.query(Photo).join(FaceMatch).filter(
+        FaceMatch.user_id == current_user.id,
+        FaceMatch.photo_id == Photo.id,
+        Photo.event_id == event_id
+    ).all()
+    
+    return photos
+
+@app.get("/api/user/events/{event_id}/all-photos")
+async def get_all_event_photos(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer toutes les photos d'un événement pour un utilisateur"""
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+    
+    # Vérifier que l'utilisateur est inscrit à cet événement
+    user_event = db.query(UserEvent).filter(
+        UserEvent.user_id == current_user.id,
+        UserEvent.event_id == event_id
+    ).first()
+    
+    if not user_event:
+        raise HTTPException(status_code=403, detail="Vous n'êtes pas inscrit à cet événement")
+    
+    # Récupérer toutes les photos de l'événement
+    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    
+    return photos
+
+# === ROUTES POUR LES CODES ÉVÉNEMENT MANUELS ===
+
+@app.post("/api/register-with-event-code")
+async def register_with_event_code(
+    user_data: UserCreate = Body(...),
+    event_code: str = Body(...),
+    db: Session = Depends(get_db)
+):
+    """Inscription d'un utilisateur avec un code événement saisi manuellement"""
+    # Vérifier si l'utilisateur existe déjà
+    existing_user = db.query(User).filter(
+        (User.username == user_data.username) | (User.email == user_data.email)
+    ).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
+    
+    # Vérifier l'event_code
+    event = db.query(Event).filter_by(event_code=event_code).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Code événement invalide")
+    
+    # Créer le nouvel utilisateur
+    hashed_password = get_password_hash(user_data.password)
+    db_user = User(
+        username=user_data.username,
+        email=user_data.email,
+        hashed_password=hashed_password,
+        user_type=UserType.USER
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    
+    # Lier l'utilisateur à l'événement
+    user_event = UserEvent(user_id=db_user.id, event_id=event.id)
+    db.add(user_event)
+    db.commit()
+    
+    return db_user
+
+@app.post("/api/join-event")
+async def join_event(
+    event_code: str = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Rejoindre un événement avec un code (pour utilisateurs déjà inscrits)"""
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent rejoindre des événements")
+    
+    # Vérifier l'event_code
+    event = db.query(Event).filter_by(event_code=event_code).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Code événement invalide")
+    
+    # Vérifier si l'utilisateur est déjà inscrit à cet événement
+    existing_user_event = db.query(UserEvent).filter(
+        UserEvent.user_id == current_user.id,
+        UserEvent.event_id == event.id
+    ).first()
+    
+    if existing_user_event:
+        raise HTTPException(status_code=400, detail="Vous êtes déjà inscrit à cet événement")
+    
+    # Inscrire l'utilisateur à l'événement
+    user_event = UserEvent(user_id=current_user.id, event_id=event.id)
+    db.add(user_event)
+    db.commit()
+    
+    return {"message": f"Inscrit avec succès à l'événement {event.name}"}
+
+# === ROUTES ADMIN POUR CRÉER DES CODES ÉVÉNEMENT COMPLEXES ===
+
+@app.post("/api/admin/generate-event-code")
+async def generate_complex_event_code(
+    event_id: int = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Générer un nouveau code événement complexe (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent générer des codes événement")
+    
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    
+    # Générer un code complexe (8 caractères alphanumériques)
+    import random
+    import string
+    new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    
+    # Vérifier l'unicité
+    while db.query(Event).filter(Event.event_code == new_code).first():
+        new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    
+    event.event_code = new_code
+    db.commit()
+    
+    return {"message": "Code événement généré", "event_code": new_code}
+
+@app.post("/api/admin/set-event-code")
+async def set_custom_event_code(
+    event_id: int = Body(...),
+    event_code: str = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Définir un code événement personnalisé (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent définir des codes événement")
+    
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    
+    # Vérifier l'unicité
+    existing_event = db.query(Event).filter(
+        Event.event_code == event_code,
+        Event.id != event_id
+    ).first()
+    if existing_event:
+        raise HTTPException(status_code=400, detail="Ce code événement est déjà utilisé")
+    
+    event.event_code = event_code
+    db.commit()
+    
+    return {"message": "Code événement défini", "event_code": event_code}
 
 # === NOUVELLES ROUTES POUR LA GESTION DES PHOTOGRAPHES ET ÉVÉNEMENTS ===
 

@@ -1,165 +1,211 @@
-# Face Recognition Web Application
+# Face Recognition App - Application de Reconnaissance Faciale
 
-Une application web moderne de reconnaissance faciale construite avec FastAPI, React et PostgreSQL.
+Une application web moderne pour la gestion et la reconnaissance faciale de photos d'événements (mariages, événements, etc.).
 
-## 🚀 Fonctionnalités
+## 🚀 Fonctionnalités Principales
 
-### Pour les Utilisateurs
-- **Inscription/Connexion** : Système d'authentification sécurisé
-- **Upload de Selfie** : Les utilisateurs peuvent uploader une photo de leur visage
-- **Galerie Personnelle** : Visualisation de toutes les photos où ils apparaissent
-- **Galerie Générale** : Accès à toutes les photos disponibles
+### ✅ Problèmes Résolus
 
-### Pour les Photographes
-- **Upload de Photos** : Possibilité d'uploader des photos qui seront analysées
-- **Reconnaissance Automatique** : Le système détecte automatiquement les visages des utilisateurs
-- **Gestion des Photos** : Interface pour gérer les photos uploadées
+1. **Photos qui disparaissent** - Corrigé avec une meilleure gestion des événements
+2. **Séparation des événements** - Interface pour changer d'événement pour les photographes
+3. **Filtrage par événement** - Les utilisateurs voient uniquement les photos de leur événement
+4. **Codes événement manuels** - Option pour entrer le code à la main
+5. **Reconnaissance faciale automatique** - Déclenchement lors d'ajout/modification
 
-## 🛠️ Technologies Utilisées
+### 🎯 Nouvelles Fonctionnalités
 
-### Backend
-- **FastAPI** : Framework web moderne et rapide
-- **SQLAlchemy** : ORM pour la gestion de la base de données
-- **PostgreSQL** : Base de données relationnelle
-- **face_recognition** : Bibliothèque Python pour la reconnaissance faciale
-- **OpenCV** : Traitement d'images
-- **JWT** : Authentification sécurisée
+#### Pour les Utilisateurs
+- **Sélecteur d'événements** : Changer facilement entre les événements auxquels ils sont inscrits
+- **Rejoindre un événement** : Saisir manuellement un code événement
+- **Filtrage intelligent** : Voir uniquement les photos de l'événement sélectionné
+- **Inscription avec code** : Créer un compte avec un code événement
 
-### Frontend
-- **React** : Framework JavaScript pour l'interface utilisateur
-- **TypeScript** : Typage statique pour JavaScript
-- **Material-UI** : Composants UI modernes
-- **React Router** : Navigation entre les pages
-- **Axios** : Client HTTP pour les appels API
+#### Pour les Photographes
+- **Gestion multi-événements** : Gérer plusieurs événements simultanément
+- **Upload par événement** : Uploader des photos pour un événement spécifique
+- **Vue organisée** : Voir toutes les photos par événement
 
-### Infrastructure
-- **Docker** : Conteneurisation de l'application
-- **Docker Compose** : Orchestration des services
+#### Pour les Admins
+- **Codes événement complexes** : Générer des codes alphanumériques de 8 caractères
+- **Codes personnalisés** : Définir des codes événement personnalisés
+- **Gestion avancée** : Interface complète de gestion des événements
 
-## 📋 Prérequis
+## 🛠️ Installation et Configuration
 
-- Docker et Docker Compose
-- Node.js 18+ (pour le développement local)
-- Python 3.11+ (pour le développement local)
+### Prérequis
+- Python 3.8+
+- Node.js 16+
+- SQLite (ou PostgreSQL pour la production)
 
-## 🚀 Installation et Démarrage
-
-### Avec Docker (Recommandé)
-
-1. **Cloner le repository**
-   ```bash
-   git clone <repository-url>
-   cd face_recognition
-   ```
-
-2. **Démarrer l'application**
-   ```bash
-   cd app
-   docker-compose up --build
-   ```
-
-3. **Accéder à l'application**
-   - Frontend : http://localhost:8000
-   - API Documentation : http://localhost:8000/docs
-
-### Développement Local
-
-1. **Backend**
-   ```bash
-   cd app
-   pip install -r requirements.txt
-   uvicorn main:app --reload
-   ```
-
-2. **Frontend**
-   ```bash
-   cd app/frontend
-   npm install
-   npm start
-   ```
-
-## 📁 Structure du Projet
-
-```
-face_recognition/
-├── app/
-│   ├── frontend/                 # Application React
-│   │   ├── src/
-│   │   │   ├── components/      # Composants React
-│   │   │   ├── contexts/        # Contextes React
-│   │   │   ├── services/        # Services API
-│   │   │   └── types/           # Types TypeScript
-│   │   └── public/              # Fichiers statiques
-│   ├── static/                  # Fichiers statiques du backend
-│   │   └── uploads/             # Photos uploadées
-│   ├── main.py                  # Point d'entrée FastAPI
-│   ├── models.py                # Modèles de base de données
-│   ├── schemas.py               # Schémas Pydantic
-│   ├── auth.py                  # Authentification
-│   ├── face_recognizer.py       # Logique de reconnaissance faciale
-│   ├── database.py              # Configuration base de données
-│   ├── requirements.txt         # Dépendances Python
-│   ├── Dockerfile               # Configuration Docker
-│   └── docker-compose.yml       # Orchestration Docker
-└── README.md
+### Installation Backend
+```bash
+cd app
+pip install -r requirements.txt
 ```
 
-## 🔧 Configuration
+### Installation Frontend
+```bash
+cd app/frontend
+npm install
+npm run build
+```
 
-### Variables d'Environnement
+### Configuration
+1. Copier `.env.example` vers `.env`
+2. Configurer les variables d'environnement
+3. Lancer la base de données
 
-- `DATABASE_URL` : URL de connexion à la base de données
-- `SECRET_KEY` : Clé secrète pour les tokens JWT
+## 🚀 Démarrage
 
-### Base de Données
+### Développement
+```bash
+# Backend
+cd app
+python main.py
 
-L'application utilise PostgreSQL avec les tables suivantes :
-- `users` : Informations des utilisateurs
-- `photos` : Métadonnées des photos
-- `face_matches` : Correspondances faciales détectées
+# Frontend (optionnel pour le développement)
+cd app/frontend
+npm start
+```
 
-## 🔐 Sécurité
+### Production
+```bash
+# Utiliser le Dockerfile fourni
+docker-compose up -d
+```
 
-- Authentification JWT
-- Hachage des mots de passe avec bcrypt
+## 📋 Scripts de Maintenance
+
+### Nettoyage de la Base de Données
+```bash
+cd app
+python cleanup_orphaned_photos.py
+```
+
+### Reconnaissance Faciale Automatique
+```bash
+# Pour un événement spécifique
+python auto_face_recognition.py event <event_id>
+
+# Pour un utilisateur spécifique
+python auto_face_recognition.py user <user_id>
+
+# Optimisation générale
+python auto_face_recognition.py optimize
+```
+
+## 🔧 API Endpoints
+
+### Nouveaux Endpoints
+
+#### Gestion des Événements
+- `GET /api/photographer/events` - Événements du photographe
+- `GET /api/user/events` - Événements de l'utilisateur
+- `POST /api/join-event` - Rejoindre un événement
+- `POST /api/register-with-event-code` - Inscription avec code
+
+#### Upload par Événement
+- `POST /api/photographer/events/{event_id}/upload-photos` - Upload photos pour événement
+- `GET /api/photographer/events/{event_id}/photos` - Photos d'un événement
+- `GET /api/user/events/{event_id}/photos` - Photos utilisateur par événement
+
+#### Codes Événement
+- `POST /api/admin/generate-event-code` - Générer code complexe
+- `POST /api/admin/set-event-code` - Définir code personnalisé
+
+## 🎨 Interface Utilisateur
+
+### Composants Ajoutés
+- `EventSelector` : Sélection d'événements pour utilisateurs
+- `JoinEvent` : Rejoindre un événement avec code
+- `PhotographerEventManager` : Gestion des événements pour photographes
+- `RegisterWithEventCode` : Inscription avec code événement
+
+### Améliorations UX
+- Interface intuitive pour changer d'événement
+- Feedback visuel pour les actions
+- Gestion des erreurs améliorée
+- Chargement progressif des données
+
+## 🔒 Sécurité
+
+### Authentification
+- JWT tokens avec expiration
+- Vérification des permissions par type d'utilisateur
+- Protection des routes sensibles
+
+### Validation
+- Vérification des codes événement
 - Validation des fichiers uploadés
-- Protection CORS configurée
+- Contrôle d'accès aux événements
 
-## 📱 Utilisation
+## 📊 Performance
 
-1. **Créer un compte** : Inscrivez-vous en tant qu'utilisateur ou photographe
-2. **Upload de selfie** (utilisateurs) : Uploadez une photo de votre visage
-3. **Upload de photos** (photographes) : Uploadez des photos à analyser
-4. **Visualisation** : Consultez vos photos dans la galerie
+### Optimisations
+- Cache des encodages faciaux
+- Traitement par lot des photos
+- Requêtes optimisées par événement
+- Nettoyage automatique des données orphelines
 
-## 🐛 Dépannage
+### Monitoring
+- Logs détaillés des opérations
+- Métriques de reconnaissance faciale
+- Alertes sur les erreurs
 
-### Problèmes Courants
+## 🐛 Résolution des Problèmes
 
-1. **Erreur de reconnaissance faciale**
-   - Vérifiez que les images contiennent des visages clairs
-   - Assurez-vous que les images sont au format JPG/PNG
+### Photos qui Disparaissent
+- ✅ Association automatique des photos aux événements
+- ✅ Nettoyage des photos orphelines
+- ✅ Vérification d'intégrité des données
 
-2. **Problèmes de base de données**
-   - Vérifiez que PostgreSQL est démarré
-   - Contrôlez les variables d'environnement
+### Gestion des Événements
+- ✅ Interface multi-événements pour photographes
+- ✅ Filtrage par événement pour utilisateurs
+- ✅ Codes événement complexes et personnalisables
 
-3. **Problèmes Docker**
-   - Nettoyez les conteneurs : `docker-compose down -v`
-   - Reconstruisez : `docker-compose up --build`
+### Reconnaissance Faciale
+- ✅ Déclenchement automatique lors d'upload
+- ✅ Mise à jour lors de modification de selfie
+- ✅ Optimisation des performances
+
+## 🔄 Workflow Typique
+
+### Pour un Photographe
+1. Se connecter à l'interface photographe
+2. Sélectionner l'événement à gérer
+3. Uploader des photos pour cet événement
+4. Les photos sont automatiquement analysées
+5. Les utilisateurs voient leurs photos correspondantes
+
+### Pour un Utilisateur
+1. S'inscrire avec un code événement (QR ou manuel)
+2. Uploader une selfie
+3. Changer d'événement si nécessaire
+4. Voir les photos où ils apparaissent
+
+### Pour un Admin
+1. Créer des événements et assigner des photographes
+2. Générer des codes événement complexes
+3. Gérer les utilisateurs et photographes
+4. Monitorer les performances
+
+## 📈 Améliorations Futures
+
+- [ ] Interface mobile responsive
+- [ ] Notifications push
+- [ ] Export des photos
+- [ ] Analytics avancées
+- [ ] Intégration avec d'autres services
 
 ## 🤝 Contribution
 
 1. Fork le projet
-2. Créez une branche feature (`git checkout -b feature/AmazingFeature`)
-3. Committez vos changements (`git commit -m 'Add some AmazingFeature'`)
-4. Push vers la branche (`git push origin feature/AmazingFeature`)
-5. Ouvrez une Pull Request
+2. Créer une branche feature
+3. Commiter les changements
+4. Pousser vers la branche
+5. Ouvrir une Pull Request
 
 ## 📄 Licence
 
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
-
-## 📞 Support
-
-Pour toute question ou problème, veuillez ouvrir une issue sur GitHub. 
+Ce projet est sous licence MIT. Voir le fichier LICENSE pour plus de détails. 

@@ -65,11 +65,33 @@ export const photoService = {
       },
     });
   },
+
+  uploadPhotoToEvent: (files: File[], eventId: number) => {
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append('files', file);
+    });
+    return api.post(`/photographer/events/${eventId}/upload-photos`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
   
   getMyPhotos: () => api.get('/my-photos'),
   getAllPhotos: () => api.get('/all-photos'),
   getProfile: () => api.get('/profile'),
   getImage: (filename: string) => `${API_BASE_URL}/image/${filename}`,
+
+  // Nouvelles méthodes pour la gestion des événements
+  getUserEvents: () => api.get('/user/events'),
+  getPhotographerEvents: () => api.get('/photographer/events'),
+  getEventPhotos: (eventId: number) => api.get(`/photographer/events/${eventId}/photos`),
+  getUserEventPhotos: (eventId: number) => api.get(`/user/events/${eventId}/photos`),
+  getAllEventPhotos: (eventId: number) => api.get(`/user/events/${eventId}/all-photos`),
+  joinEvent: (eventCode: string) => api.post('/join-event', { event_code: eventCode }),
+  registerWithEventCode: (userData: any, eventCode: string) => 
+    api.post('/register-with-event-code', { ...userData, event_code: eventCode }),
 };
 
 // Service admin
