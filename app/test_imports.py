@@ -23,6 +23,16 @@ def test_imports():
         print("✓ Pillow (PIL) importé avec succès")
         print(f"  Version Pillow: {Image.__version__}")
         
+        # Appliquer le patch face_recognition_models si nécessaire
+        try:
+            import face_recognition_models
+            if not hasattr(face_recognition_models, 'pose_predictor_five_point_model_location'):
+                if hasattr(face_recognition_models, 'pose_predictor_model_location'):
+                    face_recognition_models.pose_predictor_five_point_model_location = face_recognition_models.pose_predictor_model_location
+                    print("✓ Patch face_recognition_models appliqué")
+        except Exception as e:
+            print(f"⚠️  Patch face_recognition_models non appliqué: {e}")
+        
         # Test face_recognition
         import face_recognition
         print("✓ face_recognition importé avec succès")

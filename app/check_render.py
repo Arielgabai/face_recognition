@@ -42,7 +42,7 @@ def check_requirements():
         required_packages = [
             'numpy==1.24.3',
             'opencv-python-headless==4.8.1.78',
-            'face-recognition-models==0.3.0',
+            'face-recognition-models==0.1.3',
             'Pillow==10.0.1',
             'fastapi',
             'uvicorn'
@@ -74,7 +74,7 @@ def check_dockerfile():
             'EXPOSE 8000',
             'CMD ["./start.sh"]',
             'Pillow==10.0.1',
-            'face-recognition-models==0.3.0'
+            'face-recognition-models==0.1.3'
         ]
         
         missing_elements = []

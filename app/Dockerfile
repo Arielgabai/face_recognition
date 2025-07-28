@@ -30,16 +30,18 @@ RUN pip install --upgrade pip setuptools wheel && \
     pip install numpy==1.24.3 && \
     pip install opencv-python-headless==4.8.1.78 && \
     pip install Pillow==10.0.1 && \
-    pip install face-recognition-models==0.3.0
+    pip install face-recognition-models==0.1.3
 
 # Injecter dlib déjà compilé (venant du build local)
 COPY dlib /usr/local/lib/python3.11/site-packages/dlib
 COPY dlib-20.0.0.dist-info /usr/local/lib/python3.11/site-packages/dlib-20.0.0.dist-info
 COPY _dlib_pybind11.cpython-311-x86_64-linux-gnu.so /usr/local/lib/python3.11/site-packages/
 
-# Installer face_recognition et les autres packages Python
-RUN pip install --no-deps git+https://github.com/ageitgey/face_recognition.git@master && \
-    pip install -r requirements.txt
+# Installer face_recognition avec --no-deps pour éviter les conflits
+RUN pip install --no-deps git+https://github.com/ageitgey/face_recognition.git@master
+
+# Installer les autres packages Python
+RUN pip install -r requirements.txt
 
 # Copier le code source de l'application
 COPY . .

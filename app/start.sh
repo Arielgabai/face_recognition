@@ -15,6 +15,16 @@ else
     exit 1
 fi
 
+# Appliquer le patch face_recognition_models si nécessaire
+echo "🔧 Application du patch face_recognition_models..."
+python fix_face_recognition_models.py
+
+if [ $? -eq 0 ]; then
+    echo "✅ Patch face_recognition_models appliqué avec succès"
+else
+    echo "⚠️  Patch face_recognition_models non appliqué (peut être normal)"
+fi
+
 # Créer les dossiers nécessaires
 echo "📁 Création des dossiers nécessaires..."
 mkdir -p static/uploads/selfies
