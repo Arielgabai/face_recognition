@@ -15,9 +15,9 @@ else
     exit 1
 fi
 
-# Appliquer le patch face_recognition_models si nécessaire
+# Appliquer le patch face_recognition_models
 echo "🔧 Application du patch face_recognition_models..."
-python fix_face_recognition_models.py
+python -c "import face_recognition_patch"
 
 if [ $? -eq 0 ]; then
     echo "✅ Patch face_recognition_models appliqué avec succès"
