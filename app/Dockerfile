@@ -25,10 +25,11 @@ WORKDIR /app
 # Copier les fichiers de dépendances
 COPY requirements.txt ./
 
-# Installer d'abord NumPy et OpenCV avec des versions spécifiques
+# Installer d'abord NumPy, OpenCV et Pillow avec des versions spécifiques
 RUN pip install --upgrade pip setuptools wheel && \
     pip install numpy==1.24.3 && \
     pip install opencv-python-headless==4.8.1.78 && \
+    pip install Pillow==10.0.1 && \
     pip install face-recognition-models==0.1.3
 
 # Injecter dlib déjà compilé (venant du build local)

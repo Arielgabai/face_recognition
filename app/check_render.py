@@ -43,6 +43,7 @@ def check_requirements():
             'numpy==1.24.3',
             'opencv-python-headless==4.8.1.78',
             'face-recognition-models==0.1.3',
+            'Pillow==10.0.1',
             'fastapi',
             'uvicorn'
         ]
@@ -71,7 +72,8 @@ def check_dockerfile():
         required_elements = [
             'FROM python:3.11-slim-bookworm',
             'EXPOSE 8000',
-            'CMD ["./start.sh"]'
+            'CMD ["./start.sh"]',
+            'Pillow==10.0.1'
         ]
         
         missing_elements = []

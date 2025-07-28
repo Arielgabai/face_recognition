@@ -18,6 +18,11 @@ def test_imports():
         print("✓ OpenCV importé avec succès")
         print(f"  Version OpenCV: {cv2.__version__}")
         
+        # Test Pillow (PIL)
+        from PIL import Image
+        print("✓ Pillow (PIL) importé avec succès")
+        print(f"  Version Pillow: {Image.__version__}")
+        
         # Test face_recognition
         import face_recognition
         print("✓ face_recognition importé avec succès")
