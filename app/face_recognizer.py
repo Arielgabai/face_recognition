@@ -1,6 +1,3 @@
-# Importer le patch en premier pour corriger face_recognition_models
-import face_recognition_patch
-
 import face_recognition
 import os
 import cv2

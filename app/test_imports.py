@@ -23,10 +23,6 @@ def test_imports():
         print("✓ Pillow (PIL) importé avec succès")
         print(f"  Version Pillow: {Image.__version__}")
         
-        # Appliquer le patch face_recognition_models avant l'importation
-        import face_recognition_patch
-        print("✓ Patch face_recognition_models appliqué")
-        
         # Test face_recognition
         import face_recognition
         print("✓ face_recognition importé avec succès")

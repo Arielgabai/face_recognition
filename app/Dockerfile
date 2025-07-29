@@ -37,8 +37,8 @@ COPY dlib /usr/local/lib/python3.11/site-packages/dlib
 COPY dlib-20.0.0.dist-info /usr/local/lib/python3.11/site-packages/dlib-20.0.0.dist-info
 COPY _dlib_pybind11.cpython-311-x86_64-linux-gnu.so /usr/local/lib/python3.11/site-packages/
 
-# Installer face_recognition avec --no-deps pour éviter les conflits
-RUN pip install --no-deps git+https://github.com/ageitgey/face_recognition.git@master
+# Installer face_recognition depuis PyPI (version compatible)
+RUN pip install face_recognition==1.2.3
 
 # Installer les autres packages Python
 RUN pip install -r requirements.txt

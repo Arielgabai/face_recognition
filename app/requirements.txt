@@ -11,8 +11,10 @@ pydantic[email]==2.5.0
 python-dotenv==1.0.0
 qrcode
 PyJWT==2.8.0
-# Spécifier les versions exactes pour éviter les conflits
+# Versions spécifiques pour éviter les conflits
 numpy==1.24.3
 opencv-python-headless==4.8.1.78
 face-recognition-models==0.1.3
 Pillow==10.0.1
+# Version compatible de face_recognition (sans CNN)
+face_recognition==1.2.3
