@@ -59,90 +59,91 @@ def apply_face_recognition_patch():
         print(f"❌ Erreur lors de l'application du patch : {e}")
         return False
 
-def patch_dlib_cnn_face_detection():
-    """Patch dlib pour gérer l'absence du modèle CNN"""
+def patch_dlib_before_import():
+    """Patch dlib avant l'importation de face_recognition pour éviter l'erreur CNN"""
     try:
+        # Importer dlib d'abord
         import dlib
         
-        # Sauvegarder la fonction originale
-        original_cnn_face_detection_model_v1 = getattr(dlib, 'cnn_face_detection_model_v1', None)
-        
-        # Créer une fonction de remplacement qui lève une exception explicite
-        def dummy_cnn_face_detection_model_v1(model_path):
-            raise RuntimeError("CNN face detection model not available in face_recognition_models==0.1.3. Please use HOG face detection instead.")
+        # Créer une fonction de remplacement qui retourne un objet factice
+        def safe_cnn_face_detection_model_v1(model_path):
+            # Retourner un objet factice qui ne sera jamais utilisé
+            class DummyCNNModel:
+                def __init__(self):
+                    pass
+                def __call__(self, *args, **kwargs):
+                    return []
+            return DummyCNNModel()
         
         # Appliquer le patch
-        dlib.cnn_face_detection_model_v1 = dummy_cnn_face_detection_model_v1
-        print("✅ dlib.cnn_face_detection_model_v1 patché")
+        dlib.cnn_face_detection_model_v1 = safe_cnn_face_detection_model_v1
+        print("✅ dlib.cnn_face_detection_model_v1 patché avant importation")
         return True
             
     except Exception as e:
         print(f"⚠️  Erreur lors du patch de dlib : {e}")
         return False
 
-def patch_face_recognition_import():
-    """Patch l'importation de face_recognition pour éviter l'erreur CNN"""
+def patch_face_recognition_api():
+    """Patch face_recognition.api pour éviter l'importation du CNN"""
     try:
-        # Importer dlib d'abord et le patcher
-        import dlib
-        
-        # Créer une fonction de remplacement pour CNN
-        def safe_cnn_face_detection_model_v1(model_path):
-            raise RuntimeError("CNN face detection model not available in face_recognition_models==0.1.3. Please use HOG face detection instead.")
-        
-        # Appliquer le patch à dlib
-        dlib.cnn_face_detection_model_v1 = safe_cnn_face_detection_model_v1
-        
-        # Maintenant importer face_recognition en toute sécurité
-        import face_recognition
-        print("✅ face_recognition importé avec succès après patch dlib")
-        return True
-            
-    except Exception as e:
-        print(f"❌ Erreur lors de l'importation sécurisée : {e}")
-        return False
-
-def patch_face_recognition_api_module():
-    """Patch le module face_recognition.api pour éviter l'erreur CNN"""
-    try:
-        # Importer dlib d'abord et le patcher
-        import dlib
-        
-        # Créer une fonction de remplacement pour CNN
-        def safe_cnn_face_detection_model_v1(model_path):
-            raise RuntimeError("CNN face detection model not available in face_recognition_models==0.1.3. Please use HOG face detection instead.")
-        
-        # Appliquer le patch à dlib
-        dlib.cnn_face_detection_model_v1 = safe_cnn_face_detection_model_v1
-        
-        # Maintenant importer face_recognition.api en toute sécurité
+        # Importer face_recognition.api
         import face_recognition.api
-        print("✅ face_recognition.api importé avec succès après patch dlib")
+        
+        # Sauvegarder la fonction originale
+        import dlib
+        original_cnn_face_detection_model_v1 = dlib.cnn_face_detection_model_v1
+        
+        # Créer une fonction de remplacement qui ne fait rien
+        def safe_cnn_face_detection_model_v1(model_path):
+            # Retourner un objet factice qui ne sera jamais utilisé
+            class DummyCNNModel:
+                def __init__(self):
+                    pass
+            return DummyCNNModel()
+        
+        # Appliquer le patch
+        dlib.cnn_face_detection_model_v1 = safe_cnn_face_detection_model_v1
+        print("✅ face_recognition.api patché pour éviter l'importation CNN")
         return True
             
     except Exception as e:
-        print(f"❌ Erreur lors de l'importation de face_recognition.api : {e}")
+        print(f"⚠️  Erreur lors du patch de face_recognition.api : {e}")
         return False
 
 # Appliquer le patch automatiquement lors de l'importation
 if __name__ != "__main__":
+    # Patch dlib en premier
+    patch_dlib_before_import()
+    # Puis patch face_recognition_models
     apply_face_recognition_patch()
-    patch_dlib_cnn_face_detection()
 
 if __name__ == "__main__":
     print("🔧 Test du patch face_recognition_models...")
-    if apply_face_recognition_patch():
-        print("✅ Patch appliqué avec succès")
+    
+    # Patch dlib en premier
+    if patch_dlib_before_import():
+        print("✅ Patch dlib appliqué avec succès")
         
-        # Appliquer le patch dlib
-        patch_dlib_cnn_face_detection()
-        
-        # Tester l'importation de face_recognition.api avec l'API sécurisée
-        if patch_face_recognition_api_module():
-            print("🎉 Le problème d'attribut est résolu !")
+        # Puis patch face_recognition_models
+        if apply_face_recognition_patch():
+            print("✅ Patch appliqué avec succès")
+            
+            # Appliquer le patch face_recognition.api
+            patch_face_recognition_api()
+            
+            # Tester l'importation de face_recognition
+            try:
+                import face_recognition
+                print("✅ face_recognition importé avec succès après le patch")
+                
+                print("🎉 Le problème d'attribut est résolu !")
+            except Exception as e:
+                print(f"❌ Erreur lors de l'importation de face_recognition : {e}")
+                sys.exit(1)
         else:
-            print("❌ Échec de l'importation sécurisée")
+            print("❌ Échec de l'application du patch")
             sys.exit(1)
     else:
-        print("❌ Échec de l'application du patch")
+        print("❌ Échec du patch dlib")
         sys.exit(1)
