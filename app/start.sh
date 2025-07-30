@@ -30,6 +30,29 @@ echo "📁 Création des dossiers nécessaires..."
 mkdir -p static/uploads/selfies
 mkdir -p static/uploads/photos
 
+# Corriger le schéma de la base de données si nécessaire
+echo "🔧 Vérification du schéma de la base de données..."
+python fix_database_schema.py
+
+if [ $? -eq 0 ]; then
+    echo "✅ Schéma de la base de données vérifié/corrigé"
+else
+    echo "⚠️  Erreur lors de la vérification du schéma (peut être normal)"
+fi
+
+# Tester le schéma de la base de données
+echo "🧪 Test du schéma de la base de données..."
+python test_database_schema.py
+
+if [ $? -eq 0 ]; then
+    echo "✅ Schéma de la base de données testé avec succès"
+else
+    echo "❌ Problème avec le schéma de la base de données"
+    echo "📊 Logs d'erreur détaillés :"
+    python test_database_schema.py 2>&1
+    exit 1
+fi
+
 # Vérifier les variables d'environnement
 echo "🔧 Configuration :"
 echo "  - PORT: ${PORT:-8000}"
