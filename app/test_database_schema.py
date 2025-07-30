@@ -70,7 +70,7 @@ def test_database_schema():
             result = db.execute(text("PRAGMA table_info(users)"))
             existing_columns = [row[1] for row in result.fetchall()]
         
-        missing_users_columns = [col for col in required_users_columns if col not in existing_users_columns]
+        missing_users_columns = [col for col in required_users_columns if col not in existing_columns]
         
         if missing_users_columns:
             print(f"❌ Colonnes manquantes dans users: {missing_users_columns}")
