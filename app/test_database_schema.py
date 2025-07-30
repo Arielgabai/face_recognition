@@ -45,11 +45,18 @@ def test_database_schema():
         
         print("✅ La table 'users' existe")
         
-        # Vérifier les colonnes requises
-        required_columns = [
+        # Vérifier les colonnes requises pour la table users
+        required_users_columns = [
             'id', 'username', 'email', 'hashed_password', 
             'user_type', 'selfie_path', 'selfie_data', 
             'is_active', 'created_at'
+        ]
+        
+        # Vérifier les colonnes requises pour la table photos
+        required_photos_columns = [
+            'id', 'filename', 'original_filename', 'file_path',
+            'photo_data', 'content_type', 'photo_type', 'user_id',
+            'photographer_id', 'uploaded_at', 'event_id'
         ]
         
         if DATABASE_URL.startswith("postgresql://"):
@@ -63,13 +70,51 @@ def test_database_schema():
             result = db.execute(text("PRAGMA table_info(users)"))
             existing_columns = [row[1] for row in result.fetchall()]
         
-        missing_columns = [col for col in required_columns if col not in existing_columns]
+        missing_users_columns = [col for col in required_users_columns if col not in existing_users_columns]
         
-        if missing_columns:
-            print(f"❌ Colonnes manquantes: {missing_columns}")
+        if missing_users_columns:
+            print(f"❌ Colonnes manquantes dans users: {missing_users_columns}")
             return False
         
-        print("✅ Toutes les colonnes requises existent")
+        print("✅ Toutes les colonnes requises existent dans users")
+        
+        # Vérifier la table photos
+        if DATABASE_URL.startswith("postgresql://"):
+            result = db.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'photos'
+            """))
+            photos_table_exists = result.fetchone() is not None
+        elif DATABASE_URL.startswith("sqlite://"):
+            result = db.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='photos'"))
+            photos_table_exists = result.fetchone() is not None
+        
+        if not photos_table_exists:
+            print("❌ La table 'photos' n'existe pas")
+            return False
+        
+        print("✅ La table 'photos' existe")
+        
+        # Vérifier les colonnes de la table photos
+        if DATABASE_URL.startswith("postgresql://"):
+            result = db.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'photos'
+            """))
+            existing_photos_columns = [row[0] for row in result.fetchall()]
+        elif DATABASE_URL.startswith("sqlite://"):
+            result = db.execute(text("PRAGMA table_info(photos)"))
+            existing_photos_columns = [row[1] for row in result.fetchall()]
+        
+        missing_photos_columns = [col for col in required_photos_columns if col not in existing_photos_columns]
+        
+        if missing_photos_columns:
+            print(f"❌ Colonnes manquantes dans photos: {missing_photos_columns}")
+            return False
+        
+        print("✅ Toutes les colonnes requises existent dans photos")
         
         # Test de requête simple
         try:

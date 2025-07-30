@@ -60,6 +60,12 @@ def fix_database_schema():
             ("users", "selfie_data", "BYTEA" if DATABASE_URL.startswith("postgresql://") else "BLOB"),
         ]
         
+        # Colonnes manquantes dans la table photos
+        missing_columns.extend([
+            ("photos", "photo_data", "BYTEA" if DATABASE_URL.startswith("postgresql://") else "BLOB"),
+            ("photos", "content_type", "VARCHAR(255)" if DATABASE_URL.startswith("postgresql://") else "TEXT"),
+        ])
+        
         for table_name, column_name, column_type in missing_columns:
             add_column_if_missing(table_name, column_name, column_type, db)
         
