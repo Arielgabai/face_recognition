@@ -11,7 +11,7 @@ from models import User, Photo, FaceMatch
 import uuid
 
 class FaceRecognizer:
-    def __init__(self, tolerance=0.6):
+    def __init__(self, tolerance=0.7):
         self.tolerance = tolerance
         self.user_encodings = {}  # Cache des encodages des utilisateurs
 
