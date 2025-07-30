@@ -493,7 +493,7 @@ async def get_user_profile(
 
 @app.get("/api/image/{filename}")
 async def get_image(filename: str):
-    """Servir une image depuis les dossiers static"""
+    """Servir une image depuis les dossiers static (pour compatibilité)"""
     # Chercher dans différents dossiers possibles
     possible_paths = [
         os.path.join("static", filename),
@@ -507,6 +507,27 @@ async def get_image(filename: str):
     
     # Si aucune image n'est trouvée
     raise HTTPException(status_code=404, detail=f"Image non trouvée: {filename}")
+
+@app.get("/api/photo/{photo_id}")
+async def get_photo_by_id(
+    photo_id: int,
+    db: Session = Depends(get_db)
+):
+    """Servir une photo depuis la base de données par son ID"""
+    photo = db.query(Photo).filter(Photo.id == photo_id).first()
+    
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo non trouvée")
+    
+    if not photo.photo_data:
+        raise HTTPException(status_code=404, detail="Données de photo non disponibles")
+    
+    # Retourner les données binaires avec le bon type MIME
+    return Response(
+        content=photo.photo_data,
+        media_type=photo.content_type or "image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000"}  # Cache pour 1 an
+    )
 
 # === ROUTES ADMIN ===
 
@@ -532,10 +553,6 @@ async def delete_photo(
     try:
         # Supprimer les correspondances de visages associées
         db.query(FaceMatch).filter(FaceMatch.photo_id == photo_id).delete()
-        
-        # Supprimer le fichier physique
-        if photo.file_path and os.path.exists(photo.file_path):
-            os.remove(photo.file_path)
         
         # Supprimer l'enregistrement de la base de données
         db.delete(photo)
@@ -582,10 +599,6 @@ async def delete_multiple_photos(
         for photo in photos:
             # Supprimer les correspondances de visages associées
             db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()
-            
-            # Supprimer le fichier physique
-            if photo.file_path and os.path.exists(photo.file_path):
-                os.remove(photo.file_path)
             
             # Supprimer l'enregistrement de la base de données
             db.delete(photo)

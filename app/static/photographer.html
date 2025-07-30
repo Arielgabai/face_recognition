@@ -584,7 +584,7 @@
                             <div class="photo-grid">
                                 ${photos.map(photo => `
                                     <div class="photo-item">
-                                        <img src="/api/image/${photo.file_path.split('/').pop()}" alt="Photo">
+                                        <img src="/api/photo/${photo.id}" alt="Photo">
                                         <div class="photo-actions">
                                             <button onclick="deletePhoto(${photo.id})" class="danger">🗑️</button>
                                         </div>

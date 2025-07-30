@@ -9,19 +9,23 @@ from typing import List, Dict, Tuple, Optional
 from sqlalchemy.orm import Session
 from models import User, Photo, FaceMatch
 import uuid
+import io
+from PIL import Image
 
 class FaceRecognizer:
-    def __init__(self, tolerance=0.7):
+    def __init__(self, tolerance=0.6):
         self.tolerance = tolerance
         self.user_encodings = {}  # Cache des encodages des utilisateurs
 
     def load_user_encoding(self, user: User) -> Optional[np.ndarray]:
         """Charge l'encodage facial d'un utilisateur depuis sa selfie"""
-        if not user.selfie_path or not os.path.exists(user.selfie_path):
+        if not user.selfie_data:
             return None
         
         try:
-            image = face_recognition.load_image_file(user.selfie_path)
+            # Convertir les données binaires en image
+            image_data = io.BytesIO(user.selfie_data)
+            image = face_recognition.load_image_file(image_data)
             encodings = face_recognition.face_encodings(image)
             if encodings:
                 return encodings[0]
@@ -32,7 +36,7 @@ class FaceRecognizer:
     def get_all_user_encodings(self, db: Session) -> Dict[int, np.ndarray]:
         """Récupère tous les encodages des utilisateurs qui ont une selfie"""
         encodings = {}
-        users = db.query(User).filter(User.selfie_path.isnot(None)).all()
+        users = db.query(User).filter(User.selfie_data.isnot(None)).all()
         
         for user in users:
             encoding = self.load_user_encoding(user)
@@ -41,14 +45,15 @@ class FaceRecognizer:
         
         return encodings
 
-    def process_photo(self, photo_path: str, db: Session) -> List[Dict]:
+    def process_photo(self, photo_data: bytes, db: Session) -> List[Dict]:
         """Traite une photo et retourne les correspondances trouvées"""
-        if not os.path.exists(photo_path):
+        if not photo_data:
             return []
 
         try:
-            # Charger l'image
-            image = face_recognition.load_image_file(photo_path)
+            # Charger l'image depuis les données binaires
+            image_data = io.BytesIO(photo_data)
+            image = face_recognition.load_image_file(image_data)
             face_locations = face_recognition.face_locations(image)
             face_encodings = face_recognition.face_encodings(image, face_locations)
             
@@ -80,25 +85,23 @@ class FaceRecognizer:
             return matches
             
         except Exception as e:
-            print(f"Erreur lors du traitement de {photo_path}: {e}")
+            print(f"Erreur lors du traitement de la photo: {e}")
             return []
 
     def process_and_save_photo(self, photo_path: str, original_filename: str, 
                              photographer_id: Optional[int], db: Session) -> Photo:
         """Traite une photo, sauvegarde les correspondances et retourne l'objet Photo"""
         
+        # Lire le fichier et le convertir en données binaires
+        with open(photo_path, 'rb') as f:
+            photo_data = f.read()
+        
+        # Déterminer le type de contenu
+        content_type = self._get_content_type(original_filename)
+        
         # Générer un nom de fichier unique
         file_extension = os.path.splitext(original_filename)[1]
         unique_filename = f"{uuid.uuid4()}{file_extension}"
-        
-        # Créer le dossier de destination
-        upload_dir = "static/uploads/photos"
-        os.makedirs(upload_dir, exist_ok=True)
-        
-        # Copier le fichier
-        new_path = os.path.join(upload_dir, unique_filename)
-        import shutil
-        shutil.copy2(photo_path, new_path)
         
         # Trouver l'événement associé au photographe
         event_id = None
@@ -113,11 +116,12 @@ class FaceRecognizer:
         else:
             print("⚠️  Aucun photographe_id fourni")
         
-        # Créer l'enregistrement Photo
+        # Créer l'enregistrement Photo avec les données binaires
         photo = Photo(
             filename=unique_filename,
             original_filename=original_filename,
-            file_path=new_path,
+            photo_data=photo_data,
+            content_type=content_type,
             photo_type="uploaded",
             photographer_id=photographer_id,
             event_id=event_id
@@ -128,7 +132,7 @@ class FaceRecognizer:
         db.refresh(photo)
         
         # Traiter la reconnaissance faciale
-        matches = self.process_photo(new_path, db)
+        matches = self.process_photo(photo_data, db)
         
         # Sauvegarder les correspondances
         for match in matches:
@@ -146,24 +150,23 @@ class FaceRecognizer:
                                        photographer_id: int, event_id: int, db: Session) -> Photo:
         """Traite une photo pour un événement spécifique, sauvegarde les correspondances et retourne l'objet Photo"""
         
+        # Lire le fichier et le convertir en données binaires
+        with open(photo_path, 'rb') as f:
+            photo_data = f.read()
+        
+        # Déterminer le type de contenu
+        content_type = self._get_content_type(original_filename)
+        
         # Générer un nom de fichier unique
         file_extension = os.path.splitext(original_filename)[1]
         unique_filename = f"{uuid.uuid4()}{file_extension}"
         
-        # Créer le dossier de destination
-        upload_dir = "static/uploads/photos"
-        os.makedirs(upload_dir, exist_ok=True)
-        
-        # Copier le fichier
-        new_path = os.path.join(upload_dir, unique_filename)
-        import shutil
-        shutil.copy2(photo_path, new_path)
-        
-        # Créer l'enregistrement Photo avec l'event_id spécifique
+        # Créer l'enregistrement Photo avec les données binaires
         photo = Photo(
             filename=unique_filename,
             original_filename=original_filename,
-            file_path=new_path,
+            photo_data=photo_data,
+            content_type=content_type,
             photo_type="uploaded",
             photographer_id=photographer_id,
             event_id=event_id
@@ -174,7 +177,7 @@ class FaceRecognizer:
         db.refresh(photo)
         
         # Traiter la reconnaissance faciale pour cet événement spécifique
-        matches = self.process_photo_for_event(new_path, event_id, db)
+        matches = self.process_photo_for_event(photo_data, event_id, db)
         
         # Sauvegarder les correspondances
         for match in matches:
@@ -188,14 +191,15 @@ class FaceRecognizer:
         db.commit()
         return photo
 
-    def process_photo_for_event(self, photo_path: str, event_id: int, db: Session) -> List[Dict]:
+    def process_photo_for_event(self, photo_data: bytes, event_id: int, db: Session) -> List[Dict]:
         """Traite une photo et retourne les correspondances trouvées pour un événement spécifique"""
-        if not os.path.exists(photo_path):
+        if not photo_data:
             return []
 
         try:
-            # Charger l'image
-            image = face_recognition.load_image_file(photo_path)
+            # Charger l'image depuis les données binaires
+            image_data = io.BytesIO(photo_data)
+            image = face_recognition.load_image_file(image_data)
             face_locations = face_recognition.face_locations(image)
             face_encodings = face_recognition.face_encodings(image, face_locations)
             
@@ -209,7 +213,7 @@ class FaceRecognizer:
             
             users_with_selfies = db.query(User).filter(
                 User.id.in_(user_ids),
-                User.selfie_path.isnot(None)
+                User.selfie_data.isnot(None)
             ).all()
             
             # Charger les encodages des utilisateurs de cet événement
@@ -241,8 +245,21 @@ class FaceRecognizer:
             return matches
             
         except Exception as e:
-            print(f"Erreur lors du traitement de {photo_path}: {e}")
+            print(f"Erreur lors du traitement de la photo: {e}")
             return []
+
+    def _get_content_type(self, filename: str) -> str:
+        """Détermine le type MIME d'un fichier basé sur son extension"""
+        extension = os.path.splitext(filename)[1].lower()
+        content_types = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp',
+            '.webp': 'image/webp'
+        }
+        return content_types.get(extension, 'image/jpeg')
 
     def get_user_photos_with_face(self, user_id: int, db: Session) -> List[Photo]:
         """Récupère toutes les photos où un utilisateur apparaît"""
@@ -289,10 +306,11 @@ class FaceRecognizer:
         photos = db.query(Photo).filter(Photo.event_id == user_event.event_id).all()
         match_count = 0
         for photo in photos:
-            if not photo.file_path or not os.path.exists(photo.file_path):
+            if not photo.photo_data:
                 continue
             try:
-                image = face_recognition.load_image_file(photo.file_path)
+                image_data = io.BytesIO(photo.photo_data)
+                image = face_recognition.load_image_file(image_data)
                 face_locations = face_recognition.face_locations(image)
                 face_encodings = face_recognition.face_encodings(image, face_locations)
                 for face_encoding in face_encodings:
@@ -307,7 +325,7 @@ class FaceRecognizer:
                         db.add(face_match)
                         match_count += 1
             except Exception as e:
-                print(f"Erreur lors du matching selfie sur photo {photo.file_path}: {e}")
+                print(f"Erreur lors du matching selfie sur photo {photo.id}: {e}")
         db.commit()
         return match_count
 
@@ -329,10 +347,11 @@ class FaceRecognizer:
         photos = db.query(Photo).filter(Photo.event_id == event_id).all()
         match_count = 0
         for photo in photos:
-            if not photo.file_path or not os.path.exists(photo.file_path):
+            if not photo.photo_data:
                 continue
             try:
-                image = face_recognition.load_image_file(photo.file_path)
+                image_data = io.BytesIO(photo.photo_data)
+                image = face_recognition.load_image_file(image_data)
                 face_locations = face_recognition.face_locations(image)
                 face_encodings = face_recognition.face_encodings(image, face_locations)
                 for face_encoding in face_encodings:
@@ -347,6 +366,6 @@ class FaceRecognizer:
                         db.add(face_match)
                         match_count += 1
             except Exception as e:
-                print(f"Erreur lors du matching selfie sur photo {photo.file_path}: {e}")
+                print(f"Erreur lors du matching selfie sur photo {photo.id}: {e}")
         db.commit()
         return match_count

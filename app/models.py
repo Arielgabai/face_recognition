@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table, LargeBinary
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -41,6 +41,7 @@ class User(Base):
     hashed_password = Column(String)
     user_type = Column(String, default=UserType.USER)
     selfie_path = Column(String, nullable=True)
+    selfie_data = Column(LargeBinary, nullable=True)  # Données binaires de la selfie
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
@@ -57,7 +58,9 @@ class Photo(Base):
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String)
     original_filename = Column(String)
-    file_path = Column(String)
+    file_path = Column(String, nullable=True)  # Gardé pour compatibilité
+    photo_data = Column(LargeBinary, nullable=True)  # Données binaires de la photo
+    content_type = Column(String, default="image/jpeg")  # Type MIME de l'image
     photo_type = Column(String)  # 'group', 'selfie', 'uploaded'
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     photographer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
