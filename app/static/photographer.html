@@ -128,6 +128,29 @@
             margin-bottom: 20px;
             text-align: center;
         }
+        .event-selector {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #dee2e6;
+        }
+        .event-selector h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .event-selector select {
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 10px;
+        }
+        .current-event-info {
+            background-color: #e8f5e8;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border-left: 4px solid #28a745;
+        }
         .photo-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -258,6 +281,16 @@
                 <!-- Informations utilisateur -->
             </div>
             
+            <div id="eventSelector" class="event-selector">
+                <h4>🎯 Sélectionner un événement</h4>
+                <select id="eventSelect" onchange="switchEvent()">
+                    <option value="">Chargement des événements...</option>
+                </select>
+                <div id="currentEventInfo" class="current-event-info" style="display: none;">
+                    <!-- Informations de l'événement sélectionné -->
+                </div>
+            </div>
+            
             <div class="stats" id="stats">
                 <!-- Statistiques -->
             </div>
@@ -271,7 +304,7 @@
             <div id="upload-photos" class="tab-content active">
                 <h3>Ajouter des Photos</h3>
                 <div class="card">
-                    <p>Uploadez des photos pour votre événement :</p>
+                    <p>Uploadez des photos pour l'événement sélectionné :</p>
                     
                     <div class="upload-area" id="uploadArea">
                         <h4>📸 Glissez-déposez vos photos ici</h4>
@@ -296,7 +329,7 @@
             <div id="my-photos" class="tab-content">
                 <h3>Mes Photos</h3>
                 <div class="card">
-                    <p>Photos que vous avez uploadées :</p>
+                    <p>Photos que vous avez uploadées pour l'événement sélectionné :</p>
                     <div id="myPhotosList">Chargement...</div>
                 </div>
             </div>
@@ -313,6 +346,8 @@
     <script>
         let token = localStorage.getItem('token');
         let currentUser = null;
+        let currentEvent = null;
+        let userEvents = [];
 
         if (token) {
             loadDashboard();
@@ -359,6 +394,8 @@
             localStorage.removeItem('token');
             token = null;
             currentUser = null;
+            currentEvent = null;
+            userEvents = [];
             document.getElementById('loginForm').style.display = 'block';
             document.getElementById('dashboard').style.display = 'none';
         }
@@ -386,10 +423,8 @@
                     // Afficher les informations utilisateur
                     displayUserInfo();
                     
-                    // Charger les données
-                    loadStats();
-                    loadMyPhotos();
-                    loadEventInfo();
+                    // Charger les événements du photographe
+                    await loadPhotographerEvents();
                     
                     // Configurer l'upload
                     setupPhotoUpload();
@@ -413,19 +448,103 @@
             `;
         }
 
-        async function loadStats() {
+        async function loadPhotographerEvents() {
             try {
-                const [photosResponse, eventResponse] = await Promise.all([
-                    fetch('/api/my-uploaded-photos', {
-                        headers: { 'Authorization': `Bearer ${token}` },
-                    }),
-                    fetch('/api/photographer/my-event', {
+                const response = await fetch('/api/photographer/events', {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    userEvents = await response.json();
+                    populateEventSelector();
+                    
+                    // Sélectionner le premier événement par défaut
+                    if (userEvents.length > 0) {
+                        currentEvent = userEvents[0];
+                        document.getElementById('eventSelect').value = currentEvent.id;
+                        switchEvent();
+                    } else {
+                        showAlert('Aucun événement assigné à ce photographe', 'error');
+                    }
+                } else {
+                    showAlert('Erreur lors du chargement des événements', 'error');
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement des événements:', error);
+                showAlert('Erreur lors du chargement des événements', 'error');
+            }
+        }
+
+        function populateEventSelector() {
+            const eventSelect = document.getElementById('eventSelect');
+            eventSelect.innerHTML = '';
+            
+            if (userEvents.length === 0) {
+                eventSelect.innerHTML = '<option value="">Aucun événement assigné</option>';
+                return;
+            }
+            
+            userEvents.forEach(event => {
+                const option = document.createElement('option');
+                option.value = event.id;
+                option.textContent = `${event.name} (${event.event_code})`;
+                eventSelect.appendChild(option);
+            });
+        }
+
+        function switchEvent() {
+            const eventId = document.getElementById('eventSelect').value;
+            if (!eventId) {
+                currentEvent = null;
+                document.getElementById('currentEventInfo').style.display = 'none';
+                clearEventData();
+                return;
+            }
+            
+            currentEvent = userEvents.find(event => event.id == eventId);
+            if (currentEvent) {
+                displayCurrentEventInfo();
+                loadEventData();
+            }
+        }
+
+        function displayCurrentEventInfo() {
+            const currentEventInfo = document.getElementById('currentEventInfo');
+            currentEventInfo.innerHTML = `
+                <h5>🎯 Événement sélectionné : ${currentEvent.name}</h5>
+                <p><strong>Code :</strong> ${currentEvent.event_code}</p>
+                <p><strong>Date :</strong> ${currentEvent.date ? new Date(currentEvent.date).toLocaleDateString() : 'Non définie'}</p>
+            `;
+            currentEventInfo.style.display = 'block';
+        }
+
+        function clearEventData() {
+            document.getElementById('stats').innerHTML = '';
+            document.getElementById('myPhotosList').innerHTML = '<p style="color: #666;">Aucun événement sélectionné</p>';
+            document.getElementById('eventInfo').innerHTML = '<p style="color: #666;">Aucun événement sélectionné</p>';
+        }
+
+        async function loadEventData() {
+            if (!currentEvent) return;
+            
+            await Promise.all([
+                loadStats(),
+                loadMyPhotos(),
+                loadEventInfo()
+            ]);
+        }
+
+        async function loadStats() {
+            if (!currentEvent) return;
+            
+            try {
+                const [photosResponse] = await Promise.all([
+                    fetch(`/api/photographer/events/${currentEvent.id}/photos`, {
                         headers: { 'Authorization': `Bearer ${token}` },
                     })
                 ]);
 
                 const photos = photosResponse.ok ? await photosResponse.json() : [];
-                const hasEvent = eventResponse.ok;
 
                 document.getElementById('stats').innerHTML = `
                     <div class="stat-card">
@@ -433,8 +552,12 @@
                         <div class="stat-label">Photos uploadées</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number">${hasEvent ? 1 : 0}</div>
-                        <div class="stat-label">Événement assigné</div>
+                        <div class="stat-number">${userEvents.length}</div>
+                        <div class="stat-label">Événements assignés</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${currentEvent.name}</div>
+                        <div class="stat-label">Événement actuel</div>
                     </div>
                 `;
             } catch (error) {
@@ -443,8 +566,10 @@
         }
 
         async function loadMyPhotos() {
+            if (!currentEvent) return;
+            
             try {
-                const response = await fetch('/api/my-uploaded-photos', {
+                const response = await fetch(`/api/photographer/events/${currentEvent.id}/photos`, {
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
 
@@ -453,7 +578,7 @@
                 if (response.ok) {
                     const photos = await response.json();
                     if (photos.length === 0) {
-                        container.innerHTML = '<p style="color: #666;">Aucune photo uploadée pour le moment</p>';
+                        container.innerHTML = '<p style="color: #666;">Aucune photo uploadée pour cet événement</p>';
                     } else {
                         container.innerHTML = `
                             <div class="photo-grid">
@@ -481,24 +606,17 @@
         }
 
         async function loadEventInfo() {
+            if (!currentEvent) return;
+            
             try {
-                const response = await fetch('/api/photographer/my-event', {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-
                 const container = document.getElementById('eventInfo');
-                
-                if (response.ok) {
-                    const myEvent = await response.json();
-                    container.innerHTML = `
-                        <h4>${myEvent.name}</h4>
-                        <p><strong>Code événement:</strong> ${myEvent.event_code}</p>
-                        <p><strong>Date:</strong> ${myEvent.date ? new Date(myEvent.date).toLocaleDateString() : 'Non définie'}</p>
-                        <p><strong>Photographe:</strong> ${currentUser.username}</p>
-                    `;
-                } else {
-                    container.innerHTML = '<p style="color: #666;">Aucun événement assigné</p>';
-                }
+                container.innerHTML = `
+                    <h4>${currentEvent.name}</h4>
+                    <p><strong>Code événement:</strong> ${currentEvent.event_code}</p>
+                    <p><strong>Date:</strong> ${currentEvent.date ? new Date(currentEvent.date).toLocaleDateString() : 'Non définie'}</p>
+                    <p><strong>Photographe:</strong> ${currentUser.username}</p>
+                    <p><strong>ID Événement:</strong> ${currentEvent.id}</p>
+                `;
             } catch (error) {
                 console.error('Erreur lors du chargement des informations:', error);
                 document.getElementById('eventInfo').innerHTML = '<p style="color: #666;">Erreur lors du chargement des informations</p>';
@@ -562,6 +680,10 @@
         function handleFileSelection() {
             const files = document.getElementById('photoFiles').files;
             if (files.length > 0) {
+                if (!currentEvent) {
+                    showAlert('Veuillez sélectionner un événement avant d\'uploader des photos', 'error');
+                    return;
+                }
                 document.getElementById('uploadPreview').style.display = 'block';
                 displayPreview(files);
             }
@@ -596,6 +718,11 @@
         }
 
         async function uploadPhotos() {
+            if (!currentEvent) {
+                showAlert('Veuillez sélectionner un événement avant d\'uploader des photos', 'error');
+                return;
+            }
+
             const files = document.getElementById('photoFiles').files;
             if (files.length === 0) {
                 showAlert('Veuillez sélectionner des photos', 'error');
@@ -611,7 +738,7 @@
                     formData.append('files', file);
                 });
 
-                const response = await fetch('/api/upload-photos', {
+                const response = await fetch(`/api/photographer/events/${currentEvent.id}/upload-photos`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` },
                     body: formData
