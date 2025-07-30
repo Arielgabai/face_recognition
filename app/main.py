@@ -47,6 +47,21 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Initialiser le recognizer
 face_recognizer = FaceRecognizer()
 
+def photo_to_dict(photo: Photo) -> dict:
+    """Convertit un objet Photo en dictionnaire sans les données binaires"""
+    return {
+        "id": photo.id,
+        "filename": photo.filename,
+        "original_filename": photo.original_filename,
+        "file_path": photo.file_path,
+        "content_type": photo.content_type,
+        "photo_type": photo.photo_type,
+        "user_id": photo.user_id,
+        "photographer_id": photo.photographer_id,
+        "uploaded_at": photo.uploaded_at,
+        "event_id": photo.event_id
+    }
+
 # Créer les dossiers nécessaires
 os.makedirs("static/uploads/selfies", exist_ok=True)
 os.makedirs("static/uploads/photos", exist_ok=True)
@@ -457,7 +472,9 @@ async def get_all_photos(
         raise HTTPException(status_code=404, detail="Aucun événement associé à cet utilisateur")
     event_id = user_event.event_id
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
-    return photos
+    
+    # Retourner seulement les métadonnées, pas les données binaires
+    return [photo_to_dict(photo) for photo in photos]
 
 @app.get("/api/my-uploaded-photos", response_model=List[PhotoSchema])
 async def get_my_uploaded_photos(
@@ -472,7 +489,24 @@ async def get_my_uploaded_photos(
         Photo.photographer_id == current_user.id,
         Photo.photo_type == "uploaded"
     ).all()
-    return photos
+    
+    # Retourner seulement les métadonnées, pas les données binaires
+    photo_list = []
+    for photo in photos:
+        photo_list.append({
+            "id": photo.id,
+            "filename": photo.filename,
+            "original_filename": photo.original_filename,
+            "file_path": photo.file_path,
+            "content_type": photo.content_type,
+            "photo_type": photo.photo_type,
+            "user_id": photo.user_id,
+            "photographer_id": photo.photographer_id,
+            "uploaded_at": photo.uploaded_at,
+            "event_id": photo.event_id
+        })
+    
+    return photo_list
 
 @app.get("/api/profile", response_model=UserProfile)
 async def get_user_profile(
@@ -889,7 +923,24 @@ async def get_event_photos(
         raise HTTPException(status_code=404, detail="Événement non trouvé")
     
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
-    return photos
+    
+    # Retourner seulement les métadonnées, pas les données binaires
+    photo_list = []
+    for photo in photos:
+        photo_list.append({
+            "id": photo.id,
+            "filename": photo.filename,
+            "original_filename": photo.original_filename,
+            "file_path": photo.file_path,
+            "content_type": photo.content_type,
+            "photo_type": photo.photo_type,
+            "user_id": photo.user_id,
+            "photographer_id": photo.photographer_id,
+            "uploaded_at": photo.uploaded_at,
+            "event_id": photo.event_id
+        })
+    
+    return photo_list
 
 @app.post("/api/photographer/events/{event_id}/upload-photos")
 async def upload_photos_to_event(
@@ -993,7 +1044,23 @@ async def get_user_event_photos(
         Photo.event_id == event_id
     ).all()
     
-    return photos
+    # Retourner seulement les métadonnées, pas les données binaires
+    photo_list = []
+    for photo in photos:
+        photo_list.append({
+            "id": photo.id,
+            "filename": photo.filename,
+            "original_filename": photo.original_filename,
+            "file_path": photo.file_path,
+            "content_type": photo.content_type,
+            "photo_type": photo.photo_type,
+            "user_id": photo.user_id,
+            "photographer_id": photo.photographer_id,
+            "uploaded_at": photo.uploaded_at,
+            "event_id": photo.event_id
+        })
+    
+    return photo_list
 
 @app.get("/api/user/events/{event_id}/all-photos")
 async def get_all_event_photos(
@@ -1017,7 +1084,23 @@ async def get_all_event_photos(
     # Récupérer toutes les photos de l'événement
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     
-    return photos
+    # Retourner seulement les métadonnées, pas les données binaires
+    photo_list = []
+    for photo in photos:
+        photo_list.append({
+            "id": photo.id,
+            "filename": photo.filename,
+            "original_filename": photo.original_filename,
+            "file_path": photo.file_path,
+            "content_type": photo.content_type,
+            "photo_type": photo.photo_type,
+            "user_id": photo.user_id,
+            "photographer_id": photo.photographer_id,
+            "uploaded_at": photo.uploaded_at,
+            "event_id": photo.event_id
+        })
+    
+    return photo_list
 
 # === ROUTES POUR LES CODES ÉVÉNEMENT MANUELS ===
 
