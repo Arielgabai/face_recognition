@@ -973,8 +973,14 @@
             document.getElementById('myPhotosList').innerHTML = '';
             document.getElementById('allPhotosList').innerHTML = '';
             
-            // Rediriger vers la page d'accueil pour éviter les problèmes de cache
-            window.location.href = '/';
+            // Fermer le menu hamburger s'il est ouvert
+            document.getElementById('hamburgerMenu').classList.remove('active');
+            
+            // Fermer le modal de profil s'il est ouvert
+            document.getElementById('profileModal').classList.remove('active');
+            
+            // Forcer le rechargement de la page pour s'assurer que tout est bien réinitialisé
+            window.location.reload();
             
             console.log('Déconnexion effectuée - session nettoyée');
         }
@@ -1298,9 +1304,11 @@
                 }
             }).then(selfieData => {
                 if (selfieData.user_id) {
+                    // Utiliser un timestamp unique pour éviter le cache
                     const timestamp = new Date().getTime();
+                    const randomId = Math.random().toString(36).substring(7);
                     profileSelfie.innerHTML = `
-                        <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}" 
+                        <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}&r=${randomId}" 
                              alt="Votre selfie" class="selfie-preview" style="display: block;">
                         <p style="margin-top: 15px; color: #9ca3af; text-align: center;">
                             Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
@@ -1395,10 +1403,13 @@
                     showAlert('Selfie mise à jour avec succès !', 'success');
                     // Fermer le modal
                     document.querySelector('.modal-overlay.active').remove();
-                    // Recharger la selfie dans le profil
-                    loadProfileSelfie();
-                    // Recharger les photos pour mettre à jour les correspondances
-                    loadMyPhotos();
+                    // Attendre un peu pour que le serveur traite la mise à jour
+                    setTimeout(() => {
+                        // Recharger la selfie dans le profil avec cache-busting
+                        loadProfileSelfie();
+                        // Recharger les photos pour mettre à jour les correspondances
+                        loadMyPhotos();
+                    }, 500);
                 } else {
                     showAlert(data.detail || 'Erreur lors de la mise à jour', 'error');
                 }
