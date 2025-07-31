@@ -25,7 +25,7 @@ class User(UserBase):
     id: int
     is_active: bool
     created_at: datetime
-    selfie_path: Optional[str] = None
+    selfie_path: Optional[str] = None  # Peut être None car les selfies sont stockées en binaire
 
     class Config:
         from_attributes = True
@@ -48,7 +48,7 @@ class PhotoCreate(PhotoBase):
 class Photo(PhotoBase):
     id: int
     filename: str
-    file_path: str
+    file_path: Optional[str] = None  # Peut être None car les photos sont stockées en binaire
     user_id: Optional[int] = None
     photographer_id: Optional[int] = None
     uploaded_at: datetime
