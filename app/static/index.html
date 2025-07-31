@@ -4,335 +4,631 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Recognition App</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
-            background-color: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
+
+        .header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
+            padding: 20px 0;
         }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        input, select, textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-            box-sizing: border-box;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-right: 10px;
+
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            background: linear-gradient(45deg, #4ade80, #22c55e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
             margin-bottom: 10px;
         }
-        button:hover {
-            background-color: #0056b3;
+
+        .subtitle {
+            color: #9ca3af;
+            font-size: 1.1rem;
+            font-weight: 300;
         }
-        button.danger {
-            background-color: #dc3545;
+
+        /* Login Form */
+        .login-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 400px;
+            margin: 0 auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
-        button.danger:hover {
-            background-color: #c82333;
+
+        .form-group {
+            margin-bottom: 25px;
         }
-        button.success {
-            background-color: #28a745;
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #e5e7eb;
+            font-weight: 500;
+            font-size: 0.9rem;
         }
-        button.success:hover {
-            background-color: #218838;
+
+        .form-input {
+            width: 100%;
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
         }
-        .alert {
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 5px;
+
+        .form-input:focus {
+            outline: none;
+            border-color: #4ade80;
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.1);
         }
-        .alert-success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+
+        .form-input::placeholder {
+            color: #9ca3af;
         }
-        .alert-error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #4ade80, #22c55e);
+            color: #ffffff;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(74, 222, 128, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-danger {
+            background: linear-gradient(45deg, #ef4444, #dc2626);
+            color: #ffffff;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-success {
+            background: linear-gradient(45deg, #4ade80, #22c55e);
+            color: #ffffff;
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(74, 222, 128, 0.3);
+        }
+
+        /* Dashboard */
+        .dashboard {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dashboard-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .user-info {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.2);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .user-info h3 {
+            color: #4ade80;
+            margin-bottom: 10px;
+            font-size: 1.3rem;
+        }
+
+        .user-info p {
+            color: #d1d5db;
+            margin: 5px 0;
+            font-size: 0.9rem;
+        }
+
+        /* Tabs */
         .tabs {
             display: flex;
-            margin-bottom: 20px;
-            border-bottom: 1px solid #ddd;
+            gap: 10px;
+            margin-bottom: 30px;
             flex-wrap: wrap;
         }
+
         .tab {
-            padding: 10px 20px;
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            color: #9ca3af;
             cursor: pointer;
-            border: none;
-            background: none;
-            color: #666;
-            white-space: nowrap;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            font-size: 0.9rem;
         }
+
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+        }
+
         .tab.active {
-            color: #007bff;
-            border-bottom: 2px solid #007bff;
+            background: linear-gradient(45deg, #4ade80, #22c55e);
+            color: #ffffff;
+            border-color: #4ade80;
         }
+
         .tab-content {
             display: none;
         }
+
         .tab-content.active {
             display: block;
         }
-        .grid {
+
+        /* Cards */
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+
+        .card h3 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        .card h4 {
+            color: #e5e7eb;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        /* Selfie */
+        .selfie-preview {
+            max-width: 250px;
+            max-height: 250px;
+            border-radius: 15px;
+            border: 3px solid rgba(74, 222, 128, 0.3);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+            margin: 15px 0;
+        }
+
+        .selfie-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        /* File Upload */
+        .file-input-wrapper {
+            position: relative;
+            margin: 20px 0;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-wrapper label {
+            display: block;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 2px dashed rgba(74, 222, 128, 0.3);
+            border-radius: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #9ca3af;
+        }
+
+        .file-input-wrapper label:hover {
+            border-color: #4ade80;
+            background: rgba(74, 222, 128, 0.05);
+            color: #4ade80;
+        }
+
+        /* Photo Grid */
+        .photo-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
             gap: 20px;
             margin-top: 20px;
         }
-        .card {
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 20px;
-            background: white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .card h3 {
-            margin-top: 0;
-            color: #333;
-        }
-        .selfie-preview {
-            max-width: 200px;
-            max-height: 200px;
-            margin: 10px 0;
-            border-radius: 5px;
-            border: 2px solid #ddd;
-        }
-        .file-input-wrapper {
-            position: relative;
-            display: inline-block;
-            width: 100%;
-        }
-        .file-input-wrapper input[type=file] {
-            position: absolute;
-            left: -9999px;
-        }
-        .file-input-wrapper label {
-            display: block;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border: 2px dashed #ddd;
-            border-radius: 5px;
-            text-align: center;
-            cursor: pointer;
-            transition: border-color 0.3s;
-        }
-        .file-input-wrapper label:hover {
-            border-color: #007bff;
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            margin: 20px 0;
-        }
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #007bff;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .user-info {
-            background-color: #e3f2fd;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .photo-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
+
         .photo-item {
-            border: 1px solid #ddd;
-            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
             overflow: hidden;
-            background: white;
+            transition: all 0.3s ease;
         }
+
+        .photo-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+
         .photo-item img {
             width: 100%;
             height: 200px;
             object-fit: cover;
         }
+
         .photo-info {
-            padding: 10px;
-            font-size: 14px;
-            color: #666;
+            padding: 15px;
+            color: #d1d5db;
+            font-size: 0.9rem;
         }
+
+        .photo-info p {
+            margin: 5px 0;
+        }
+
+        /* Upload Area */
         .upload-area {
-            border: 2px dashed #ddd;
-            border-radius: 10px;
+            border: 2px dashed rgba(74, 222, 128, 0.3);
+            border-radius: 15px;
             padding: 40px;
             text-align: center;
-            background-color: #f8f9fa;
+            background: rgba(255, 255, 255, 0.05);
             margin-bottom: 20px;
-            transition: border-color 0.3s;
+            transition: all 0.3s ease;
+            cursor: pointer;
         }
+
         .upload-area:hover {
-            border-color: #007bff;
+            border-color: #4ade80;
+            background: rgba(74, 222, 128, 0.05);
         }
+
         .upload-area.dragover {
-            border-color: #007bff;
-            background-color: #e3f2fd;
+            border-color: #4ade80;
+            background: rgba(74, 222, 128, 0.1);
         }
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
+
+        /* Alerts */
+        .alert {
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
         }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .alert-success {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: #4ade80;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #4ade80;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Empty States */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .empty-state h4 {
+            color: #e5e7eb;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+
+        .empty-state p {
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        /* Responsive */
         @media (max-width: 768px) {
-            .form-row {
-                grid-template-columns: 1fr;
+            .container {
+                padding: 15px;
             }
-            .grid {
-                grid-template-columns: 1fr;
+            
+            .dashboard {
+                padding: 20px;
             }
+            
+            .tabs {
+                flex-direction: column;
+            }
+            
             .photo-grid {
                 grid-template-columns: 1fr;
             }
+            
+            .selfie-actions {
+                flex-direction: column;
+            }
+            
+            .logo {
+                font-size: 2rem;
+            }
+        }
+
+        /* Powered by section */
+        .powered-by {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: #9ca3af;
+            font-size: 0.8rem;
+        }
+
+        .powered-by-logo {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(45deg, #4ade80, #22c55e);
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📸 Face Recognition App</h1>
+        <div class="header">
+            <div class="logo">Face Recognition</div>
+            <div class="subtitle">Reconnaissance faciale intelligente</div>
+        </div>
         
         <div id="loginForm">
-            <h2>Connexion</h2>
-            <div class="form-group">
-                <label for="username">Nom d'utilisateur:</label>
-                <input type="text" id="username" required>
+            <div class="login-container">
+                <h2 style="text-align: center; margin-bottom: 30px; color: #ffffff; font-size: 1.5rem;">Connexion</h2>
+                <div class="form-group">
+                    <label for="username">Nom d'utilisateur</label>
+                    <input type="text" id="username" class="form-input" required placeholder="Entrez votre nom d'utilisateur">
+                </div>
+                <div class="form-group">
+                    <label for="password">Mot de passe</label>
+                    <input type="password" id="password" class="form-input" required placeholder="Entrez votre mot de passe">
+                </div>
+                <button onclick="login()" class="btn btn-primary">Se connecter</button>
             </div>
-            <div class="form-group">
-                <label for="password">Mot de passe:</label>
-                <input type="password" id="password" required>
-            </div>
-            <button onclick="login()">Se connecter</button>
         </div>
 
         <div id="dashboard" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2>Tableau de bord</h2>
-                <button onclick="logout()" class="danger">Déconnexion</button>
-            </div>
-            
-            <div id="userInfo" class="user-info">
-                <!-- Informations utilisateur -->
-            </div>
-            
-            <div class="tabs">
-                <button class="tab active" onclick="showTab('selfie')">👤 Ma Selfie</button>
-                <button class="tab" onclick="showTab('my-photos')">📷 Mes Photos</button>
-                <button class="tab" onclick="showTab('all-photos')">🖼️ Toutes les Photos</button>
-                <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤 Ajouter des Photos</button>
-            </div>
+            <div class="dashboard">
+                <div class="dashboard-header">
+                    <h2 class="dashboard-title">Tableau de bord</h2>
+                    <button onclick="logout()" class="btn btn-danger">Déconnexion</button>
+                </div>
+                
+                <div id="userInfo" class="user-info">
+                    <!-- Informations utilisateur -->
+                </div>
+                
+                <div class="tabs">
+                    <button class="tab active" onclick="showTab('selfie')">👤 Ma Selfie</button>
+                    <button class="tab" onclick="showTab('my-photos')">📷 Mes Photos</button>
+                    <button class="tab" onclick="showTab('all-photos')">🖼️ Toutes les Photos</button>
+                    <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤 Ajouter des Photos</button>
+                </div>
 
-            <div id="selfie" class="tab-content active">
-                <h3>Ma Selfie</h3>
-                <div class="card">
-                    <div id="selfieDisplay">
-                        <h4>Votre selfie actuelle</h4>
-                        <div id="currentSelfie">Chargement...</div>
-                    </div>
-                    
-                    <div id="selfieUpload" style="display: none;">
-                        <h4>Modifier votre selfie</h4>
-                        <div class="file-input-wrapper">
-                            <input type="file" id="selfieFile" accept="image/*">
-                            <label for="selfieFile">
-                                📸 Cliquez ici pour sélectionner une nouvelle selfie
-                            </label>
+                <div id="selfie" class="tab-content active">
+                    <div class="card">
+                        <h3>Ma Selfie</h3>
+                        <div id="selfieDisplay">
+                            <h4>Votre selfie actuelle</h4>
+                            <div id="currentSelfie">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📸</div>
+                                    <h4>Aucune selfie téléchargée</h4>
+                                    <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
+                                </div>
+                            </div>
                         </div>
-                        <img id="selfiePreview" class="selfie-preview" alt="Aperçu de la selfie" style="display: none;">
-                        <button onclick="updateSelfie()" class="success">Mettre à jour la selfie</button>
-                        <button onclick="cancelSelfieUpdate()" class="danger">Annuler</button>
-                    </div>
-                    
-                    <div id="selfieActions">
-                        <button onclick="showSelfieUpload()" class="success">Modifier ma selfie</button>
-                        <button onclick="deleteSelfie()" class="danger">Supprimer ma selfie</button>
+                        
+                        <div id="selfieUpload" style="display: none;">
+                            <h4>Modifier votre selfie</h4>
+                            <div class="file-input-wrapper">
+                                <input type="file" id="selfieFile" accept="image/*">
+                                <label for="selfieFile">
+                                    📸 Cliquez ici pour sélectionner une nouvelle selfie
+                                </label>
+                            </div>
+                            <img id="selfiePreview" class="selfie-preview" alt="Aperçu de la selfie" style="display: none;">
+                            <div class="selfie-actions">
+                                <button onclick="updateSelfie()" class="btn btn-success">Mettre à jour la selfie</button>
+                                <button onclick="cancelSelfieUpdate()" class="btn btn-secondary">Annuler</button>
+                            </div>
+                        </div>
+                        
+                        <div id="selfieActions">
+                            <div class="selfie-actions">
+                                <button onclick="showSelfieUpload()" class="btn btn-success">Modifier ma selfie</button>
+                                <button onclick="deleteSelfie()" class="btn btn-danger">Supprimer ma selfie</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div id="my-photos" class="tab-content">
-                <h3>Mes Photos</h3>
-                <div class="card">
-                    <p>Photos où vous avez été reconnu grâce à votre selfie :</p>
-                    <div id="myPhotosList">Chargement...</div>
+                <div id="my-photos" class="tab-content">
+                    <div class="card">
+                        <h3>Mes Photos</h3>
+                        <p style="color: #9ca3af; margin-bottom: 20px;">Photos où vous avez été reconnu grâce à votre selfie :</p>
+                        <div id="myPhotosList">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🖼️</div>
+                                <h4>Aucune photo trouvée</h4>
+                                <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <div id="all-photos" class="tab-content">
-                <h3>Toutes les Photos</h3>
-                <div class="card">
-                    <p>Photos de votre événement :</p>
-                    <div id="allPhotosList">Chargement...</div>
+                <div id="all-photos" class="tab-content">
+                    <div class="card">
+                        <h3>Toutes les Photos</h3>
+                        <p style="color: #9ca3af; margin-bottom: 20px;">Photos de votre événement :</p>
+                        <div id="allPhotosList">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📷</div>
+                                <h4>Aucune photo disponible</h4>
+                                <p>Les photos de votre événement apparaîtront ici</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <div id="upload-photos" class="tab-content">
-                <h3>Ajouter des Photos</h3>
-                <div class="card">
-                    <p>En tant que photographe, vous pouvez ajouter des photos à votre événement :</p>
-                    
-                    <div class="upload-area" id="uploadArea">
-                        <h4>📸 Glissez-déposez vos photos ici</h4>
-                        <p>ou cliquez pour sélectionner des fichiers</p>
-                        <input type="file" id="photoFiles" multiple accept="image/*" style="display: none;">
-                    </div>
-                    
-                    <div id="uploadPreview" style="display: none;">
-                        <h4>Photos sélectionnées :</h4>
-                        <div id="previewGrid" class="photo-grid"></div>
-                        <button onclick="uploadPhotos()" class="success">Télécharger les photos</button>
-                        <button onclick="cancelUpload()" class="danger">Annuler</button>
-                    </div>
-                    
-                    <div class="loading" id="uploadLoading">
-                        <div class="spinner"></div>
-                        <p>Téléchargement en cours...</p>
+                <div id="upload-photos" class="tab-content">
+                    <div class="card">
+                        <h3>Ajouter des Photos</h3>
+                        <p style="color: #9ca3af; margin-bottom: 20px;">En tant que photographe, vous pouvez ajouter des photos à votre événement :</p>
+                        
+                        <div class="upload-area" id="uploadArea">
+                            <h4>📸 Glissez-déposez vos photos ici</h4>
+                            <p style="color: #9ca3af;">ou cliquez pour sélectionner des fichiers</p>
+                            <input type="file" id="photoFiles" multiple accept="image/*" style="display: none;">
+                        </div>
+                        
+                        <div id="uploadPreview" style="display: none;">
+                            <h4>Photos sélectionnées :</h4>
+                            <div id="previewGrid" class="photo-grid"></div>
+                            <div style="margin-top: 20px;">
+                                <button onclick="uploadPhotos()" class="btn btn-success">Télécharger les photos</button>
+                                <button onclick="cancelUpload()" class="btn btn-secondary">Annuler</button>
+                            </div>
+                        </div>
+                        
+                        <div class="loading" id="uploadLoading">
+                            <div class="spinner"></div>
+                            <p style="color: #9ca3af;">Téléchargement en cours...</p>
+                        </div>
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div class="powered-by">
+            <span class="powered-by-logo"></span>
+            powered by Face Recognition AI
         </div>
     </div>
 
@@ -470,15 +766,27 @@
                         selfieDisplay.innerHTML = `
                             <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}" 
                                  alt="Votre selfie" class="selfie-preview" style="display: block;">
-                            <p style="margin-top: 10px; color: #666;">
+                            <p style="margin-top: 15px; color: #9ca3af; text-align: center;">
                                 Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
                             </p>
                         `;
                     } else {
-                        selfieDisplay.innerHTML = '<p style="color: #666;">Aucune selfie téléchargée</p>';
+                        selfieDisplay.innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📸</div>
+                                <h4>Aucune selfie téléchargée</h4>
+                                <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
+                            </div>
+                        `;
                     }
                 } else {
-                    selfieDisplay.innerHTML = '<p style="color: #666;">Aucune selfie téléchargée</p>';
+                    selfieDisplay.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📸</div>
+                            <h4>Aucune selfie téléchargée</h4>
+                            <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
+                        </div>
+                    `;
                 }
             } catch (error) {
                 console.error('Erreur lors du chargement de la selfie:', error);
@@ -586,7 +894,13 @@
                 if (response.ok) {
                     const photos = await response.json();
                     if (photos.length === 0) {
-                        container.innerHTML = '<p style="color: #666;">Aucune photo trouvée pour le moment</p>';
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🖼️</div>
+                                <h4>Aucune photo trouvée</h4>
+                                <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
+                            </div>
+                        `;
                     } else {
                         container.innerHTML = `
                             <div class="photo-grid">
@@ -603,7 +917,13 @@
                         `;
                     }
                 } else {
-                    container.innerHTML = '<p style="color: #666;">Erreur lors du chargement des photos</p>';
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚠️</div>
+                            <h4>Erreur lors du chargement</h4>
+                            <p>Impossible de charger vos photos pour le moment</p>
+                        </div>
+                    `;
                 }
             } catch (error) {
                 console.error('Erreur lors du chargement des photos:', error);
@@ -621,7 +941,13 @@
                 if (response.ok) {
                     const photos = await response.json();
                     if (photos.length === 0) {
-                        container.innerHTML = '<p style="color: #666;">Aucune photo disponible pour le moment</p>';
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📷</div>
+                                <h4>Aucune photo disponible</h4>
+                                <p>Les photos de votre événement apparaîtront ici</p>
+                            </div>
+                        `;
                     } else {
                         container.innerHTML = `
                             <div class="photo-grid">
@@ -638,7 +964,13 @@
                         `;
                     }
                 } else {
-                    container.innerHTML = '<p style="color: #666;">Erreur lors du chargement des photos</p>';
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚠️</div>
+                            <h4>Erreur lors du chargement</h4>
+                            <p>Impossible de charger les photos pour le moment</p>
+                        </div>
+                    `;
                 }
             } catch (error) {
                 console.error('Erreur lors du chargement des photos:', error);
@@ -768,5 +1100,4 @@
         }
     </script>
 </body>
-</html> 
 </html> 
