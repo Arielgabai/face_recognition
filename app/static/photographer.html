@@ -391,13 +391,32 @@
         }
 
         function logout() {
+            // Nettoyer complètement le localStorage
             localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('currentUser');
+            
+            // Réinitialiser les variables
             token = null;
             currentUser = null;
             currentEvent = null;
             userEvents = [];
+            
+            // Nettoyer les formulaires
+            document.getElementById('loginForm').reset();
+            
+            // Masquer le dashboard et afficher le formulaire de connexion
             document.getElementById('loginForm').style.display = 'block';
             document.getElementById('dashboard').style.display = 'none';
+            
+            // Nettoyer l'affichage
+            document.getElementById('myPhotos').innerHTML = '';
+            document.getElementById('eventInfo').innerHTML = '';
+            
+            // Rediriger vers la page d'accueil pour éviter les problèmes de cache
+            window.location.href = '/';
+            
+            console.log('Déconnexion effectuée - session nettoyée');
         }
 
         async function loadDashboard() {

@@ -382,11 +382,32 @@
         }
 
         function logout() {
+            // Nettoyer complètement le localStorage
             localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('currentUser');
+            
+            // Réinitialiser les variables
             token = null;
             currentUser = null;
+            
+            // Nettoyer les formulaires
+            document.getElementById('loginForm').reset();
+            document.getElementById('selfieFile').value = '';
+            
+            // Masquer le dashboard et afficher le formulaire de connexion
             document.getElementById('loginForm').style.display = 'block';
             document.getElementById('dashboard').style.display = 'none';
+            
+            // Nettoyer l'affichage
+            document.getElementById('currentSelfie').innerHTML = '';
+            document.getElementById('myPhotos').innerHTML = '';
+            document.getElementById('allPhotos').innerHTML = '';
+            
+            // Rediriger vers la page d'accueil pour éviter les problèmes de cache
+            window.location.href = '/';
+            
+            console.log('Déconnexion effectuée - session nettoyée');
         }
 
         async function loadDashboard() {
@@ -444,8 +465,10 @@
                 if (response.ok) {
                     const selfieData = await response.json();
                     if (selfieData.user_id) {
+                        // Ajouter un timestamp pour éviter le cache
+                        const timestamp = new Date().getTime();
                         selfieDisplay.innerHTML = `
-                            <img src="/api/selfie/${selfieData.user_id}" 
+                            <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}" 
                                  alt="Votre selfie" class="selfie-preview" style="display: block;">
                             <p style="margin-top: 10px; color: #666;">
                                 Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
@@ -513,9 +536,13 @@
                 if (response.ok) {
                     showAlert('Selfie mise à jour avec succès !', 'success');
                     cancelSelfieUpdate();
-                    loadSelfie();
-                    // Recharger les photos pour mettre à jour les correspondances
-                    loadMyPhotos();
+                    
+                    // Attendre un peu avant de recharger pour s'assurer que le serveur a traité l'upload
+                    setTimeout(() => {
+                        loadSelfie();
+                        // Recharger les photos pour mettre à jour les correspondances
+                        loadMyPhotos();
+                    }, 500);
                 } else {
                     showAlert(data.detail || 'Erreur lors de la mise à jour', 'error');
                 }

@@ -57,7 +57,8 @@ def debug_photo_access():
         
         # 4. Vérifier les photos par événement
         print("\n📊 4. Vérification des photos par événement:")
-        event_photos = db.query(Photo.event_id, db.func.count(Photo.id)).group_by(Photo.event_id).all()
+        from sqlalchemy import func
+        event_photos = db.query(Photo.event_id, func.count(Photo.id)).group_by(Photo.event_id).all()
         
         for event_id, count in event_photos:
             photos_with_data = db.query(Photo).filter(
