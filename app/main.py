@@ -1382,12 +1382,33 @@ async def get_photographer_event(
 
 @app.get("/{full_path:path}")
 async def catch_all(full_path: str):
-    """Route catch-all pour servir le frontend HTML"""
+    """Route catch-all pour servir le frontend HTML ou retourner une erreur 404"""
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
     
-    try:
-        with open("static/index.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>Face Recognition API</h1><p>Frontend not found</p>")
+    # Vérifier si c'est une route valide pour le frontend
+    valid_frontend_routes = ["", "admin", "photographer", "register"]
+    
+    # Si c'est une route valide, servir le frontend approprié
+    if full_path in valid_frontend_routes:
+        try:
+            if full_path == "admin":
+                with open("static/admin.html", "r", encoding="utf-8") as f:
+                    return HTMLResponse(content=f.read())
+            elif full_path == "photographer":
+                with open("static/photographer.html", "r", encoding="utf-8") as f:
+                    return HTMLResponse(content=f.read())
+            elif full_path == "register":
+                with open("static/register.html", "r", encoding="utf-8") as f:
+                    return HTMLResponse(content=f.read())
+            else:  # Route racine
+                with open("static/index.html", "r", encoding="utf-8") as f:
+                    return HTMLResponse(content=f.read())
+        except FileNotFoundError:
+            return HTMLResponse(content="<h1>Face Recognition API</h1><p>Frontend not found</p>")
+    
+    # Pour toutes les autres URLs, retourner une erreur 404
+    raise HTTPException(
+        status_code=404, 
+        detail=f"Page not found: /{full_path}"
+    )
