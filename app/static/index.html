@@ -489,6 +489,265 @@
             margin-right: 8px;
             vertical-align: middle;
         }
+
+        /* Hamburger Menu */
+        .hamburger-menu {
+            position: relative;
+            display: inline-block;
+        }
+
+        .hamburger-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .hamburger-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .hamburger-icon {
+            width: 20px;
+            height: 2px;
+            background: #ffffff;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .hamburger-icon::before,
+        .hamburger-icon::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 2px;
+            background: #ffffff;
+            transition: all 0.3s ease;
+        }
+
+        .hamburger-icon::before {
+            top: -6px;
+        }
+
+        .hamburger-icon::after {
+            bottom: -6px;
+        }
+
+        .hamburger-menu.active .hamburger-icon {
+            background: transparent;
+        }
+
+        .hamburger-menu.active .hamburger-icon::before {
+            transform: rotate(45deg);
+            top: 0;
+        }
+
+        .hamburger-menu.active .hamburger-icon::after {
+            transform: rotate(-45deg);
+            bottom: 0;
+        }
+
+        .menu-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 8px 0;
+            min-width: 200px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+            z-index: 1000;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .hamburger-menu.active .menu-dropdown {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: #ffffff;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .menu-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .menu-item.danger {
+            color: #ef4444;
+        }
+
+        .menu-item.danger:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .menu-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.2);
+            margin: 4px 0;
+        }
+
+        /* Profile Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #9ca3af;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .modal-close:hover {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Selfie Validation */
+        .selfie-validation {
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 12px;
+            display: none;
+        }
+
+        .selfie-validation.success {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: #4ade80;
+        }
+
+        .selfie-validation.error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        .selfie-validation.warning {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #f59e0b;
+        }
+
+        .validation-icon {
+            font-size: 1.2rem;
+            margin-right: 10px;
+        }
+
+        /* Progress Steps */
+        .progress-steps {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            color: #9ca3af;
+            font-size: 0.9rem;
+        }
+
+        .step.active {
+            color: #4ade80;
+        }
+
+        .step-number {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .step.active .step-number {
+            background: #4ade80;
+            border-color: #4ade80;
+            color: #ffffff;
+        }
+
+        .step-line {
+            width: 40px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.2);
+            margin: 0 10px;
+        }
+
+        .step.active + .step-line {
+            background: #4ade80;
+        }
     </style>
 </head>
 <body>
@@ -517,7 +776,23 @@
             <div class="dashboard">
                 <div class="dashboard-header">
                     <h2 class="dashboard-title">Tableau de bord</h2>
-                    <button onclick="logout()" class="btn btn-danger">Déconnexion</button>
+                    <div class="hamburger-menu" id="hamburgerMenu">
+                        <div class="hamburger-btn" onclick="toggleMenu()">
+                            <div class="hamburger-icon"></div>
+                            <span style="font-size: 0.9rem; color: #ffffff;">Menu</span>
+                        </div>
+                        <div class="menu-dropdown">
+                            <div class="menu-item" onclick="openProfileModal()">
+                                <span>👤</span>
+                                <span>Mon Profil</span>
+                            </div>
+                            <div class="menu-divider"></div>
+                            <div class="menu-item danger" onclick="logout()">
+                                <span>🚪</span>
+                                <span>Déconnexion</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div id="userInfo" class="user-info">
@@ -629,6 +904,32 @@
         <div class="powered-by">
             <span class="powered-by-logo"></span>
             powered by Face Recognition AI
+        </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div class="modal-overlay" id="profileModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Mon Profil</h3>
+                <button class="modal-close" onclick="closeProfileModal()">&times;</button>
+            </div>
+            <div class="card">
+                <h4>Informations personnelles</h4>
+                <div id="profileInfo">
+                    <!-- Les informations du profil seront chargées ici -->
+                </div>
+            </div>
+            <div class="card">
+                <h4>Ma Selfie</h4>
+                <div id="profileSelfie">
+                    <!-- La selfie sera affichée ici -->
+                </div>
+                <div class="selfie-actions">
+                    <button onclick="showSelfieUploadInProfile()" class="btn btn-success">Modifier ma selfie</button>
+                    <button onclick="deleteSelfieFromProfile()" class="btn btn-danger">Supprimer ma selfie</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1097,6 +1398,135 @@
             
             // Activer l'onglet sélectionné
             event.target.classList.add('active');
+        }
+
+        // Hamburger Menu Functions
+        function toggleMenu() {
+            const menu = document.getElementById('hamburgerMenu');
+            menu.classList.toggle('active');
+        }
+
+        // Close menu when clicking outside
+        document.addEventListener('click', function(event) {
+            const menu = document.getElementById('hamburgerMenu');
+            if (!menu.contains(event.target)) {
+                menu.classList.remove('active');
+            }
+        });
+
+        // Profile Modal Functions
+        function openProfileModal() {
+            const modal = document.getElementById('profileModal');
+            modal.classList.add('active');
+            loadProfileInfo();
+            loadProfileSelfie();
+            // Close hamburger menu
+            document.getElementById('hamburgerMenu').classList.remove('active');
+        }
+
+        function closeProfileModal() {
+            const modal = document.getElementById('profileModal');
+            modal.classList.remove('active');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('profileModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeProfileModal();
+            }
+        });
+
+        function loadProfileInfo() {
+            const profileInfo = document.getElementById('profileInfo');
+            if (currentUser) {
+                profileInfo.innerHTML = `
+                    <div style="margin-bottom: 15px;">
+                        <strong>Nom d'utilisateur:</strong> ${currentUser.username}
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <strong>Email:</strong> ${currentUser.email}
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <strong>Type d'utilisateur:</strong> ${currentUser.user_type}
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <strong>Membre depuis:</strong> ${new Date(currentUser.created_at).toLocaleDateString()}
+                    </div>
+                `;
+            }
+        }
+
+        function loadProfileSelfie() {
+            const profileSelfie = document.getElementById('profileSelfie');
+            
+            // Charger la selfie depuis l'API
+            fetch('/api/my-selfie', {
+                headers: { 'Authorization': `Bearer ${token}` },
+            }).then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    throw new Error('Aucune selfie trouvée');
+                }
+            }).then(selfieData => {
+                if (selfieData.user_id) {
+                    const timestamp = new Date().getTime();
+                    profileSelfie.innerHTML = `
+                        <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}" 
+                             alt="Votre selfie" class="selfie-preview" style="display: block;">
+                        <p style="margin-top: 15px; color: #9ca3af; text-align: center;">
+                            Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
+                        </p>
+                    `;
+                } else {
+                    profileSelfie.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📸</div>
+                            <h4>Aucune selfie téléchargée</h4>
+                            <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
+                        </div>
+                    `;
+                }
+            }).catch(error => {
+                profileSelfie.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📸</div>
+                        <h4>Aucune selfie téléchargée</h4>
+                        <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
+                    </div>
+                `;
+            });
+        }
+
+        function showSelfieUploadInProfile() {
+            // Rediriger vers l'onglet selfie du dashboard
+            showTab('selfie');
+            showSelfieUpload();
+            closeProfileModal();
+        }
+
+        function deleteSelfieFromProfile() {
+            if (!confirm('Êtes-vous sûr de vouloir supprimer votre selfie ?')) {
+                return;
+            }
+
+            fetch('/api/my-selfie', {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            }).then(response => {
+                if (response.ok) {
+                    showAlert('Selfie supprimée avec succès !', 'success');
+                    loadProfileSelfie();
+                    loadSelfie(); // Recharger aussi dans le dashboard
+                    loadMyPhotos();
+                } else {
+                    return response.json().then(data => {
+                        throw new Error(data.detail || 'Erreur lors de la suppression');
+                    });
+                }
+            }).catch(error => {
+                showAlert(error.message, 'error');
+            });
         }
     </script>
 </body>

@@ -4,318 +4,642 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inscription - Face Recognition App</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
             max-width: 600px;
             margin: 0 auto;
             padding: 20px;
-            background-color: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
+
+        .header {
             text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            background: linear-gradient(45deg, #4ade80, #22c55e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #9ca3af;
+            font-size: 1.1rem;
+            font-weight: 300;
+        }
+
+        .register-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #e5e7eb;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #4ade80;
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: #9ca3af;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #4ade80, #22c55e);
+            color: #ffffff;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(74, 222, 128, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .alert {
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .alert-success {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: #4ade80;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #f59e0b;
+        }
+
+        /* Progress Steps */
+        .progress-steps {
+            display: flex;
+            justify-content: center;
+            align-items: center;
             margin-bottom: 30px;
         }
-        .form-group {
-            margin-bottom: 20px;
+
+        .step {
+            display: flex;
+            align-items: center;
+            color: #9ca3af;
+            font-size: 0.9rem;
         }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
+
+        .step.active {
+            color: #4ade80;
         }
-        input, select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-            box-sizing: border-box;
+
+        .step.completed {
+            color: #4ade80;
         }
-        button {
-            background-color: #007bff;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            width: 100%;
-            margin-top: 10px;
+
+        .step-number {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
         }
-        button:hover {
-            background-color: #0056b3;
+
+        .step.active .step-number {
+            background: #4ade80;
+            border-color: #4ade80;
+            color: #ffffff;
         }
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
+
+        .step.completed .step-number {
+            background: #4ade80;
+            border-color: #4ade80;
+            color: #ffffff;
         }
-        .alert {
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 5px;
+
+        .step-line {
+            width: 40px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.2);
+            margin: 0 10px;
         }
-        .alert-success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+
+        .step.completed + .step-line {
+            background: #4ade80;
         }
-        .alert-error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        .event-info {
-            background-color: #e3f2fd;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .selfie-preview {
-            max-width: 200px;
-            max-height: 200px;
-            margin: 10px 0;
-            border-radius: 5px;
+
+        /* Selfie Upload */
+        .selfie-upload-section {
             display: none;
         }
+
+        .selfie-upload-section.active {
+            display: block;
+        }
+
+        .selfie-preview {
+            max-width: 250px;
+            max-height: 250px;
+            border-radius: 15px;
+            border: 3px solid rgba(74, 222, 128, 0.3);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+            margin: 15px auto;
+            display: block;
+        }
+
         .file-input-wrapper {
             position: relative;
-            display: inline-block;
-            width: 100%;
+            margin: 20px 0;
         }
+
         .file-input-wrapper input[type=file] {
             position: absolute;
             left: -9999px;
         }
+
         .file-input-wrapper label {
             display: block;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border: 2px dashed #ddd;
-            border-radius: 5px;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 2px dashed rgba(74, 222, 128, 0.3);
+            border-radius: 15px;
             text-align: center;
             cursor: pointer;
-            transition: border-color 0.3s;
+            transition: all 0.3s ease;
+            color: #9ca3af;
         }
+
         .file-input-wrapper label:hover {
-            border-color: #007bff;
+            border-color: #4ade80;
+            background: rgba(74, 222, 128, 0.05);
+            color: #4ade80;
         }
+
+        /* Selfie Validation */
+        .selfie-validation {
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 12px;
+            display: none;
+        }
+
+        .selfie-validation.success {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: #4ade80;
+        }
+
+        .selfie-validation.error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        .selfie-validation.warning {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #f59e0b;
+        }
+
+        .validation-icon {
+            font-size: 1.2rem;
+            margin-right: 10px;
+        }
+
+        /* Loading */
         .loading {
             display: none;
             text-align: center;
             margin: 20px 0;
         }
+
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #007bff;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #4ade80;
             border-radius: 50%;
             width: 40px;
             height: 40px;
             animation: spin 1s linear infinite;
-            margin: 0 auto;
+            margin: 0 auto 15px;
         }
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+
+        /* Back to login */
+        .back-to-login {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .back-to-login a {
+            color: #4ade80;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .back-to-login a:hover {
+            text-decoration: underline;
+        }
+
+        /* Powered by section */
+        .powered-by {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: #9ca3af;
+            font-size: 0.8rem;
+        }
+
+        .powered-by-logo {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(45deg, #4ade80, #22c55e);
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .register-container {
+                padding: 30px 20px;
+            }
+            
+            .logo {
+                font-size: 2rem;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎉 Inscription à l'événement</h1>
-        
-        <div id="alert"></div>
-        
-        <div id="eventInfo" class="event-info" style="display: none;">
-            <h3>Événement : <span id="eventName">Chargement...</span></h3>
-            <p>Code : <strong id="eventCode"></strong></p>
+        <div class="header">
+            <div class="logo">Face Recognition</div>
+            <div class="subtitle">Inscription</div>
         </div>
         
-        <form id="registerForm">
-            <div class="form-group">
-                <label for="username">Nom d'utilisateur:</label>
-                <input type="text" id="username" required>
+        <div class="register-container">
+            <div class="progress-steps">
+                <div class="step active" id="step1">
+                    <div class="step-number">1</div>
+                    <span>Informations</span>
+                </div>
+                <div class="step-line"></div>
+                <div class="step" id="step2">
+                    <div class="step-number">2</div>
+                    <span>Selfie</span>
+                </div>
             </div>
-            
-            <div class="form-group">
-                <label for="email">Email:</label>
-                <input type="email" id="email" required>
+
+            <div id="registrationForm">
+                <h3 style="text-align: center; margin-bottom: 30px; color: #ffffff;">Créer votre compte</h3>
+                
+                <div class="form-group">
+                    <label for="username">Nom d'utilisateur</label>
+                    <input type="text" id="username" class="form-input" required placeholder="Choisissez un nom d'utilisateur">
+                </div>
+                
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" class="form-input" required placeholder="Votre adresse email">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Mot de passe</label>
+                    <input type="password" id="password" class="form-input" required placeholder="Choisissez un mot de passe">
+                </div>
+                
+                <div class="form-group">
+                    <label for="userType">Type d'utilisateur</label>
+                    <select id="userType" class="form-input">
+                        <option value="USER">Utilisateur</option>
+                        <option value="PHOTOGRAPHER">Photographe</option>
+                    </select>
+                </div>
+                
+                <button onclick="nextStep()" class="btn btn-primary">Continuer</button>
             </div>
-            
-            <div class="form-group">
-                <label for="password">Mot de passe:</label>
-                <input type="password" id="password" required>
-            </div>
-            
-            <div class="form-group">
-                <label>Votre selfie (obligatoire):</label>
+
+            <div class="selfie-upload-section" id="selfieSection">
+                <h3 style="text-align: center; margin-bottom: 30px; color: #ffffff;">Ajoutez votre selfie</h3>
+                <p style="text-align: center; color: #9ca3af; margin-bottom: 20px;">
+                    Prenez une photo claire de votre visage pour la reconnaissance faciale
+                </p>
+                
                 <div class="file-input-wrapper">
-                    <input type="file" id="selfieFile" accept="image/*" required>
+                    <input type="file" id="selfieFile" accept="image/*">
                     <label for="selfieFile">
                         📸 Cliquez ici pour sélectionner votre selfie
                     </label>
                 </div>
-                <img id="selfiePreview" class="selfie-preview" alt="Aperçu de la selfie">
+                
+                <img id="selfiePreview" class="selfie-preview" alt="Aperçu de la selfie" style="display: none;">
+                
+                <div class="selfie-validation" id="selfieValidation">
+                    <span class="validation-icon"></span>
+                    <span id="validationMessage"></span>
+                </div>
+                
+                <div class="loading" id="validationLoading">
+                    <div class="spinner"></div>
+                    <p style="color: #9ca3af;">Vérification de votre selfie...</p>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <button onclick="validateAndRegister()" class="btn btn-primary" id="registerBtn" disabled>
+                        Créer mon compte
+                    </button>
+                    <button onclick="previousStep()" class="btn btn-secondary" style="margin-top: 10px;">
+                        Retour
+                    </button>
+                </div>
             </div>
-            
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p>Inscription en cours...</p>
-            </div>
-            
-            <button type="submit" id="submitBtn">S'inscrire à l'événement</button>
-        </form>
-        
-        <div style="text-align: center; margin-top: 20px;">
-            <p>Déjà inscrit ? <a href="/">Se connecter</a></p>
+        </div>
+
+        <div class="back-to-login">
+            <a href="/">← Retour à la connexion</a>
+        </div>
+
+        <div class="powered-by">
+            <span class="powered-by-logo"></span>
+            powered by Face Recognition AI
         </div>
     </div>
 
     <script>
-        const eventCode = '{{EVENT_CODE}}';
-        
-        // Charger les informations de l'événement
-        async function loadEventInfo() {
-            if (!eventCode) {
-                showAlert('Code événement manquant', 'error');
+        let currentStep = 1;
+        let selfieFile = null;
+        let selfieValidated = false;
+
+        function nextStep() {
+            // Valider les informations de base
+            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const userType = document.getElementById('userType').value;
+
+            if (!username || !email || !password) {
+                showAlert('Veuillez remplir tous les champs', 'error');
                 return;
             }
-            
-            try {
-                const response = await fetch(`/api/admin/events`);
-                if (response.ok) {
-                    const events = await response.json();
-                    const event = events.find(e => e.event_code === eventCode);
-                    
-                    if (event) {
-                        document.getElementById('eventName').textContent = event.name;
-                        document.getElementById('eventCode').textContent = event.event_code;
-                        document.getElementById('eventInfo').style.display = 'block';
-                    } else {
-                        showAlert('Événement non trouvé', 'error');
-                    }
-                }
-            } catch (error) {
-                console.error('Erreur lors du chargement de l\'événement:', error);
+
+            if (password.length < 6) {
+                showAlert('Le mot de passe doit contenir au moins 6 caractères', 'error');
+                return;
+            }
+
+            // Passer à l'étape 2
+            currentStep = 2;
+            updateSteps();
+            showSelfieSection();
+        }
+
+        function previousStep() {
+            currentStep = 1;
+            updateSteps();
+            hideSelfieSection();
+        }
+
+        function updateSteps() {
+            const step1 = document.getElementById('step1');
+            const step2 = document.getElementById('step2');
+
+            if (currentStep === 1) {
+                step1.classList.add('active');
+                step1.classList.remove('completed');
+                step2.classList.remove('active', 'completed');
+            } else {
+                step1.classList.remove('active');
+                step1.classList.add('completed');
+                step2.classList.add('active');
             }
         }
-        
+
+        function showSelfieSection() {
+            document.getElementById('registrationForm').style.display = 'none';
+            document.getElementById('selfieSection').classList.add('active');
+        }
+
+        function hideSelfieSection() {
+            document.getElementById('registrationForm').style.display = 'block';
+            document.getElementById('selfieSection').classList.remove('active');
+        }
+
         // Aperçu de la selfie
         document.getElementById('selfieFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
+                selfieFile = file;
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const preview = document.getElementById('selfiePreview');
                     preview.src = e.target.result;
                     preview.style.display = 'block';
+                    
+                    // Valider la selfie
+                    validateSelfie(file);
                 };
                 reader.readAsDataURL(file);
             }
         });
-        
-        // Gestion du formulaire
-        document.getElementById('registerForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            if (!eventCode) {
-                showAlert('Code événement manquant', 'error');
+
+        function validateSelfie(file) {
+            const validation = document.getElementById('selfieValidation');
+            const loading = document.getElementById('validationLoading');
+            const registerBtn = document.getElementById('registerBtn');
+            const validationMessage = document.getElementById('validationMessage');
+            const validationIcon = document.querySelector('.validation-icon');
+
+            // Afficher le loading
+            loading.style.display = 'block';
+            validation.style.display = 'none';
+            registerBtn.disabled = true;
+
+            // Simuler la validation (dans une vraie app, on enverrait l'image au serveur)
+            setTimeout(() => {
+                loading.style.display = 'none';
+                validation.style.display = 'block';
+
+                // Validation basique (dans la vraie app, on utiliserait l'API de reconnaissance faciale)
+                const fileSize = file.size / 1024 / 1024; // MB
+                
+                if (fileSize > 5) {
+                    validation.className = 'selfie-validation error';
+                    validationIcon.textContent = '❌';
+                    validationMessage.textContent = 'Le fichier est trop volumineux (max 5MB)';
+                    selfieValidated = false;
+                } else {
+                    validation.className = 'selfie-validation success';
+                    validationIcon.textContent = '✅';
+                    validationMessage.textContent = 'Selfie validée ! Vous pouvez créer votre compte.';
+                    selfieValidated = true;
+                    registerBtn.disabled = false;
+                }
+            }, 2000);
+        }
+
+        function validateAndRegister() {
+            if (!selfieFile || !selfieValidated) {
+                showAlert('Veuillez sélectionner et valider une selfie', 'error');
                 return;
             }
-            
+
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            const selfieFile = document.getElementById('selfieFile').files[0];
-            
-            if (!username || !email || !password || !selfieFile) {
-                showAlert('Veuillez remplir tous les champs', 'error');
-                return;
-            }
-            
-            // Afficher le loading
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('submitBtn').disabled = true;
-            
-            try {
-                const formData = new FormData();
-                formData.append('username', username);
-                formData.append('email', email);
-                formData.append('password', password);
-                formData.append('event_code', eventCode);
-                formData.append('file', selfieFile);
-                
-                const response = await fetch('/api/register-invite-with-selfie', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showAlert('Inscription réussie ! Connexion automatique en cours...', 'success');
-                    
-                    // Se connecter automatiquement avec les identifiants
-                    try {
-                        const loginResponse = await fetch('/api/login', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ username, password }),
-                        });
+            const userType = document.getElementById('userType').value;
 
-                        const loginData = await loginResponse.json();
+            // Créer le FormData avec les informations et la selfie
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('email', email);
+            formData.append('password', password);
+            formData.append('user_type', userType);
+            formData.append('selfie', selfieFile);
 
-                        if (loginResponse.ok) {
-                            // Stocker le token et rediriger
-                            localStorage.setItem('token', loginData.access_token);
-                            setTimeout(() => {
-                                window.location.href = '/';
-                            }, 1000);
-                        } else {
-                            // Si la connexion automatique échoue, rediriger vers la page de connexion
-                            setTimeout(() => {
-                                window.location.href = '/';
-                            }, 2000);
-                        }
-                    } catch (error) {
-                        // En cas d'erreur, rediriger vers la page de connexion
-                        setTimeout(() => {
-                            window.location.href = '/';
-                        }, 2000);
-                    }
+            // Envoyer la requête d'inscription
+            fetch('/api/register', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.access_token) {
+                    showAlert('Compte créé avec succès ! Redirection...', 'success');
+                    // Stocker le token et rediriger
+                    localStorage.setItem('token', data.access_token);
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
                 } else {
-                    showAlert(data.detail || 'Erreur lors de l\'inscription', 'error');
+                    showAlert(data.detail || 'Erreur lors de la création du compte', 'error');
                 }
-            } catch (error) {
-                console.error('Erreur lors de l\'inscription:', error);
-                showAlert('Erreur lors de l\'inscription', 'error');
-            } finally {
-                // Masquer le loading
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('submitBtn').disabled = false;
-            }
-        });
-        
+            })
+            .catch(error => {
+                showAlert('Erreur lors de la création du compte', 'error');
+            });
+        }
+
         function showAlert(message, type = 'success') {
-            const alertDiv = document.getElementById('alert');
-            alertDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            document.querySelector('.register-container').insertBefore(alertDiv, document.querySelector('.register-container').firstChild);
             setTimeout(() => {
-                alertDiv.innerHTML = '';
+                alertDiv.remove();
             }, 5000);
         }
-        
-        // Charger les informations de l'événement au chargement de la page
-        loadEventInfo();
     </script>
 </body>
 </html> 

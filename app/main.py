@@ -135,34 +135,104 @@ async def register_page(event_code: str = None):
 
 # === AUTHENTIFICATION ===
 
-@app.post("/api/register", response_model=UserSchema)
-async def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Inscription d'un nouvel utilisateur"""
+@app.post("/api/register", response_model=Token)
+async def register(
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    user_type: str = Form(...),
+    selfie: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Inscription d'un nouvel utilisateur avec selfie et vérification"""
+    
     # Vérifier si l'utilisateur existe déjà
     existing_user = db.query(User).filter(
-        (User.username == user_data.username) | (User.email == user_data.email)
+        (User.username == username) | (User.email == email)
     ).first()
     
     if existing_user:
         raise HTTPException(
             status_code=400,
-            detail="Username ou email déjà utilisé"
+            detail="Un utilisateur avec ce nom d'utilisateur ou cet email existe déjà"
         )
     
+    # Vérifier le type de fichier
+    if not selfie.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail="Le fichier doit être une image"
+        )
+    
+    # Vérifier la taille du fichier (max 5MB)
+    file_size = 0
+    file_data = b""
+    for chunk in selfie.file:
+        file_data += chunk
+        file_size += len(chunk)
+        if file_size > 5 * 1024 * 1024:  # 5MB
+            raise HTTPException(
+                status_code=400,
+                detail="Le fichier est trop volumineux (maximum 5MB)"
+            )
+    
+    # Vérifier la selfie avec la reconnaissance faciale
+    try:
+        # Vérifier qu'il y a un visage dans l'image
+        face_locations = face_recognizer.detect_faces(file_data)
+        
+        if len(face_locations) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Aucun visage détecté dans l'image. Veuillez prendre une photo claire de votre visage."
+            )
+        
+        if len(face_locations) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Plusieurs visages détectés dans l'image. Veuillez prendre une photo avec un seul visage."
+            )
+        
+        # Vérifier la qualité du visage (taille minimale)
+        face_location = face_locations[0]
+        face_size = (face_location[2] - face_location[0]) * (face_location[3] - face_location[1])
+        
+        # Si le visage est trop petit, c'est probablement de mauvaise qualité
+        if face_size < 1000:  # Seuil arbitraire, à ajuster selon vos besoins
+            raise HTTPException(
+                status_code=400,
+                detail="Le visage est trop petit ou flou. Veuillez prendre une photo plus claire et plus proche."
+            )
+            
+    except Exception as e:
+        if "visage" in str(e).lower():
+            raise e
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Erreur lors de la vérification de la selfie. Veuillez réessayer."
+            )
+    
     # Créer le nouvel utilisateur
-    hashed_password = get_password_hash(user_data.password)
-    db_user = User(
-        username=user_data.username,
-        email=user_data.email,
+    hashed_password = get_password_hash(password)
+    new_user = User(
+        username=username,
+        email=email,
         hashed_password=hashed_password,
-        user_type=user_data.user_type
+        user_type=UserType(user_type)
     )
     
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    # Sauvegarder la selfie
+    new_user.selfie_data = file_data
     
-    return db_user
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # Créer un token d'accès
+    access_token = create_access_token(data={"sub": new_user.username})
+    
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/api/register-invite", response_model=UserSchema)
 async def register_invite(

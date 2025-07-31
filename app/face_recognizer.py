@@ -33,6 +33,22 @@ class FaceRecognizer:
             print(f"Erreur lors du chargement de l'encodage pour {user.username}: {e}")
         return None
 
+    def detect_faces(self, image_data: bytes) -> List[Tuple[int, int, int, int]]:
+        """Détecte les visages dans une image et retourne leurs positions"""
+        try:
+            # Convertir les données binaires en image
+            image_bytes = io.BytesIO(image_data)
+            image = face_recognition.load_image_file(image_bytes)
+            
+            # Détecter les visages
+            face_locations = face_recognition.face_locations(image)
+            
+            return face_locations
+            
+        except Exception as e:
+            print(f"Erreur lors de la détection de visages: {e}")
+            return []
+
     def get_all_user_encodings(self, db: Session) -> Dict[int, np.ndarray]:
         """Récupère tous les encodages des utilisateurs qui ont une selfie"""
         encodings = {}
