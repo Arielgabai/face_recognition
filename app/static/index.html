@@ -793,7 +793,7 @@
                                 <span>Mon Profil</span>
                             </div>
                             <div class="menu-divider"></div>
-                            <div class="menu-item danger" onclick="logout()">
+                            <div class="menu-item danger" onclick="handleLogout()">
                                 <span>🚪</span>
                                 <span>Déconnexion</span>
                             </div>
@@ -883,6 +883,17 @@
                     <!-- Les informations du profil seront chargées ici -->
                 </div>
             </div>
+            <div class="card">
+                <h4>Ma Selfie</h4>
+                <div id="profileSelfie">
+                    <!-- La selfie sera affichée ici -->
+                </div>
+                <div class="selfie-actions">
+                    <button onclick="showSelfieUploadInProfile()" class="btn btn-success">Modifier ma selfie</button>
+                    <button onclick="deleteSelfieFromProfile()" class="btn btn-danger">Supprimer ma selfie</button>
+                </div>
+            </div>
+            
             <div class="card">
                 <h4>Gestion du compte</h4>
                 <p style="color: #9ca3af; margin-bottom: 20px;">
@@ -1236,6 +1247,7 @@
             const modal = document.getElementById('profileModal');
             modal.classList.add('active');
             loadProfileInfo();
+            loadProfileSelfie();
             // Close hamburger menu
             document.getElementById('hamburgerMenu').classList.remove('active');
         }
@@ -1270,6 +1282,160 @@
                     </div>
                 `;
             }
+        }
+
+        function loadProfileSelfie() {
+            const profileSelfie = document.getElementById('profileSelfie');
+            
+            // Charger la selfie depuis l'API
+            fetch('/api/my-selfie', {
+                headers: { 'Authorization': `Bearer ${token}` },
+            }).then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    throw new Error('Aucune selfie trouvée');
+                }
+            }).then(selfieData => {
+                if (selfieData.user_id) {
+                    const timestamp = new Date().getTime();
+                    profileSelfie.innerHTML = `
+                        <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}" 
+                             alt="Votre selfie" class="selfie-preview" style="display: block;">
+                        <p style="margin-top: 15px; color: #9ca3af; text-align: center;">
+                            Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
+                        </p>
+                    `;
+                } else {
+                    profileSelfie.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📸</div>
+                            <h4>Aucune selfie téléchargée</h4>
+                            <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
+                        </div>
+                    `;
+                }
+            }).catch(error => {
+                profileSelfie.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📸</div>
+                        <h4>Aucune selfie téléchargée</h4>
+                        <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
+                    </div>
+                `;
+            });
+        }
+
+        function showSelfieUploadInProfile() {
+            // Créer un modal pour l'upload de selfie
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay active';
+            modal.innerHTML = `
+                <div class="modal">
+                    <div class="modal-header">
+                        <h3 class="modal-title">Modifier ma selfie</h3>
+                        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+                    </div>
+                    <div class="card">
+                        <h4>Sélectionner une nouvelle selfie</h4>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="profileSelfieFile" accept="image/*">
+                            <label for="profileSelfieFile">
+                                📸 Cliquez ici pour sélectionner une nouvelle selfie
+                            </label>
+                        </div>
+                        <img id="profileSelfiePreview" class="selfie-preview" alt="Aperçu de la selfie" style="display: none;">
+                        <div class="selfie-actions">
+                            <button onclick="updateProfileSelfie()" class="btn btn-success">Mettre à jour la selfie</button>
+                            <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary">Annuler</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            // Aperçu de la selfie
+            setTimeout(() => {
+                document.getElementById('profileSelfieFile').addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            const preview = document.getElementById('profileSelfiePreview');
+                            preview.src = e.target.result;
+                            preview.style.display = 'block';
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }, 100);
+        }
+
+        async function updateProfileSelfie() {
+            const selfieFile = document.getElementById('profileSelfieFile').files[0];
+            
+            if (!selfieFile) {
+                showAlert('Veuillez sélectionner une selfie', 'error');
+                return;
+            }
+
+            try {
+                const formData = new FormData();
+                formData.append('file', selfieFile);
+
+                const response = await fetch('/api/upload-selfie', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Selfie mise à jour avec succès !', 'success');
+                    // Fermer le modal
+                    document.querySelector('.modal-overlay.active').remove();
+                    // Recharger la selfie dans le profil
+                    loadProfileSelfie();
+                    // Recharger les photos pour mettre à jour les correspondances
+                    loadMyPhotos();
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la mise à jour', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la mise à jour', 'error');
+            }
+        }
+
+        async function deleteSelfieFromProfile() {
+            if (!confirm('Êtes-vous sûr de vouloir supprimer votre selfie ?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/my-selfie', {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    showAlert('Selfie supprimée avec succès !', 'success');
+                    loadProfileSelfie();
+                    loadMyPhotos();
+                } else {
+                    const data = await response.json();
+                    showAlert(data.detail || 'Erreur lors de la suppression', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la suppression', 'error');
+            }
+        }
+
+        function handleLogout() {
+            // Fermer le menu hamburger d'abord
+            document.getElementById('hamburgerMenu').classList.remove('active');
+            // Puis déconnecter
+            logout();
         }
 
 
