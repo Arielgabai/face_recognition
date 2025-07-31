@@ -397,6 +397,12 @@
             color: #ef4444;
         }
 
+        .alert-info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #3b82f6;
+        }
+
         /* Loading */
         .loading {
             display: none;
@@ -795,56 +801,13 @@
                     </div>
                 </div>
                 
-                <div id="userInfo" class="user-info">
-                    <!-- Informations utilisateur -->
-                </div>
-                
                 <div class="tabs">
-                    <button class="tab active" onclick="showTab('selfie')">👤 Ma Selfie</button>
-                    <button class="tab" onclick="showTab('my-photos')">📷 Mes Photos</button>
+                    <button class="tab active" onclick="showTab('my-photos')">📷 Mes Photos</button>
                     <button class="tab" onclick="showTab('all-photos')">🖼️ Toutes les Photos</button>
                     <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤 Ajouter des Photos</button>
                 </div>
 
-                <div id="selfie" class="tab-content active">
-                    <div class="card">
-                        <h3>Ma Selfie</h3>
-                        <div id="selfieDisplay">
-                            <h4>Votre selfie actuelle</h4>
-                            <div id="currentSelfie">
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">📸</div>
-                                    <h4>Aucune selfie téléchargée</h4>
-                                    <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div id="selfieUpload" style="display: none;">
-                            <h4>Modifier votre selfie</h4>
-                            <div class="file-input-wrapper">
-                                <input type="file" id="selfieFile" accept="image/*">
-                                <label for="selfieFile">
-                                    📸 Cliquez ici pour sélectionner une nouvelle selfie
-                                </label>
-                            </div>
-                            <img id="selfiePreview" class="selfie-preview" alt="Aperçu de la selfie" style="display: none;">
-                            <div class="selfie-actions">
-                                <button onclick="updateSelfie()" class="btn btn-success">Mettre à jour la selfie</button>
-                                <button onclick="cancelSelfieUpdate()" class="btn btn-secondary">Annuler</button>
-                            </div>
-                        </div>
-                        
-                        <div id="selfieActions">
-                            <div class="selfie-actions">
-                                <button onclick="showSelfieUpload()" class="btn btn-success">Modifier ma selfie</button>
-                                <button onclick="deleteSelfie()" class="btn btn-danger">Supprimer ma selfie</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="my-photos" class="tab-content">
+                <div id="my-photos" class="tab-content active">
                     <div class="card">
                         <h3>Mes Photos</h3>
                         <p style="color: #9ca3af; margin-bottom: 20px;">Photos où vous avez été reconnu grâce à votre selfie :</p>
@@ -921,13 +884,13 @@
                 </div>
             </div>
             <div class="card">
-                <h4>Ma Selfie</h4>
-                <div id="profileSelfie">
-                    <!-- La selfie sera affichée ici -->
-                </div>
+                <h4>Gestion du compte</h4>
+                <p style="color: #9ca3af; margin-bottom: 20px;">
+                    Vous pouvez gérer votre compte et vos préférences depuis cette section.
+                </p>
                 <div class="selfie-actions">
-                    <button onclick="showSelfieUploadInProfile()" class="btn btn-success">Modifier ma selfie</button>
-                    <button onclick="deleteSelfieFromProfile()" class="btn btn-danger">Supprimer ma selfie</button>
+                    <button onclick="showAlert('Fonctionnalité en cours de développement', 'info')" class="btn btn-secondary">Paramètres</button>
+                    <button onclick="showAlert('Fonctionnalité en cours de développement', 'info')" class="btn btn-secondary">Préférences</button>
                 </div>
             </div>
         </div>
@@ -990,16 +953,14 @@
             
             // Nettoyer les formulaires
             document.getElementById('loginForm').reset();
-            document.getElementById('selfieFile').value = '';
             
             // Masquer le dashboard et afficher le formulaire de connexion
             document.getElementById('loginForm').style.display = 'block';
             document.getElementById('dashboard').style.display = 'none';
             
             // Nettoyer l'affichage
-            document.getElementById('currentSelfie').innerHTML = '';
-            document.getElementById('myPhotos').innerHTML = '';
-            document.getElementById('allPhotos').innerHTML = '';
+            document.getElementById('myPhotosList').innerHTML = '';
+            document.getElementById('allPhotosList').innerHTML = '';
             
             // Rediriger vers la page d'accueil pour éviter les problèmes de cache
             window.location.href = '/';
@@ -1018,11 +979,7 @@
                     document.getElementById('loginForm').style.display = 'none';
                     document.getElementById('dashboard').style.display = 'block';
                     
-                    // Afficher les informations utilisateur
-                    displayUserInfo();
-                    
                     // Charger les données
-                    loadSelfie();
                     loadMyPhotos();
                     loadAllPhotos();
                     
@@ -1042,147 +999,7 @@
             }
         }
 
-        function displayUserInfo() {
-            const userInfo = document.getElementById('userInfo');
-            userInfo.innerHTML = `
-                <h3>👋 Bonjour ${currentUser.username} !</h3>
-                <p><strong>Email:</strong> ${currentUser.email}</p>
-                <p><strong>Type:</strong> ${currentUser.user_type}</p>
-            `;
-        }
 
-        async function loadSelfie() {
-            try {
-                const response = await fetch('/api/my-selfie', {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-
-                const selfieDisplay = document.getElementById('currentSelfie');
-                
-                if (response.ok) {
-                    const selfieData = await response.json();
-                    if (selfieData.user_id) {
-                        // Ajouter un timestamp pour éviter le cache
-                        const timestamp = new Date().getTime();
-                        selfieDisplay.innerHTML = `
-                            <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}" 
-                                 alt="Votre selfie" class="selfie-preview" style="display: block;">
-                            <p style="margin-top: 15px; color: #9ca3af; text-align: center;">
-                                Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
-                            </p>
-                        `;
-                    } else {
-                        selfieDisplay.innerHTML = `
-                            <div class="empty-state">
-                                <div class="empty-state-icon">📸</div>
-                                <h4>Aucune selfie téléchargée</h4>
-                                <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
-                            </div>
-                        `;
-                    }
-                } else {
-                    selfieDisplay.innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">📸</div>
-                            <h4>Aucune selfie téléchargée</h4>
-                            <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                console.error('Erreur lors du chargement de la selfie:', error);
-            }
-        }
-
-        function showSelfieUpload() {
-            document.getElementById('selfieDisplay').style.display = 'none';
-            document.getElementById('selfieUpload').style.display = 'block';
-            document.getElementById('selfieActions').style.display = 'none';
-        }
-
-        function cancelSelfieUpdate() {
-            document.getElementById('selfieDisplay').style.display = 'block';
-            document.getElementById('selfieUpload').style.display = 'none';
-            document.getElementById('selfieActions').style.display = 'block';
-            document.getElementById('selfiePreview').style.display = 'none';
-            document.getElementById('selfieFile').value = '';
-        }
-
-        // Aperçu de la selfie
-        document.getElementById('selfieFile').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const preview = document.getElementById('selfiePreview');
-                    preview.src = e.target.result;
-                    preview.style.display = 'block';
-                };
-                reader.readAsDataURL(file);
-            }
-        });
-
-        async function updateSelfie() {
-            const selfieFile = document.getElementById('selfieFile').files[0];
-            
-            if (!selfieFile) {
-                showAlert('Veuillez sélectionner une selfie', 'error');
-                return;
-            }
-
-            try {
-                const formData = new FormData();
-                formData.append('file', selfieFile);
-
-                const response = await fetch('/api/upload-selfie', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: formData
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    showAlert('Selfie mise à jour avec succès !', 'success');
-                    cancelSelfieUpdate();
-                    
-                    // Attendre un peu avant de recharger pour s'assurer que le serveur a traité l'upload
-                    setTimeout(() => {
-                        loadSelfie();
-                        // Recharger les photos pour mettre à jour les correspondances
-                        loadMyPhotos();
-                    }, 500);
-                } else {
-                    showAlert(data.detail || 'Erreur lors de la mise à jour', 'error');
-                }
-            } catch (error) {
-                showAlert('Erreur lors de la mise à jour', 'error');
-            }
-        }
-
-        async function deleteSelfie() {
-            if (!confirm('Êtes-vous sûr de vouloir supprimer votre selfie ?')) {
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/my-selfie', {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-
-                if (response.ok) {
-                    showAlert('Selfie supprimée avec succès !', 'success');
-                    loadSelfie();
-                    loadMyPhotos();
-                } else {
-                    const data = await response.json();
-                    showAlert(data.detail || 'Erreur lors de la suppression', 'error');
-                }
-            } catch (error) {
-                showAlert('Erreur lors de la suppression', 'error');
-            }
-        }
 
         async function loadMyPhotos() {
             try {
@@ -1419,7 +1236,6 @@
             const modal = document.getElementById('profileModal');
             modal.classList.add('active');
             loadProfileInfo();
-            loadProfileSelfie();
             // Close hamburger menu
             document.getElementById('hamburgerMenu').classList.remove('active');
         }
@@ -1456,78 +1272,7 @@
             }
         }
 
-        function loadProfileSelfie() {
-            const profileSelfie = document.getElementById('profileSelfie');
-            
-            // Charger la selfie depuis l'API
-            fetch('/api/my-selfie', {
-                headers: { 'Authorization': `Bearer ${token}` },
-            }).then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else {
-                    throw new Error('Aucune selfie trouvée');
-                }
-            }).then(selfieData => {
-                if (selfieData.user_id) {
-                    const timestamp = new Date().getTime();
-                    profileSelfie.innerHTML = `
-                        <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}" 
-                             alt="Votre selfie" class="selfie-preview" style="display: block;">
-                        <p style="margin-top: 15px; color: #9ca3af; text-align: center;">
-                            Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
-                        </p>
-                    `;
-                } else {
-                    profileSelfie.innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">📸</div>
-                            <h4>Aucune selfie téléchargée</h4>
-                            <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
-                        </div>
-                    `;
-                }
-            }).catch(error => {
-                profileSelfie.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📸</div>
-                        <h4>Aucune selfie téléchargée</h4>
-                        <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
-                    </div>
-                `;
-            });
-        }
 
-        function showSelfieUploadInProfile() {
-            // Rediriger vers l'onglet selfie du dashboard
-            showTab('selfie');
-            showSelfieUpload();
-            closeProfileModal();
-        }
-
-        function deleteSelfieFromProfile() {
-            if (!confirm('Êtes-vous sûr de vouloir supprimer votre selfie ?')) {
-                return;
-            }
-
-            fetch('/api/my-selfie', {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` },
-            }).then(response => {
-                if (response.ok) {
-                    showAlert('Selfie supprimée avec succès !', 'success');
-                    loadProfileSelfie();
-                    loadSelfie(); // Recharger aussi dans le dashboard
-                    loadMyPhotos();
-                } else {
-                    return response.json().then(data => {
-                        throw new Error(data.detail || 'Erreur lors de la suppression');
-                    });
-                }
-            }).catch(error => {
-                showAlert(error.message, 'error');
-            });
-        }
     </script>
 </body>
 </html> 
