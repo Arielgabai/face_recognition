@@ -306,6 +306,127 @@
             color: #4ade80;
         }
 
+        /* Loading Spinners */
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #4ade80;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+
+        .loading-spinner-large {
+            width: 40px;
+            height: 40px;
+            border-width: 4px;
+        }
+
+        .loading-spinner-small {
+            width: 16px;
+            height: 16px;
+            border-width: 2px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            backdrop-filter: blur(5px);
+        }
+
+        .loading-modal {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            color: #ffffff;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            font-size: 1.1rem;
+            color: #e5e7eb;
+        }
+
+        .btn-loading {
+            position: relative;
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .btn-loading .loading-spinner {
+            margin-right: 0;
+        }
+
+        .btn-loading .btn-text {
+            opacity: 0;
+        }
+
+        .loading-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .loading-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Photo Grid Loading */
+        .photos-loading {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+
+        /* Form Loading */
+        .form-loading {
+            position: relative;
+            pointer-events: none;
+        }
+
+        .form-loading::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .form-loading .loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+        }
+
         /* Photo Grid */
         .photo-grid {
             display: grid;
@@ -823,12 +944,20 @@
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="logo">Face Recognition</div>
-            <div class="subtitle">Reconnaissance faciale intelligente</div>
+    <body>
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+            <div class="loading-modal">
+                <div class="loading-spinner loading-spinner-large"></div>
+                <div class="loading-text" id="loadingText">Chargement en cours...</div>
+            </div>
         </div>
+
+        <div class="container">
+            <div class="header">
+                <div class="logo">Face Recognition</div>
+                <div class="subtitle">Reconnaissance faciale intelligente</div>
+            </div>
         
         <div id="loginForm">
             <div class="login-container">
@@ -841,7 +970,10 @@
                     <label for="password">Mot de passe</label>
                     <input type="password" id="password" class="form-input" required placeholder="Entrez votre mot de passe">
                 </div>
-                <button onclick="login()" class="btn btn-primary">Se connecter</button>
+                <button onclick="login()" class="btn btn-primary" id="loginBtn">
+                    <span class="btn-text">Se connecter</span>
+                    <div class="loading-spinner" style="display: none;"></div>
+                </button>
             </div>
         </div>
 
@@ -879,7 +1011,11 @@
                         <h3>Mes Photos</h3>
                         <p style="color: #9ca3af; margin-bottom: 20px;">Photos où vous avez été reconnu grâce à votre selfie :</p>
                         <div id="myPhotosList">
-                            <div class="empty-state">
+                            <div class="loading-container" id="myPhotosLoading" style="display: none;">
+                                <div class="loading-spinner"></div>
+                                <span>Chargement de vos photos...</span>
+                            </div>
+                            <div class="empty-state" id="myPhotosEmpty">
                                 <div class="empty-state-icon">🖼️</div>
                                 <h4>Aucune photo trouvée</h4>
                                 <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
@@ -893,7 +1029,11 @@
                         <h3>Toutes les Photos</h3>
                         <p style="color: #9ca3af; margin-bottom: 20px;">Photos de votre événement :</p>
                         <div id="allPhotosList">
-                            <div class="empty-state">
+                            <div class="loading-container" id="allPhotosLoading" style="display: none;">
+                                <div class="loading-spinner"></div>
+                                <span>Chargement des photos...</span>
+                            </div>
+                            <div class="empty-state" id="allPhotosEmpty">
                                 <div class="empty-state-icon">📷</div>
                                 <h4>Aucune photo disponible</h4>
                                 <p>Les photos de votre événement apparaîtront ici</p>
@@ -917,7 +1057,10 @@
                             <h4>Photos sélectionnées :</h4>
                             <div id="previewGrid" class="photo-grid"></div>
                             <div style="margin-top: 20px;">
-                                <button onclick="uploadPhotos()" class="btn btn-success">Télécharger les photos</button>
+                                <button onclick="uploadPhotos()" class="btn btn-success" id="uploadBtn">
+                                    <span class="btn-text">Télécharger les photos</span>
+                                    <div class="loading-spinner" style="display: none;"></div>
+                                </button>
                                 <button onclick="cancelUpload()" class="btn btn-secondary">Annuler</button>
                             </div>
                         </div>
@@ -996,6 +1139,20 @@
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
+            if (!username || !password) {
+                showAlert('Veuillez remplir tous les champs', 'error');
+                return;
+            }
+
+            // Show loading state
+            const loginBtn = document.getElementById('loginBtn');
+            const btnText = loginBtn.querySelector('.btn-text');
+            const spinner = loginBtn.querySelector('.loading-spinner');
+            
+            btnText.style.opacity = '0';
+            spinner.style.display = 'inline-block';
+            loginBtn.classList.add('btn-loading');
+
             try {
                 const response = await fetch('/api/login', {
                     method: 'POST',
@@ -1016,6 +1173,11 @@
                 }
             } catch (error) {
                 showAlert('Erreur de connexion', 'error');
+            } finally {
+                // Hide loading state
+                btnText.style.opacity = '1';
+                spinner.style.display = 'none';
+                loginBtn.classList.remove('btn-loading');
             }
         }
 
@@ -1052,46 +1214,23 @@
             console.log('Déconnexion effectuée - session nettoyée');
         }
 
-        async function loadDashboard() {
-            try {
-                const response = await fetch('/api/me', {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
 
-                if (response.ok) {
-                    currentUser = await response.json();
-                    document.getElementById('loginForm').style.display = 'none';
-                    document.getElementById('dashboard').style.display = 'block';
-                    
-                    // Charger les données
-                    loadMyPhotos();
-                    loadAllPhotos();
-                    
-                    // Afficher l'onglet upload pour les photographes
-                    if (currentUser.user_type === 'PHOTOGRAPHER') {
-                        document.getElementById('uploadTab').style.display = 'inline-block';
-                        setupPhotoUpload();
-                    }
-                } else {
-                    localStorage.removeItem('token');
-                    token = null;
-                }
-            } catch (error) {
-                console.error('Erreur lors du chargement du dashboard:', error);
-                localStorage.removeItem('token');
-                token = null;
-            }
-        }
 
 
 
         async function loadMyPhotos() {
+            const container = document.getElementById('myPhotosList');
+            const loadingDiv = document.getElementById('myPhotosLoading');
+            const emptyDiv = document.getElementById('myPhotosEmpty');
+            
+            // Show loading state
+            loadingDiv.style.display = 'flex';
+            emptyDiv.style.display = 'none';
+            
             try {
                 const response = await fetch('/api/my-photos', {
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
-
-                const container = document.getElementById('myPhotosList');
                 
                 if (response.ok) {
                     const photos = await response.json();
@@ -1129,16 +1268,32 @@
                 }
             } catch (error) {
                 console.error('Erreur lors du chargement des photos:', error);
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <h4>Erreur lors du chargement</h4>
+                        <p>Impossible de charger vos photos pour le moment</p>
+                    </div>
+                `;
+            } finally {
+                // Hide loading state
+                loadingDiv.style.display = 'none';
             }
         }
 
         async function loadAllPhotos() {
+            const container = document.getElementById('allPhotosList');
+            const loadingDiv = document.getElementById('allPhotosLoading');
+            const emptyDiv = document.getElementById('allPhotosEmpty');
+            
+            // Show loading state
+            loadingDiv.style.display = 'flex';
+            emptyDiv.style.display = 'none';
+            
             try {
                 const response = await fetch('/api/all-photos', {
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
-
-                const container = document.getElementById('allPhotosList');
                 
                 if (response.ok) {
                     const photos = await response.json();
@@ -1176,6 +1331,16 @@
                 }
             } catch (error) {
                 console.error('Erreur lors du chargement des photos:', error);
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <h4>Erreur lors du chargement</h4>
+                        <p>Impossible de charger les photos pour le moment</p>
+                    </div>
+                `;
+            } finally {
+                // Hide loading state
+                loadingDiv.style.display = 'none';
             }
         }
 
@@ -1252,7 +1417,15 @@
                 return;
             }
 
-            document.getElementById('uploadLoading').style.display = 'block';
+            // Show loading state
+            const uploadBtn = document.getElementById('uploadBtn');
+            const btnText = uploadBtn.querySelector('.btn-text');
+            const spinner = uploadBtn.querySelector('.loading-spinner');
+            
+            btnText.style.opacity = '0';
+            spinner.style.display = 'inline-block';
+            uploadBtn.classList.add('btn-loading');
+            
             document.getElementById('uploadPreview').style.display = 'none';
 
             try {
@@ -1279,7 +1452,10 @@
             } catch (error) {
                 showAlert('Erreur lors du téléchargement', 'error');
             } finally {
-                document.getElementById('uploadLoading').style.display = 'none';
+                // Hide loading state
+                btnText.style.opacity = '1';
+                spinner.style.display = 'none';
+                uploadBtn.classList.remove('btn-loading');
             }
         }
 
@@ -1461,7 +1637,10 @@
                         </div>
                         <img id="profileSelfiePreview" class="selfie-preview" alt="Aperçu de la selfie" style="display: none;">
                         <div class="selfie-actions">
-                            <button onclick="updateProfileSelfie()" class="btn btn-success">Mettre à jour la selfie</button>
+                            <button onclick="updateProfileSelfie()" class="btn btn-success" id="updateSelfieBtn">
+                                <span class="btn-text">Mettre à jour la selfie</span>
+                                <div class="loading-spinner" style="display: none;"></div>
+                            </button>
                             <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary">Annuler</button>
                         </div>
                     </div>
@@ -1494,6 +1673,15 @@
                 return;
             }
 
+            // Show loading state
+            const updateBtn = document.getElementById('updateSelfieBtn');
+            const btnText = updateBtn.querySelector('.btn-text');
+            const spinner = updateBtn.querySelector('.loading-spinner');
+            
+            btnText.style.opacity = '0';
+            spinner.style.display = 'inline-block';
+            updateBtn.classList.add('btn-loading');
+
             try {
                 const formData = new FormData();
                 formData.append('file', selfieFile);
@@ -1522,6 +1710,11 @@
                 }
             } catch (error) {
                 showAlert('Erreur lors de la mise à jour', 'error');
+            } finally {
+                // Hide loading state
+                btnText.style.opacity = '1';
+                spinner.style.display = 'none';
+                updateBtn.classList.remove('btn-loading');
             }
         }
 
@@ -1554,6 +1747,55 @@
             document.getElementById('hamburgerMenu').classList.remove('active');
             // Puis déconnecter
             logout();
+        }
+
+        // Global loading functions
+        function showGlobalLoading(message = 'Chargement en cours...') {
+            const overlay = document.getElementById('loadingOverlay');
+            const loadingText = document.getElementById('loadingText');
+            loadingText.textContent = message;
+            overlay.style.display = 'flex';
+        }
+
+        function hideGlobalLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.display = 'none';
+        }
+
+        // Show loading for dashboard load
+        async function loadDashboard() {
+            showGlobalLoading('Chargement du tableau de bord...');
+            
+            try {
+                const response = await fetch('/api/me', {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    currentUser = await response.json();
+                    document.getElementById('loginForm').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                    
+                    // Charger les données
+                    await loadMyPhotos();
+                    await loadAllPhotos();
+                    
+                    // Afficher l'onglet upload pour les photographes
+                    if (currentUser.user_type === 'PHOTOGRAPHER') {
+                        document.getElementById('uploadTab').style.display = 'inline-block';
+                        setupPhotoUpload();
+                    }
+                } else {
+                    localStorage.removeItem('token');
+                    token = null;
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement du dashboard:', error);
+                localStorage.removeItem('token');
+                token = null;
+            } finally {
+                hideGlobalLoading();
+            }
         }
 
 
