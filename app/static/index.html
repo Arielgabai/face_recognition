@@ -443,9 +443,9 @@
                 
                 if (response.ok) {
                     const selfieData = await response.json();
-                    if (selfieData.selfie_path) {
+                    if (selfieData.user_id) {
                         selfieDisplay.innerHTML = `
-                            <img src="/api/image/${selfieData.selfie_path.split('/').pop()}" 
+                            <img src="/api/selfie/${selfieData.user_id}" 
                                  alt="Votre selfie" class="selfie-preview" style="display: block;">
                             <p style="margin-top: 10px; color: #666;">
                                 Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
@@ -565,7 +565,7 @@
                             <div class="photo-grid">
                                 ${photos.map(photo => `
                                     <div class="photo-item">
-                                        <img src="/api/image/${photo.file_path.split('/').pop()}" alt="Photo">
+                                        <img src="/api/photo/${photo.id}" alt="Photo">
                                         <div class="photo-info">
                                             <p><strong>Confiance:</strong> ${(photo.confidence * 100).toFixed(1)}%</p>
                                             <p><strong>Date:</strong> ${new Date(photo.created_at).toLocaleDateString()}</p>
@@ -600,7 +600,7 @@
                             <div class="photo-grid">
                                 ${photos.map(photo => `
                                     <div class="photo-item">
-                                        <img src="/api/image/${photo.file_path.split('/').pop()}" alt="Photo">
+                                        <img src="/api/photo/${photo.id}" alt="Photo">
                                         <div class="photo-info">
                                             <p><strong>Photographe:</strong> ${photo.photographer_name || 'Inconnu'}</p>
                                             <p><strong>Date:</strong> ${new Date(photo.created_at).toLocaleDateString()}</p>

@@ -281,15 +281,11 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 @app.get("/api/my-selfie")
 async def get_my_selfie(current_user: User = Depends(get_current_user)):
     """Récupérer les informations de la selfie de l'utilisateur connecté"""
-    if not current_user.selfie_path:
+    if not current_user.selfie_data:
         raise HTTPException(status_code=404, detail="Aucune selfie trouvée")
     
-    # Construire le chemin vers la selfie
-    selfie_filename = os.path.basename(current_user.selfie_path)
-    
     return {
-        "selfie_path": current_user.selfie_path,
-        "filename": selfie_filename,
+        "user_id": current_user.id,
         "created_at": current_user.created_at
     }
 
@@ -299,14 +295,11 @@ async def delete_my_selfie(
     db: Session = Depends(get_db)
 ):
     """Supprimer la selfie de l'utilisateur connecté et les correspondances associées"""
-    if not current_user.selfie_path:
+    if not current_user.selfie_data:
         raise HTTPException(status_code=404, detail="Aucune selfie à supprimer")
 
-    selfie_path = current_user.selfie_path
-    # Supprimer le fichier physique
-    if os.path.exists(selfie_path):
-        os.remove(selfie_path)
-    # Supprimer le chemin de la base utilisateur
+    # Supprimer les données binaires de la base utilisateur
+    current_user.selfie_data = None
     current_user.selfie_path = None
     db.commit()
     # Supprimer tous les FaceMatch liés à cet utilisateur
@@ -332,23 +325,18 @@ async def upload_selfie(
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     
-    # Générer un nom de fichier unique
-    file_extension = os.path.splitext(file.filename)[1]
-    unique_filename = f"{current_user.id}_{uuid.uuid4()}{file_extension}"
+    # Lire les données binaires du fichier
+    file_data = await file.read()
     
-    # Sauvegarder le fichier
-    file_path = os.path.join("static/uploads/selfies", unique_filename)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    # Mettre à jour l'utilisateur
-    current_user.selfie_path = file_path
+    # Mettre à jour l'utilisateur avec les données binaires
+    current_user.selfie_data = file_data
+    current_user.selfie_path = None  # Plus besoin du chemin de fichier
     db.commit()
 
     # Relancer le matching de la selfie avec toutes les photos existantes
     match_count = face_recognizer.match_user_selfie_with_photos(current_user, db)
 
-    return {"message": "Selfie uploadée avec succès", "file_path": file_path, "matches": match_count}
+    return {"message": "Selfie uploadée avec succès", "matches": match_count}
 
 # === GESTION DES PHOTOS (PHOTOGRAPHES) ===
 
@@ -560,6 +548,27 @@ async def get_photo_by_id(
     return Response(
         content=photo.photo_data,
         media_type=photo.content_type or "image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000"}  # Cache pour 1 an
+    )
+
+@app.get("/api/selfie/{user_id}")
+async def get_selfie_by_user_id(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Servir une selfie depuis la base de données par l'ID utilisateur"""
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    if not user.selfie_data:
+        raise HTTPException(status_code=404, detail="Selfie non disponible")
+    
+    # Retourner les données binaires avec le bon type MIME
+    return Response(
+        content=user.selfie_data,
+        media_type="image/jpeg",  # Par défaut pour les selfies
         headers={"Cache-Control": "public, max-age=31536000"}  # Cache pour 1 an
     )
 
