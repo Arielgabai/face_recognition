@@ -474,6 +474,60 @@
             .logo {
                 font-size: 2rem;
             }
+            
+            /* Hamburger Menu Mobile Improvements */
+            .hamburger-menu {
+                position: relative;
+                z-index: 1001;
+            }
+            
+            .hamburger-btn {
+                padding: 12px 16px;
+                min-height: 44px;
+                min-width: 44px;
+            }
+            
+            .menu-dropdown {
+                position: fixed;
+                top: 60px;
+                right: 15px;
+                left: 15px;
+                min-width: auto;
+                width: auto;
+                max-width: 300px;
+                margin: 0 auto;
+            }
+            
+            .menu-item {
+                padding: 16px 20px;
+                min-height: 44px;
+                font-size: 1rem;
+            }
+            
+            .dashboard-header {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+            
+            .dashboard-title {
+                font-size: 1.5rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .hamburger-btn {
+                padding: 10px 12px;
+            }
+            
+            .menu-dropdown {
+                right: 10px;
+                left: 10px;
+            }
+            
+            .menu-item {
+                padding: 14px 16px;
+            }
         }
 
         /* Powered by section */
@@ -512,10 +566,19 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            min-height: 40px;
+            min-width: 40px;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .hamburger-btn:hover {
             background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .hamburger-menu.active .hamburger-btn {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: rgba(74, 222, 128, 0.4);
         }
 
         .hamburger-icon {
@@ -572,8 +635,9 @@
             visibility: hidden;
             transform: translateY(-10px);
             transition: all 0.3s ease;
-            z-index: 1000;
+            z-index: 1001;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            margin-top: 8px;
         }
 
         .hamburger-menu.active .menu-dropdown {
@@ -591,6 +655,9 @@
             text-decoration: none;
             transition: all 0.3s ease;
             cursor: pointer;
+            min-height: 44px;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .menu-item:hover {
@@ -1237,16 +1304,56 @@
         // Hamburger Menu Functions
         function toggleMenu() {
             const menu = document.getElementById('hamburgerMenu');
+            const isActive = menu.classList.contains('active');
+            
+            // Close all other menus first
+            document.querySelectorAll('.hamburger-menu.active').forEach(activeMenu => {
+                if (activeMenu !== menu) {
+                    activeMenu.classList.remove('active');
+                }
+            });
+            
+            // Toggle current menu
             menu.classList.toggle('active');
+            
+            // Prevent body scroll when menu is open on mobile
+            if (window.innerWidth <= 768) {
+                if (menu.classList.contains('active')) {
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    document.body.style.overflow = '';
+                }
+            }
         }
 
         // Close menu when clicking outside
         document.addEventListener('click', function(event) {
             const menu = document.getElementById('hamburgerMenu');
-            if (!menu.contains(event.target)) {
+            if (menu && !menu.contains(event.target)) {
                 menu.classList.remove('active');
+                document.body.style.overflow = '';
             }
         });
+
+        // Close menu on escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const menu = document.getElementById('hamburgerMenu');
+                if (menu && menu.classList.contains('active')) {
+                    menu.classList.remove('active');
+                    document.body.style.overflow = '';
+                }
+            }
+        });
+
+        // Handle touch events for mobile
+        document.addEventListener('touchstart', function(event) {
+            const menu = document.getElementById('hamburgerMenu');
+            if (menu && !menu.contains(event.target)) {
+                menu.classList.remove('active');
+                document.body.style.overflow = '';
+            }
+        }, { passive: true });
 
         // Profile Modal Functions
         function openProfileModal() {
