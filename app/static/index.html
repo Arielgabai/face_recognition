@@ -685,8 +685,8 @@
             backdrop-filter: blur(20px);
             border: 1px solid rgba(74, 222, 128, 0.2);
             border-radius: 16px;
-            padding: 12px 0;
-            min-width: 220px;
+            padding: 0;
+            min-width: 280px;
             opacity: 0;
             visibility: hidden;
             transform: translateY(-15px) scale(0.95);
@@ -694,6 +694,7 @@
             z-index: 1001;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
             margin-top: 12px;
+            overflow: hidden;
         }
 
         .hamburger-menu.active .menu-dropdown {
@@ -702,26 +703,101 @@
             transform: translateY(0) scale(1);
         }
 
+        /* Section profil utilisateur */
+        .menu-profile-section {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(34, 197, 94, 0.1));
+        }
+
+        .menu-profile-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .menu-profile-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #8b5cf6, #a855f7);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 1.2rem;
+        }
+
+        .menu-profile-details h4 {
+            color: #ffffff;
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 0 0 4px 0;
+        }
+
+        .menu-profile-details p {
+            color: #9ca3af;
+            font-size: 0.85rem;
+            margin: 0;
+        }
+
+        /* Section espace actuel */
+        .menu-current-space {
+            padding: 0 20px 15px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .menu-current-space p {
+            color: #9ca3af;
+            font-size: 0.85rem;
+            margin: 0 0 8px 0;
+        }
+
+        .menu-change-space-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: #4ade80;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .menu-change-space-btn:hover {
+            background: rgba(74, 222, 128, 0.1);
+            border-color: rgba(74, 222, 128, 0.3);
+        }
+
+        /* Options de menu */
+        .menu-options {
+            padding: 15px 0;
+        }
+
         .menu-item {
             display: flex;
             align-items: center;
             gap: 14px;
-            padding: 16px 20px;
+            padding: 12px 20px;
             color: #ffffff;
             text-decoration: none;
             transition: all 0.3s ease;
             cursor: pointer;
-            min-height: 52px;
+            min-height: 44px;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
             font-weight: 500;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .menu-item:hover {
-            background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(34, 197, 94, 0.1));
+            background: rgba(255, 255, 255, 0.05);
             color: #4ade80;
-            transform: translateX(5px);
         }
 
         .menu-item.danger {
@@ -729,14 +805,79 @@
         }
 
         .menu-item.danger:hover {
-            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.1));
+            background: rgba(239, 68, 68, 0.1);
             color: #f87171;
         }
 
         .menu-divider {
             height: 1px;
-            background: linear-gradient(90deg, transparent, rgba(74, 222, 128, 0.2), transparent);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
             margin: 8px 0;
+        }
+
+        /* Banner Memento AI */
+        .menu-memento-banner {
+            margin: 15px 20px;
+            padding: 15px;
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(59, 130, 246, 0.1));
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .menu-memento-banner:hover {
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.15), rgba(59, 130, 246, 0.15));
+            border-color: rgba(74, 222, 128, 0.5);
+        }
+
+        .menu-memento-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .menu-memento-logo {
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .menu-memento-title {
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .menu-memento-subtitle {
+            color: #9ca3af;
+            font-size: 0.75rem;
+            margin-bottom: 5px;
+        }
+
+        .menu-memento-link {
+            color: #4ade80;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Version de l'app */
+        .menu-app-version {
+            padding: 15px 20px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 0.75rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         /* Photo Grid - Design moderne inspiré de l'image */
@@ -1144,14 +1285,69 @@
                             <span style="font-size: 0.9rem; color: #ffffff;">Menu</span>
             </div>
                         <div class="menu-dropdown">
-                            <div class="menu-item" onclick="openProfileModal()">
-                                <span>👤</span>
-                                <span>Mon Profil</span>
+                            <!-- Section profil utilisateur -->
+                            <div class="menu-profile-section">
+                                <div class="menu-profile-info">
+                                    <div class="menu-profile-avatar" id="menuUserAvatar">
+                                        A
+                                    </div>
+                                    <div class="menu-profile-details">
+                                        <h4 id="menuUserName">Ariel</h4>
+                                        <p id="menuUserEmail">a@h.fr</p>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="menu-divider"></div>
-                            <div class="menu-item danger" onclick="handleLogout()">
-                                <span>🚪</span>
-                                <span>Déconnexion</span>
+                            
+                            <!-- Section espace actuel -->
+                            <div class="menu-current-space">
+                                <p>Espace actuel: <span id="menuCurrentEvent">Mariage ariel et anaelle</span></p>
+                                <div class="menu-change-space-btn" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                                    <span>↔️</span>
+                                    <span>Changer d'espace</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Options de menu -->
+                            <div class="menu-options">
+                                <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                                    <span>📋</span>
+                                    <span>Politique de confidentialité</span>
+                                </div>
+                                <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                                    <span>📄</span>
+                                    <span>Conditions générales d'utilisation</span>
+                                </div>
+                                <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                                    <span>❓</span>
+                                    <span>Besoin d'aide? Contactez-nous</span>
+                                </div>
+                                <div class="menu-divider"></div>
+                                <div class="menu-item danger" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                                    <span>🗑️</span>
+                                    <span>Supprimer mon compte</span>
+                                </div>
+                                <div class="menu-item danger" onclick="handleLogout()">
+                                    <span>🚪</span>
+                                    <span>Se déconnecter</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Banner Memento AI -->
+                            <div class="menu-memento-banner" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                                <div class="menu-memento-header">
+                                    <div class="menu-memento-logo">M</div>
+                                    <div class="menu-memento-title">Memento</div>
+                                </div>
+                                <div class="menu-memento-subtitle">Powered By Memento AI</div>
+                                <div class="menu-memento-link">
+                                    Cliquez ici pour en savoir plus sur Memento Photo AI
+                                    <span>→</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Version de l'app -->
+                            <div class="menu-app-version">
+                                Face Recognition v. v1.0.0
                             </div>
                         </div>
                     </div>
@@ -1920,6 +2116,32 @@
             }
         }
 
+        function updateMenuUserInfo(user) {
+            // Mettre à jour l'avatar avec la première lettre du nom d'utilisateur
+            const menuUserAvatar = document.getElementById('menuUserAvatar');
+            if (menuUserAvatar && user.username) {
+                menuUserAvatar.textContent = user.username.charAt(0).toUpperCase();
+            }
+            
+            // Mettre à jour le nom d'utilisateur
+            const menuUserName = document.getElementById('menuUserName');
+            if (menuUserName && user.username) {
+                menuUserName.textContent = user.username;
+            }
+            
+            // Mettre à jour l'email
+            const menuUserEmail = document.getElementById('menuUserEmail');
+            if (menuUserEmail && user.email) {
+                menuUserEmail.textContent = user.email;
+            }
+            
+            // Mettre à jour l'événement actuel
+            const menuCurrentEvent = document.getElementById('menuCurrentEvent');
+            if (menuCurrentEvent && user.event_name) {
+                menuCurrentEvent.textContent = user.event_name;
+            }
+        }
+
         function handleLogout() {
             // Fermer le menu hamburger d'abord
             document.getElementById('hamburgerMenu').classList.remove('active');
@@ -1967,6 +2189,9 @@
                         dashboardTitle.textContent = eventName;
                         console.log('Titre mis à jour avec fallback:', eventName);
                     }
+                    
+                    // Mettre à jour les informations du menu hamburger
+                    updateMenuUserInfo(currentUser);
                     
                     // Charger les données
                     await loadMyPhotos();
