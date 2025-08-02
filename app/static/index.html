@@ -1350,8 +1350,11 @@
             token = null;
             currentUser = null;
             
-            // Nettoyer les formulaires
-            document.getElementById('loginForm').reset();
+            // Nettoyer les formulaires de connexion
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            if (usernameInput) usernameInput.value = '';
+            if (passwordInput) passwordInput.value = '';
             
             // Masquer le dashboard et afficher le formulaire de connexion
             document.getElementById('loginForm').style.display = 'block';
