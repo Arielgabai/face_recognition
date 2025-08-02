@@ -344,8 +344,30 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/api/me", response_model=UserSchema)
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """Récupérer les informations de l'utilisateur connecté"""
+async def get_current_user_info(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Récupérer les informations de l'utilisateur connecté avec son événement associé"""
+    # Récupérer l'événement associé à l'utilisateur
+    user_event = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).first()
+    
+    if user_event:
+        event = db.query(Event).filter(Event.id == user_event.event_id).first()
+        if event:
+            # Créer un dictionnaire avec les informations de l'utilisateur et de l'événement
+            user_dict = {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "user_type": current_user.user_type,
+                "is_active": current_user.is_active,
+                "created_at": current_user.created_at,
+                "event_name": event.name,
+                "event_id": event.id,
+                "event_code": event.event_code,
+                "event_date": event.date
+            }
+            return user_dict
+    
+    # Si pas d'événement associé, retourner juste les infos utilisateur
     return current_user
 
 @app.get("/api/my-selfie")

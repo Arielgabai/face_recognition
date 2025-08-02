@@ -26,6 +26,11 @@ class User(UserBase):
     is_active: bool
     created_at: datetime
     selfie_path: Optional[str] = None  # Peut être None car les selfies sont stockées en binaire
+    # Champs de l'événement (optionnels)
+    event_name: Optional[str] = None
+    event_id: Optional[int] = None
+    event_code: Optional[str] = None
+    event_date: Optional[datetime] = None
 
     class Config:
         from_attributes = True
