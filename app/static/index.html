@@ -1137,7 +1137,7 @@
         <div id="dashboard" style="display: none;">
             <div class="dashboard">
                 <div class="dashboard-header">
-                    <h2 class="dashboard-title">Tableau de bord</h2>
+                    <h2 class="dashboard-title" id="dashboardTitle">Tableau de bord</h2>
                     <div class="hamburger-menu" id="hamburgerMenu">
                         <div class="hamburger-btn" onclick="toggleMenu()">
                             <div class="hamburger-icon"></div>
@@ -1403,7 +1403,7 @@
                         `;
                     } else {
                         // Mettre à jour le titre du dashboard avec le nom de l'événement
-                        const dashboardTitle = document.querySelector('.dashboard-title');
+                        const dashboardTitle = document.getElementById('dashboardTitle');
                         if (photos.length > 0 && photos[0].event_name) {
                             dashboardTitle.textContent = photos[0].event_name;
                         }
@@ -1468,7 +1468,7 @@
                         `;
                     } else {
                         // Mettre à jour le titre du dashboard avec le nom de l'événement
-                        const dashboardTitle = document.querySelector('.dashboard-title');
+                        const dashboardTitle = document.getElementById('dashboardTitle');
                         if (photos.length > 0 && photos[0].event_name) {
                             dashboardTitle.textContent = photos[0].event_name;
                         }
