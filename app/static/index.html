@@ -701,8 +701,8 @@
         .menu-dropdown {
             position: fixed;
             top: 0;
-            left: -320px;
-            width: 320px;
+            left: -100%;
+            width: 100%;
             height: 100vh;
             background: rgba(26, 26, 26, 0.98);
             backdrop-filter: blur(20px);
@@ -722,14 +722,63 @@
             left: 0;
         }
 
-        /* Contenu principal avec effet de décalage */
+        /* Contenu principal avec effet de décalage - désactivé sur mobile */
         .container {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .hamburger-menu.active ~ .container {
-            transform: translateX(80px);
-            filter: blur(2px);
+        /* Effet de décalage seulement sur desktop */
+        @media (min-width: 768px) {
+            .hamburger-menu.active ~ .container {
+                transform: translateX(80px);
+                filter: blur(2px);
+            }
+            
+            .menu-dropdown {
+                width: 320px;
+                left: -320px;
+            }
+        }
+
+        /* Responsive pour mobile */
+        @media (max-width: 767px) {
+            .menu-dropdown {
+                width: 100%;
+                left: -100%;
+            }
+            
+            .hamburger-menu.active ~ .container {
+                transform: none;
+                filter: none;
+            }
+            
+            /* Ajuster la taille du menu sur mobile */
+            .menu-profile-section {
+                padding: 25px 20px;
+            }
+            
+            .menu-current-space {
+                padding: 0 20px 20px 20px;
+            }
+            
+            .menu-options {
+                padding: 20px 0;
+            }
+            
+            .menu-item {
+                padding: 16px 20px;
+                min-height: 52px;
+                font-size: 1rem;
+            }
+            
+            .menu-memento-banner {
+                margin: 20px;
+                padding: 20px;
+            }
+            
+            .menu-app-version {
+                padding: 20px;
+            }
         }
 
         /* Section profil utilisateur */
@@ -770,6 +819,36 @@
             color: #9ca3af;
             font-size: 0.85rem;
             margin: 0;
+        }
+
+        /* Bouton de fermeture du menu */
+        .menu-close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #ffffff;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .menu-close-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Position relative pour le conteneur du profil */
+        .menu-profile-section {
+            position: relative;
         }
 
         /* Section espace actuel */
@@ -1327,6 +1406,10 @@
                                         <h4 id="menuUserName">Ariel</h4>
                                         <p id="menuUserEmail">a@h.fr</p>
                                     </div>
+                                </div>
+                                <!-- Bouton de fermeture sur mobile -->
+                                <div class="menu-close-btn" onclick="closeMenu()">
+                                    <span>&times;</span>
                                 </div>
                             </div>
                             
@@ -1902,7 +1985,11 @@
             
             menu.classList.add('active');
             overlay.classList.add('active');
-            document.body.style.overflow = 'hidden';
+            
+            // Bloquer le scroll seulement sur desktop
+            if (window.innerWidth >= 768) {
+                document.body.style.overflow = 'hidden';
+            }
         }
 
         function closeMenu() {
