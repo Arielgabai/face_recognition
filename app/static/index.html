@@ -1404,8 +1404,15 @@
                     } else {
                         // Mettre à jour le titre du dashboard avec le nom de l'événement
                         const dashboardTitle = document.getElementById('dashboardTitle');
+                        console.log('Dashboard title element:', dashboardTitle);
+                        console.log('Photos:', photos);
+                        console.log('First photo event_name:', photos[0]?.event_name);
+                        
                         if (photos.length > 0 && photos[0].event_name) {
                             dashboardTitle.textContent = photos[0].event_name;
+                            console.log('Titre mis à jour avec:', photos[0].event_name);
+                        } else {
+                            console.log('Pas de nom d\'événement trouvé');
                         }
                         
                         container.innerHTML = `
@@ -1469,8 +1476,15 @@
                     } else {
                         // Mettre à jour le titre du dashboard avec le nom de l'événement
                         const dashboardTitle = document.getElementById('dashboardTitle');
+                        console.log('Dashboard title element (all photos):', dashboardTitle);
+                        console.log('Photos (all):', photos);
+                        console.log('First photo event_name (all):', photos[0]?.event_name);
+                        
                         if (photos.length > 0 && photos[0].event_name) {
                             dashboardTitle.textContent = photos[0].event_name;
+                            console.log('Titre mis à jour avec (all):', photos[0].event_name);
+                        } else {
+                            console.log('Pas de nom d\'événement trouvé (all)');
                         }
                         
                         container.innerHTML = `
@@ -1934,6 +1948,15 @@
                     currentUser = await response.json();
                     document.getElementById('loginForm').style.display = 'none';
                     document.getElementById('dashboard').style.display = 'block';
+                    
+                    // Mettre à jour le titre avec le nom de l'événement de l'utilisateur
+                    const dashboardTitle = document.getElementById('dashboardTitle');
+                    if (currentUser.event_name) {
+                        dashboardTitle.textContent = currentUser.event_name;
+                        console.log('Titre mis à jour avec event_name de l\'utilisateur:', currentUser.event_name);
+                    } else {
+                        console.log('Pas d\'event_name dans currentUser:', currentUser);
+                    }
                     
                     // Charger les données
                     await loadMyPhotos();
