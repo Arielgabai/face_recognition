@@ -1406,13 +1406,14 @@
                         const dashboardTitle = document.getElementById('dashboardTitle');
                         console.log('Dashboard title element:', dashboardTitle);
                         console.log('Photos:', photos);
+                        console.log('First photo complète:', photos[0]);
                         console.log('First photo event_name:', photos[0]?.event_name);
                         
                         if (photos.length > 0 && photos[0].event_name) {
                             dashboardTitle.textContent = photos[0].event_name;
                             console.log('Titre mis à jour avec:', photos[0].event_name);
                         } else {
-                            console.log('Pas de nom d\'événement trouvé');
+                            console.log('Pas de nom d\'événement trouvé dans les photos');
                         }
                         
                         container.innerHTML = `
@@ -1478,13 +1479,14 @@
                         const dashboardTitle = document.getElementById('dashboardTitle');
                         console.log('Dashboard title element (all photos):', dashboardTitle);
                         console.log('Photos (all):', photos);
+                        console.log('First photo complète (all):', photos[0]);
                         console.log('First photo event_name (all):', photos[0]?.event_name);
                         
                         if (photos.length > 0 && photos[0].event_name) {
                             dashboardTitle.textContent = photos[0].event_name;
                             console.log('Titre mis à jour avec (all):', photos[0].event_name);
                         } else {
-                            console.log('Pas de nom d\'événement trouvé (all)');
+                            console.log('Pas de nom d\'événement trouvé dans les photos (all)');
                         }
                         
                         container.innerHTML = `
@@ -1951,11 +1953,16 @@
                     
                     // Mettre à jour le titre avec le nom de l'événement de l'utilisateur
                     const dashboardTitle = document.getElementById('dashboardTitle');
+                    console.log('CurrentUser complet:', currentUser);
+                    
                     if (currentUser.event_name) {
                         dashboardTitle.textContent = currentUser.event_name;
                         console.log('Titre mis à jour avec event_name de l\'utilisateur:', currentUser.event_name);
                     } else {
-                        console.log('Pas d\'event_name dans currentUser:', currentUser);
+                        // Fallback : utiliser le nom d'utilisateur ou un nom par défaut
+                        const eventName = currentUser.username ? `${currentUser.username}'s Event` : 'Mon Événement';
+                        dashboardTitle.textContent = eventName;
+                        console.log('Titre mis à jour avec fallback:', eventName);
                     }
                     
                     // Charger les données
