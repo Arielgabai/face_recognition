@@ -677,30 +677,59 @@
             bottom: 0;
         }
 
-        .menu-dropdown {
-            position: absolute;
-            top: 100%;
-            right: 0;
-            background: rgba(26, 26, 26, 0.95);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(74, 222, 128, 0.2);
-            border-radius: 16px;
-            padding: 0;
-            min-width: 280px;
+        /* Overlay pour le menu drawer */
+        .menu-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
             opacity: 0;
             visibility: hidden;
-            transform: translateY(-15px) scale(0.95);
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .menu-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Menu drawer sur le côté */
+        .menu-dropdown {
+            position: fixed;
+            top: 0;
+            left: -320px;
+            width: 320px;
+            height: 100vh;
+            background: rgba(26, 26, 26, 0.98);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(74, 222, 128, 0.2);
+            padding: 0;
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 1001;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-            margin-top: 12px;
-            overflow: hidden;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
 
         .hamburger-menu.active .menu-dropdown {
-            opacity: 1;
-            visibility: visible;
-            transform: translateY(0) scale(1);
+            left: 0;
+        }
+
+        /* Contenu principal avec effet de décalage */
+        .container {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .hamburger-menu.active ~ .container {
+            transform: translateX(80px);
+            filter: blur(2px);
         }
 
         /* Section profil utilisateur */
@@ -1250,6 +1279,9 @@
                 <div class="loading-text" id="loadingText">Chargement en cours...</div>
             </div>
         </div>
+
+    <!-- Overlay pour le menu drawer -->
+    <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
 
     <div class="container">
             <div class="header">
@@ -1854,56 +1886,40 @@
         // Hamburger Menu Functions
         function toggleMenu() {
             const menu = document.getElementById('hamburgerMenu');
+            const overlay = document.getElementById('menuOverlay');
             const isActive = menu.classList.contains('active');
             
-            // Close all other menus first
-            document.querySelectorAll('.hamburger-menu.active').forEach(activeMenu => {
-                if (activeMenu !== menu) {
-                    activeMenu.classList.remove('active');
-                }
-            });
-            
-            // Toggle current menu
-            menu.classList.toggle('active');
-            
-            // Prevent body scroll when menu is open on mobile
-            if (window.innerWidth <= 768) {
-                if (menu.classList.contains('active')) {
-                    document.body.style.overflow = 'hidden';
-                } else {
-                    document.body.style.overflow = '';
-                }
+            if (isActive) {
+                closeMenu();
+            } else {
+                openMenu();
             }
         }
 
-        // Close menu when clicking outside
-        document.addEventListener('click', function(event) {
+        function openMenu() {
             const menu = document.getElementById('hamburgerMenu');
-            if (menu && !menu.contains(event.target)) {
-                menu.classList.remove('active');
-                document.body.style.overflow = '';
-            }
-        });
+            const overlay = document.getElementById('menuOverlay');
+            
+            menu.classList.add('active');
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeMenu() {
+            const menu = document.getElementById('hamburgerMenu');
+            const overlay = document.getElementById('menuOverlay');
+            
+            menu.classList.remove('active');
+            overlay.classList.remove('active');
+            document.body.style.overflow = '';
+        }
 
         // Close menu on escape key
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
-                const menu = document.getElementById('hamburgerMenu');
-                if (menu && menu.classList.contains('active')) {
-                    menu.classList.remove('active');
-                    document.body.style.overflow = '';
-                }
+                closeMenu();
             }
         });
-
-        // Handle touch events for mobile
-        document.addEventListener('touchstart', function(event) {
-            const menu = document.getElementById('hamburgerMenu');
-            if (menu && !menu.contains(event.target)) {
-                menu.classList.remove('active');
-                document.body.style.overflow = '';
-            }
-        }, { passive: true });
 
         // Profile Modal Functions
         function openProfileModal() {
@@ -2144,7 +2160,7 @@
 
         function handleLogout() {
             // Fermer le menu hamburger d'abord
-            document.getElementById('hamburgerMenu').classList.remove('active');
+            closeMenu();
             // Puis déconnecter
             logout();
         }
