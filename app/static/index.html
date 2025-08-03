@@ -677,24 +677,32 @@
             bottom: 0;
         }
 
-        /* Overlay pour le menu drawer */
+        /* Overlay pour le menu drawer - couvre seulement la partie restante */
         .menu-overlay {
             position: fixed;
             top: 0;
-            left: 0;
-            width: 100%;
+            left: 66.666%;
+            width: 33.333%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(5px);
+            background: transparent;
             opacity: 0;
             visibility: hidden;
             transition: all 0.3s ease;
             z-index: 1000;
+            cursor: pointer;
         }
 
         .menu-overlay.active {
             opacity: 1;
             visibility: visible;
+        }
+
+        /* Responsive pour mobile */
+        @media (max-width: 767px) {
+            .menu-overlay {
+                left: 75%;
+                width: 25%;
+            }
         }
 
         /* Menu drawer sur le côté */
@@ -716,6 +724,7 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
+            max-height: 100vh;
         }
 
         .hamburger-menu.active .menu-dropdown {
@@ -731,6 +740,11 @@
         .hamburger-menu.active ~ .container {
             transform: translateX(33.333%);
             filter: blur(3px);
+        }
+
+        /* Bloquer le scroll du body quand le menu est ouvert */
+        body.menu-open {
+            overflow: hidden;
         }
 
         /* Responsive pour mobile */
@@ -811,31 +825,6 @@
             color: #9ca3af;
             font-size: 0.85rem;
             margin: 0;
-        }
-
-        /* Bouton de fermeture du menu */
-        .menu-close-btn {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 32px;
-            height: 32px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            color: #ffffff;
-            font-size: 1.2rem;
-            font-weight: 600;
-        }
-
-        .menu-close-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: rgba(255, 255, 255, 0.3);
         }
 
         /* Position relative pour le conteneur du profil */
@@ -1398,10 +1387,6 @@
                                         <h4 id="menuUserName">Ariel</h4>
                                         <p id="menuUserEmail">a@h.fr</p>
                                     </div>
-                                </div>
-                                <!-- Bouton de fermeture sur mobile -->
-                                <div class="menu-close-btn" onclick="closeMenu()">
-                                    <span>&times;</span>
                                 </div>
                             </div>
                             
@@ -1977,11 +1962,8 @@
             
             menu.classList.add('active');
             overlay.classList.add('active');
-            
-            // Bloquer le scroll seulement sur desktop
-            if (window.innerWidth >= 768) {
-                document.body.style.overflow = 'hidden';
-            }
+            document.body.classList.add('menu-open');
+            document.body.style.overflow = 'hidden';
         }
 
         function closeMenu() {
@@ -1990,6 +1972,7 @@
             
             menu.classList.remove('active');
             overlay.classList.remove('active');
+            document.body.classList.remove('menu-open');
             document.body.style.overflow = '';
         }
 
@@ -1999,6 +1982,8 @@
                 closeMenu();
             }
         });
+
+
 
         // Profile Modal Functions
         function openProfileModal() {
