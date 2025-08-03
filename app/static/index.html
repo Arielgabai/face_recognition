@@ -1346,6 +1346,83 @@
             border: 2px dashed rgba(212, 115, 74, 0.3);
         }
 
+        .selfie-comparison {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .selfie-container {
+            flex: 1;
+            text-align: center;
+        }
+
+        .selfie-label {
+            color: #dfc8a6;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .selfie-image-container {
+            position: relative;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            border: 2px dashed rgba(164, 64, 29, 0.3);
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .selfie-image {
+            max-width: 100%;
+            max-height: 180px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .no-image-placeholder {
+            color: #9f8874;
+            font-size: 0.85rem;
+            font-style: italic;
+        }
+
+        .new-image-overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #a4401d;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        /* Responsive pour mobile */
+        @media (max-width: 768px) {
+            .selfie-comparison {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .modal-content {
+                margin: 20px;
+                max-width: calc(100% - 40px);
+            }
+            
+            .modal-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .modal-actions .btn {
+                width: 100%;
+            }
+        }
+
         .upload-section {
             margin-bottom: 24px;
         }
@@ -2529,19 +2606,35 @@
                             <button class="modal-close" onclick="closeSelfieModal()">&times;</button>
                         </div>
                         <div class="modal-body">
-                            <div class="selfie-preview" id="selfiePreview">
-                                <img id="currentSelfie" src="" alt="Selfie actuel" style="max-width: 200px; max-height: 200px; border-radius: 8px;">
+                            <div class="selfie-comparison">
+                                <div class="selfie-container">
+                                    <div class="selfie-label">📷 Selfie actuel</div>
+                                    <div class="selfie-image-container">
+                                        <img id="currentSelfie" src="" alt="Selfie actuel" class="selfie-image">
+                                    </div>
+                                </div>
+                                <div class="selfie-container">
+                                    <div class="selfie-label">🆕 Nouveau selfie</div>
+                                    <div class="selfie-image-container" id="newSelfieContainer">
+                                        <div class="no-image-placeholder">Aucune nouvelle photo sélectionnée</div>
+                                        <img id="newSelfiePreview" src="" alt="Nouveau selfie" class="selfie-image" style="display: none;">
+                                        <div class="new-image-overlay" id="newImageBadge" style="display: none;">NOUVEAU</div>
+                                    </div>
+                                </div>
                             </div>
                             <div class="upload-section">
-                                <input type="file" id="newSelfieInput" accept="image/*" style="display: none;">
-                                <button class="btn btn-secondary" onclick="document.getElementById('newSelfieInput').click()">
+                                <input type="file" id="newSelfieInput" accept="image/*" style="display: none;" onchange="previewNewSelfie(this)">
+                                <button class="btn btn-secondary" onclick="document.getElementById('newSelfieInput').click()" id="choosePhotoBtn">
                                     📷 Choisir une nouvelle photo
+                                </button>
+                                <button class="btn btn-secondary" onclick="clearNewSelfie()" id="clearPhotoBtn" style="display: none;">
+                                    🗑️ Supprimer la sélection
                                 </button>
                                 <p class="upload-hint">Format recommandé: JPG, PNG. Taille max: 5MB</p>
                             </div>
                             <div class="modal-actions">
                                 <button class="btn btn-secondary" onclick="closeSelfieModal()">Annuler</button>
-                                <button class="btn btn-primary" onclick="updateSelfie()" id="updateSelfieBtn">
+                                <button class="btn btn-primary" onclick="updateSelfie()" id="updateSelfieBtn" disabled>
                                     <span class="btn-text">Mettre à jour</span>
                                     <div class="loading-spinner" style="display: none;"></div>
                                 </button>
@@ -2563,15 +2656,136 @@
             const modal = document.getElementById('selfieModal');
             if (modal) {
                 modal.style.display = 'none';
+                // Réinitialiser l'état du modal
+                resetSelfieModal();
             }
+        }
+
+        function resetSelfieModal() {
+            const newSelfieInput = document.getElementById('newSelfieInput');
+            const newSelfiePreview = document.getElementById('newSelfiePreview');
+            const newSelfieContainer = document.getElementById('newSelfieContainer');
+            const newImageBadge = document.getElementById('newImageBadge');
+            const updateBtn = document.getElementById('updateSelfieBtn');
+            const chooseBtn = document.getElementById('choosePhotoBtn');
+            const clearBtn = document.getElementById('clearPhotoBtn');
+            const placeholder = newSelfieContainer?.querySelector('.no-image-placeholder');
+
+            if (newSelfieInput) newSelfieInput.value = '';
+            if (newSelfiePreview) newSelfiePreview.style.display = 'none';
+            if (newImageBadge) newImageBadge.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'block';
+            if (updateBtn) {
+                updateBtn.disabled = true;
+                const btnText = updateBtn.querySelector('.btn-text');
+                if (btnText) {
+                    btnText.textContent = 'Mettre à jour';
+                    btnText.style.color = '';
+                }
+            }
+            if (chooseBtn) chooseBtn.textContent = '📷 Choisir une nouvelle photo';
+            if (clearBtn) clearBtn.style.display = 'none';
+        }
+
+        function previewNewSelfie(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            // Validation du fichier
+            if (file.size > 5 * 1024 * 1024) {
+                showAlert('La taille du fichier ne doit pas dépasser 5MB', 'error');
+                input.value = '';
+                return;
+            }
+
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+            if (!allowedTypes.includes(file.type)) {
+                showAlert('Format de fichier non supporté. Utilisez JPG ou PNG', 'error');
+                input.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const newSelfiePreview = document.getElementById('newSelfiePreview');
+                const newImageBadge = document.getElementById('newImageBadge');
+                const updateBtn = document.getElementById('updateSelfieBtn');
+                const placeholder = document.querySelector('#newSelfieContainer .no-image-placeholder');
+                const chooseBtn = document.getElementById('choosePhotoBtn');
+                const clearBtn = document.getElementById('clearPhotoBtn');
+
+                if (newSelfiePreview) {
+                    newSelfiePreview.src = e.target.result;
+                    newSelfiePreview.style.display = 'block';
+                }
+                if (newImageBadge) newImageBadge.style.display = 'block';
+                if (placeholder) placeholder.style.display = 'none';
+                if (updateBtn) {
+                    updateBtn.disabled = false;
+                    updateBtn.querySelector('.btn-text').textContent = 'Mettre à jour';
+                }
+                if (chooseBtn) chooseBtn.textContent = '📷 Changer de photo';
+                if (clearBtn) clearBtn.style.display = 'inline-block';
+
+                // Animation d'apparition
+                setTimeout(() => {
+                    if (newSelfiePreview) {
+                        newSelfiePreview.style.opacity = '0';
+                        newSelfiePreview.style.transform = 'scale(0.8)';
+                        newSelfiePreview.style.transition = 'all 0.3s ease';
+                        setTimeout(() => {
+                            newSelfiePreview.style.opacity = '1';
+                            newSelfiePreview.style.transform = 'scale(1)';
+                        }, 50);
+                    }
+                }, 10);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearNewSelfie() {
+            const newSelfieInput = document.getElementById('newSelfieInput');
+            const newSelfiePreview = document.getElementById('newSelfiePreview');
+            const newImageBadge = document.getElementById('newImageBadge');
+            const updateBtn = document.getElementById('updateSelfieBtn');
+            const placeholder = document.querySelector('#newSelfieContainer .no-image-placeholder');
+            const chooseBtn = document.getElementById('choosePhotoBtn');
+            const clearBtn = document.getElementById('clearPhotoBtn');
+
+            if (newSelfieInput) newSelfieInput.value = '';
+            if (newSelfiePreview) newSelfiePreview.style.display = 'none';
+            if (newImageBadge) newImageBadge.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'block';
+            if (updateBtn) updateBtn.disabled = true;
+            if (chooseBtn) chooseBtn.textContent = '📷 Choisir une nouvelle photo';
+            if (clearBtn) clearBtn.style.display = 'none';
         }
 
         function loadCurrentSelfie() {
             const selfieImg = document.getElementById('currentSelfie');
-            if (currentUser && currentUser.id) {
+            if (selfieImg && currentUser && currentUser.id) {
                 const timestamp = Date.now();
                 const randomId = Math.random().toString(36).substring(7);
                 selfieImg.src = `/api/selfie/${currentUser.id}?t=${timestamp}&r=${randomId}`;
+                
+                selfieImg.onerror = function() {
+                    // Si l'image ne charge pas, afficher un placeholder
+                    this.style.display = 'none';
+                    const container = this.parentElement;
+                    if (container && !container.querySelector('.no-selfie-placeholder')) {
+                        const placeholder = document.createElement('div');
+                        placeholder.className = 'no-selfie-placeholder no-image-placeholder';
+                        placeholder.textContent = 'Aucun selfie enregistré';
+                        container.appendChild(placeholder);
+                    }
+                };
+                
+                selfieImg.onload = function() {
+                    // Supprimer le placeholder si l'image charge
+                    this.style.display = 'block';
+                    const placeholder = this.parentElement?.querySelector('.no-selfie-placeholder');
+                    if (placeholder) placeholder.remove();
+                };
             }
         }
 
@@ -2651,8 +2865,11 @@
             const btnText = updateBtn.querySelector('.btn-text');
             const spinner = updateBtn.querySelector('.loading-spinner');
 
-            btnText.style.display = 'none';
+            // Afficher l'état de chargement
+            updateBtn.disabled = true;
+            btnText.style.opacity = '0.5';
             spinner.style.display = 'inline-block';
+            btnText.textContent = 'Mise à jour...';
 
             try {
                 const response = await fetch('/api/upload-selfie', {
@@ -2664,21 +2881,64 @@
                 });
 
                 if (response.ok) {
-                    showAlert('Selfie mis à jour avec succès!', 'success');
-                    closeSelfieModal();
+                    btnText.textContent = 'Terminé !';
+                    btnText.style.color = '#22c55e';
                     
-                    // Rafraîchir les données utilisateur
-                    await loadDashboard();
+                    // Attendre un peu avant de fermer pour montrer le succès
+                    setTimeout(async () => {
+                        showAlert('Selfie mis à jour avec succès!', 'success');
+                        closeSelfieModal();
+                        
+                        // Rafraîchir toute l'interface utilisateur
+                        await refreshUserInterface();
+                    }, 1000);
                 } else {
                     const errorData = await response.json();
                     showAlert(errorData.detail || 'Erreur lors de la mise à jour du selfie', 'error');
+                    
+                    // Réinitialiser le bouton en cas d'erreur
+                    btnText.textContent = 'Mettre à jour';
+                    btnText.style.color = '';
+                    updateBtn.disabled = false;
                 }
             } catch (error) {
                 console.error('Erreur lors de l\'upload:', error);
                 showAlert('Erreur lors de la mise à jour du selfie', 'error');
+                
+                // Réinitialiser le bouton en cas d'erreur
+                btnText.textContent = 'Mettre à jour';
+                btnText.style.color = '';
+                updateBtn.disabled = false;
             } finally {
-                btnText.style.display = 'inline';
+                btnText.style.opacity = '1';
                 spinner.style.display = 'none';
+            }
+        }
+
+        async function refreshUserInterface() {
+            try {
+                // Rafraîchir les données utilisateur
+                await loadDashboard();
+                
+                // Mettre à jour l'image de profil dans le menu si elle existe
+                const profileImage = document.querySelector('.user-avatar img');
+                if (profileImage && currentUser && currentUser.id) {
+                    const timestamp = Date.now();
+                    profileImage.src = `/api/selfie/${currentUser.id}?t=${timestamp}`;
+                }
+                
+                // Mettre à jour toutes les images de selfie dans l'interface
+                const selfieImages = document.querySelectorAll('[src*="/api/selfie/"]');
+                selfieImages.forEach(img => {
+                    if (currentUser && currentUser.id) {
+                        const timestamp = Date.now();
+                        img.src = `/api/selfie/${currentUser.id}?t=${timestamp}`;
+                    }
+                });
+                
+                console.log('Interface utilisateur rafraîchie avec succès');
+            } catch (error) {
+                console.error('Erreur lors du rafraîchissement de l\'interface:', error);
             }
         }
 
