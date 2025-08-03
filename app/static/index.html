@@ -2691,6 +2691,92 @@
         });
 
 
+        // Password Reset Modal Functions
+        function showPasswordResetModal() {
+            const modal = document.getElementById('passwordResetModal');
+            modal.classList.add('active');
+            document.getElementById('resetEmail').value = '';
+            document.getElementById('resetMessage').style.display = 'none';
+        }
+
+        function closePasswordResetModal() {
+            const modal = document.getElementById('passwordResetModal');
+            modal.classList.remove('active');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('passwordResetModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closePasswordResetModal();
+            }
+        });
+
+        async function sendPasswordReset() {
+            const email = document.getElementById('resetEmail').value;
+            const resetBtn = document.getElementById('resetBtn');
+            const btnText = resetBtn.querySelector('.btn-text');
+            const spinner = resetBtn.querySelector('.loading-spinner');
+            const messageDiv = document.getElementById('resetMessage');
+
+            if (!email) {
+                messageDiv.style.display = 'block';
+                messageDiv.style.color = '#ef4444';
+                messageDiv.textContent = 'Veuillez entrer votre adresse email';
+                return;
+            }
+
+            // Validation email basique
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                messageDiv.style.display = 'block';
+                messageDiv.style.color = '#ef4444';
+                messageDiv.textContent = 'Veuillez entrer une adresse email valide';
+                return;
+            }
+
+            // Show loading state
+            btnText.style.opacity = '0.5';
+            spinner.style.display = 'inline-block';
+            resetBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/password-reset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email: email })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageDiv.style.display = 'block';
+                    messageDiv.style.color = '#22c55e';
+                    messageDiv.textContent = 'Un email de réinitialisation a été envoyé à votre adresse !';
+                    
+                    // Fermer le modal après 3 secondes
+                    setTimeout(() => {
+                        closePasswordResetModal();
+                    }, 3000);
+                } else {
+                    messageDiv.style.display = 'block';
+                    messageDiv.style.color = '#ef4444';
+                    messageDiv.textContent = data.detail || 'Erreur lors de l\'envoi de l\'email';
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                messageDiv.style.display = 'block';
+                messageDiv.style.color = '#ef4444';
+                messageDiv.textContent = 'Erreur de connexion. Veuillez réessayer.';
+            } finally {
+                // Hide loading state
+                btnText.style.opacity = '1';
+                spinner.style.display = 'none';
+                resetBtn.disabled = false;
+            }
+        }
+
     </script>
 </body>
 </html> 
