@@ -702,7 +702,7 @@
             position: fixed;
             top: 0;
             left: -100%;
-            width: 100%;
+            width: 66.666%;
             height: 100vh;
             background: rgba(26, 26, 26, 0.98);
             backdrop-filter: blur(20px);
@@ -722,34 +722,26 @@
             left: 0;
         }
 
-        /* Contenu principal avec effet de décalage - désactivé sur mobile */
+        /* Contenu principal avec effet de décalage et flou */
         .container {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* Effet de décalage seulement sur desktop */
-        @media (min-width: 768px) {
-            .hamburger-menu.active ~ .container {
-                transform: translateX(80px);
-                filter: blur(2px);
-            }
-            
-            .menu-dropdown {
-                width: 320px;
-                left: -320px;
-            }
+        /* Effet de décalage et flou quand le menu est ouvert */
+        .hamburger-menu.active ~ .container {
+            transform: translateX(33.333%);
+            filter: blur(3px);
         }
 
         /* Responsive pour mobile */
         @media (max-width: 767px) {
             .menu-dropdown {
-                width: 100%;
-                left: -100%;
+                width: 75%;
             }
             
             .hamburger-menu.active ~ .container {
-                transform: none;
-                filter: none;
+                transform: translateX(25%);
+                filter: blur(3px);
             }
             
             /* Ajuster la taille du menu sur mobile */
@@ -1471,12 +1463,12 @@
 
 
             <div class="tabs">
-                    <button class="tab active" onclick="showTab('my-photos')">📷 Mes Photos</button>
-                <button class="tab" onclick="showTab('all-photos')">🖼️ Toutes les Photos</button>
+                    <button class="tab" onclick="showTab('my-photos')">📷 Mes Photos</button>
+                <button class="tab active" onclick="showTab('all-photos')">🖼️ Toutes les Photos</button>
                 <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤 Ajouter des Photos</button>
             </div>
 
-                <div id="my-photos" class="tab-content active">
+                <div id="my-photos" class="tab-content">
                 <div class="card">
                         <h3>Mes Photos</h3>
                         <p style="color: #9ca3af; margin-bottom: 20px;">Photos où vous avez été reconnu grâce à votre selfie :</p>
@@ -1494,7 +1486,7 @@
                 </div>
             </div>
 
-                <div id="all-photos" class="tab-content">
+                <div id="all-photos" class="tab-content active">
                 <div class="card">
                         <h3>Toutes les Photos</h3>
                         <p style="color: #9ca3af; margin-bottom: 20px;">Photos de votre événement :</p>
@@ -2296,9 +2288,9 @@
                     // Mettre à jour les informations du menu hamburger
                     updateMenuUserInfo(currentUser);
                     
-                    // Charger les données
-                    await loadMyPhotos();
+                    // Charger les données - "Toutes les photos" par défaut
                     await loadAllPhotos();
+                    await loadMyPhotos();
                     
                     // Afficher l'onglet upload pour les photographes
                     if (currentUser.user_type === 'PHOTOGRAPHER') {
