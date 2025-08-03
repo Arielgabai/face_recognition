@@ -1025,24 +1025,26 @@
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        /* Photo Grid - Design moderne inspiré de l'image */
+        /* Photo Grid - Design moderne avec largeur complète */
         .photo-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 16px;
-            margin-top: 24px;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 6px;
+            margin-top: 20px;
+            width: 100%;
+            padding: 0 5px;
         }
 
         .photo-item {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
+            border-radius: 8px;
             overflow: hidden;
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             backdrop-filter: blur(10px);
-            /* Hauteur fixe pour toutes les photos */
-            height: 250px;
+            /* Aspect ratio carré pour toutes les photos */
+            aspect-ratio: 1;
         }
 
 
@@ -1112,58 +1114,41 @@
             background-clip: text;
         }
 
-        /* Tabs - Design moderne */
+        /* Tabs - Design moderne horizontal comme dans l'image */
         .tabs {
             display: flex;
-            gap: 12px;
-            margin-bottom: 35px;
-            flex-wrap: wrap;
-            background: rgba(255, 255, 255, 0.03);
-            padding: 8px;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 12px 20px;
+            border-radius: 0;
+            border: none;
+            width: 100%;
         }
 
         .tab {
-            padding: 14px 24px;
             background: transparent;
-            border: 1px solid transparent;
-            border-radius: 12px;
+            border: none;
             color: #9ca3af;
+            padding: 8px 16px;
+            border-radius: 0;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s ease;
             font-weight: 500;
             font-size: 0.9rem;
             position: relative;
-            overflow: hidden;
-        }
-
-        .tab::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(74, 222, 128, 0.1), transparent);
-            transition: left 0.5s ease;
-        }
-
-        .tab:hover::before {
-            left: 100%;
+            border-bottom: 2px solid transparent;
         }
 
         .tab:hover {
-            background: rgba(255, 255, 255, 0.08);
-            color: #ffffff;
-            transform: translateY(-1px);
+            color: #e5e7eb;
         }
 
         .tab.active {
-            background: linear-gradient(135deg, #4ade80, #22c55e);
-            color: #ffffff;
-            border-color: #4ade80;
-            box-shadow: 0 4px 15px rgba(74, 222, 128, 0.3);
+            background: transparent;
+            color: #4ade80;
+            border-bottom: 2px solid #4ade80;
         }
 
         /* Cards - Design moderne */
@@ -1499,14 +1484,14 @@
             
             <div class="dashboard">
                 <div class="tabs">
-                    <button class="tab" onclick="showTab('my-photos')">📷 Mes Photos</button>
-                <button class="tab active" onclick="showTab('all-photos')">🖼️ Toutes les Photos</button>
-                <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤 Ajouter des Photos</button>
+                <button class="tab" onclick="showTab('my-photos')">Pour vous</button>
+                <button class="tab active" onclick="showTab('all-photos')">Général</button>
+                <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤</button>
             </div>
 
                 <div id="my-photos" class="tab-content">
                 <div class="card">
-                        <h3>Mes Photos</h3>
+                        <h3>Pour vous</h3>
                         <p style="color: #9ca3af; margin-bottom: 20px;">Photos où vous avez été reconnu grâce à votre selfie :</p>
                         <div id="myPhotosList">
                             <div class="loading-container" id="myPhotosLoading" style="display: none;">
@@ -1524,7 +1509,7 @@
 
                 <div id="all-photos" class="tab-content active">
                 <div class="card">
-                        <h3>Toutes les Photos</h3>
+                        <h3>Général</h3>
                         <p style="color: #9ca3af; margin-bottom: 20px;">Photos de votre événement :</p>
                         <div id="allPhotosList">
                             <div class="loading-container" id="allPhotosLoading" style="display: none;">
