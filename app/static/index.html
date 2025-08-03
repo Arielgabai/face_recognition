@@ -1028,13 +1028,12 @@
 
 
         .photo-item {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 8px;
+            background: transparent;
+            border: none;
+            border-radius: 0;
             overflow: hidden;
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
-            backdrop-filter: blur(10px);
             /* Hauteur variable selon les proportions */
             height: auto;
             min-height: 120px;
@@ -1043,9 +1042,8 @@
 
 
         .photo-item:hover {
-            transform: translateY(-4px) scale(1.02);
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
-            border-color: rgba(74, 222, 128, 0.3);
+            transform: scale(1.02);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
 
         .photo-item img {
@@ -1061,7 +1059,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
             grid-auto-rows: minmax(120px, auto);
-            gap: 4px;
+            gap: 3px;
             margin-top: 5px;
             width: 100vw;
             padding: 0;
@@ -1074,7 +1072,7 @@
             .photo-grid {
                 grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
                 grid-auto-rows: minmax(100px, auto);
-                gap: 3px;
+                gap: 2px;
             }
         }
 
@@ -1082,7 +1080,7 @@
             .photo-grid {
                 grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
                 grid-auto-rows: minmax(80px, auto);
-                gap: 2px;
+                gap: 1px;
             }
         }
 
