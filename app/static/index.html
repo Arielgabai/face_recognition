@@ -2911,7 +2911,8 @@
         async function refreshPhotosAfterSelfieUpdate() {
             try {
                 // Attendre un peu pour que le backend traite le matching
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                console.log('Début du rafraîchissement des photos...');
+                await new Promise(resolve => setTimeout(resolve, 3000));
                 
                 // Mettre à jour l'image de selfie dans l'interface sans recharger tout le dashboard
                 const timestamp = Date.now();
@@ -2924,10 +2925,13 @@
                 
                 // Recharger spécifiquement les photos "pour vous" avec un polling
                 let attempts = 0;
-                const maxAttempts = 10;
+                const maxAttempts = 15; // Augmenté pour plus de chances
+                let lastPhotoCount = -1;
                 
                 while (attempts < maxAttempts) {
                     try {
+                        console.log(`Tentative ${attempts + 1}/${maxAttempts} de récupération des photos...`);
+                        
                         const response = await fetch('/api/my-photos', {
                             headers: {
                                 'Authorization': `Bearer ${token}`
@@ -2936,12 +2940,25 @@
                         
                         if (response.ok) {
                             const newPhotos = await response.json();
+                            console.log(`API response: ${newPhotos.length} photos trouvées`);
                             
-                            // Mettre à jour l'affichage des photos
-                            updatePhotoDisplay(newPhotos);
-                            
-                            console.log(`Photos rafraîchies avec succès (tentative ${attempts + 1})`);
-                            return; // Succès, sortir de la boucle
+                            // Vérifier si le nombre de photos a changé
+                            if (newPhotos.length !== lastPhotoCount) {
+                                console.log(`Mise à jour détectée: ${lastPhotoCount} -> ${newPhotos.length} photos`);
+                                
+                                // Mettre à jour l'affichage des photos
+                                updatePhotoDisplay(newPhotos);
+                                
+                                // Si on a des photos et que c'est un changement, on considère que c'est un succès
+                                if (newPhotos.length > 0 || attempts > 5) {
+                                    console.log(`Photos rafraîchies avec succès: ${newPhotos.length} photos`);
+                                    return;
+                                }
+                                
+                                lastPhotoCount = newPhotos.length;
+                            }
+                        } else {
+                            console.error(`Erreur API: ${response.status}`);
                         }
                     } catch (error) {
                         console.error(`Erreur tentative ${attempts + 1}:`, error);
@@ -2949,13 +2966,14 @@
                     
                     attempts++;
                     if (attempts < maxAttempts) {
-                        // Attendre 1 seconde avant la prochaine tentative
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        // Attendre 2 secondes avant la prochaine tentative
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                     }
                 }
                 
-                // Si on arrive ici, toutes les tentatives ont échoué
-                throw new Error('Impossible de rafraîchir les photos après plusieurs tentatives');
+                // Si on arrive ici, essayer de forcer un rechargement final
+                console.log('Tentatives épuisées, rechargement final...');
+                await loadMyPhotos();
                 
             } catch (error) {
                 console.error('Erreur lors du rafraîchissement des photos:', error);
@@ -2964,38 +2982,46 @@
         }
 
         function updatePhotoDisplay(photos) {
-            const photoGrid = document.querySelector('.photo-grid');
-            if (!photoGrid || !photos) return;
+            const container = document.getElementById('myPhotosList');
+            if (!container || !photos) return;
             
-            // Vider la grille actuelle
-            photoGrid.innerHTML = '';
+            console.log(`Mise à jour de l'affichage avec ${photos.length} photos`);
             
             if (photos.length === 0) {
-                photoGrid.innerHTML = `
-                    <div class="no-photos">
-                        <p>Aucune photo trouvée pour le moment.</p>
-                        <p>Vos photos apparaîtront ici dès qu'elles seront reconnues !</p>
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🖼️</div>
+                        <h4>Aucune photo trouvée</h4>
+                        <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
                     </div>
                 `;
                 return;
             }
             
-            // Ajouter les nouvelles photos
-            photos.forEach(photo => {
-                const photoItem = document.createElement('div');
-                photoItem.className = 'photo-item';
-                
-                photoItem.innerHTML = `
-                    <img src="/api/photo/${photo.id}?t=${Date.now()}" 
-                         alt="Photo ${photo.id}" 
-                         class="gallery-image"
-                         loading="lazy">
-                `;
-                
-                photoGrid.appendChild(photoItem);
-            });
+            // Mettre à jour le nombre de photos dans l'onglet
+            const myPhotosTab = document.getElementById('myPhotosTab');
+            if (myPhotosTab) {
+                myPhotosTab.textContent = `Pour vous (${photos.length})`;
+            }
             
-            console.log(`Affichage mis à jour avec ${photos.length} photos`);
+            // Mettre à jour le titre de l'événement si disponible
+            if (photos.length > 0 && photos[0].event_name) {
+                const eventTitle = document.getElementById('eventTitle');
+                if (eventTitle) {
+                    eventTitle.textContent = photos[0].event_name;
+                }
+            }
+            
+            // Afficher les nouvelles photos avec la même structure que loadMyPhotos
+            container.innerHTML = `
+                <div class="gallery">
+                    ${photos.map(photo => `
+                        <img src="/api/photo/${photo.id}?t=${Date.now()}" alt="Photo" class="gallery-image">
+                    `).join('')}
+                </div>
+            `;
+            
+            console.log(`Affichage mis à jour avec succès: ${photos.length} photos`);
         }
 
         // Fonction pour recharger le dashboard en cas de besoin (sans affecter les photos)
