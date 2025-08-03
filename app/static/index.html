@@ -1059,7 +1059,10 @@
             gap: 12px;
             margin-top: 20px;
             width: 100%;
-            padding: 0;
+            padding: 20px;
+            background-color: #f5f5dc; /* Beige */
+            border-radius: 12px;
+            border: 2px solid #e6dfc7; /* Beige plus foncé pour la bordure */
         }
 
         .gallery-image {
@@ -1069,11 +1072,13 @@
             border-radius: 8px;
             transition: all 0.3s ease;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border: 3px solid #e6dfc7; /* Bordure beige autour de chaque photo */
         }
 
         .gallery-image:hover {
             transform: scale(1.02);
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+            border-color: #d4c5a0; /* Beige plus foncé au hover */
         }
 
         /* Responsive pour différentes tailles d'écran */
@@ -1081,6 +1086,7 @@
             .gallery {
                 grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
                 gap: 10px;
+                padding: 15px;
             }
         }
 
@@ -1088,6 +1094,7 @@
             .gallery {
                 grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
                 gap: 8px;
+                padding: 12px;
             }
         }
 
