@@ -1056,10 +1056,10 @@
         .gallery {
             display: flex;
             flex-wrap: wrap;
-            gap: 12px;
+            gap: 8px;
             margin-top: 20px;
             width: 100%;
-            padding: 20px;
+            padding: 15px;
             background-color: #dfc8a6; /* Beige doré */
             border-radius: 12px;
             border: 2px solid #d1bb95; /* Beige doré plus foncé pour la bordure */
@@ -1069,7 +1069,7 @@
         .gallery-image {
             width: auto;
             height: 250px;
-            max-width: 300px;
+            max-width: 180px;
             object-fit: contain;
             border-radius: 8px;
             transition: all 0.3s ease;
@@ -1107,7 +1107,7 @@
         .photo-grid {
             display: flex;
             flex-wrap: wrap;
-            gap: 15px;
+            gap: 8px;
             margin-top: 20px;
             justify-content: center;
         }
@@ -1126,7 +1126,7 @@
         .photo-item img {
             width: auto;
             height: 250px;
-            max-width: 300px;
+            max-width: 200px;
             object-fit: contain;
             display: block;
             margin: 0 auto;
@@ -1136,31 +1136,31 @@
         /* Responsive pour différentes tailles d'écran */
         @media (max-width: 768px) {
             .photo-grid {
-                gap: 10px;
+                gap: 6px;
             }
             .photo-item img {
                 height: 200px;
-                max-width: 250px;
+                max-width: 150px;
             }
         }
 
         @media (max-width: 480px) {
             .photo-grid {
-                gap: 8px;
+                gap: 4px;
             }
             .photo-item img {
-                height: 180px;
-                max-width: 200px;
+                height: 150px;
+                max-width: 110px;
             }
         }
 
         @media (max-width: 320px) {
             .photo-grid {
-                gap: 5px;
+                gap: 3px;
             }
             .photo-item img {
-                height: 150px;
-                max-width: 150px;
+                height: 120px;
+                max-width: 80px;
             }
         }
 
