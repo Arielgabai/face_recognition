@@ -14,8 +14,8 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-            color: #ffffff;
+            background: linear-gradient(135deg, #dfc8a6 0%, #9f8874 100%);
+            color: #381819;
             min-height: 100vh;
             line-height: 1.6;
         }
@@ -39,7 +39,7 @@
             font-family: 'Playfair Display', serif;
             font-size: 2.5rem;
             font-weight: 600;
-            background: linear-gradient(45deg, #4ade80, #22c55e);
+            background: linear-gradient(45deg, #a4401d, #ba4921);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -47,18 +47,18 @@
         }
 
         .subtitle {
-            color: #9ca3af;
+            color: #381819;
             font-size: 1.1rem;
             font-weight: 300;
         }
 
         .register-container {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.9);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(164, 64, 29, 0.2);
             border-radius: 20px;
             padding: 40px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 8px 32px rgba(56, 24, 25, 0.2);
         }
 
         .form-group {
@@ -68,7 +68,7 @@
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            color: #e5e7eb;
+            color: #381819;
             font-weight: 500;
             font-size: 0.9rem;
         }
@@ -76,23 +76,23 @@
         .form-input {
             width: 100%;
             padding: 15px 20px;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(164, 64, 29, 0.3);
             border-radius: 12px;
-            color: #ffffff;
+            color: #381819;
             font-size: 1rem;
             transition: all 0.3s ease;
         }
 
         .form-input:focus {
             outline: none;
-            border-color: #4ade80;
-            background: rgba(255, 255, 255, 0.12);
-            box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.1);
+            border-color: #a4401d;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 0 3px rgba(164, 64, 29, 0.2);
         }
 
         .form-input::placeholder {
-            color: #9ca3af;
+            color: #9f8874;
         }
 
         .btn {
@@ -108,24 +108,24 @@
         }
 
         .btn-primary {
-            background: linear-gradient(45deg, #4ade80, #22c55e);
+            background: linear-gradient(45deg, #a4401d, #ba4921);
             color: #ffffff;
             width: 100%;
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(74, 222, 128, 0.3);
+            box-shadow: 0 8px 25px rgba(164, 64, 29, 0.3);
         }
 
         .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(159, 136, 116, 0.2);
+            color: #381819;
+            border: 1px solid rgba(164, 64, 29, 0.3);
         }
 
         .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.15);
+            background: rgba(159, 136, 116, 0.3);
         }
 
         .btn:disabled {
@@ -154,9 +154,9 @@
         }
 
         .alert-success {
-            background: rgba(74, 222, 128, 0.1);
-            border: 1px solid rgba(74, 222, 128, 0.3);
-            color: #4ade80;
+            background: rgba(164, 64, 29, 0.1);
+            border: 1px solid rgba(164, 64, 29, 0.3);
+            color: #a4401d;
         }
 
         .alert-error {
@@ -182,16 +182,16 @@
         .step {
             display: flex;
             align-items: center;
-            color: #9ca3af;
+            color: #9f8874;
             font-size: 0.9rem;
         }
 
         .step.active {
-            color: #4ade80;
+            color: #a4401d;
         }
 
         .step.completed {
-            color: #4ade80;
+            color: #a4401d;
         }
 
         .step-number {
@@ -209,26 +209,26 @@
         }
 
         .step.active .step-number {
-            background: #4ade80;
-            border-color: #4ade80;
+            background: #a4401d;
+            border-color: #a4401d;
             color: #ffffff;
         }
 
         .step.completed .step-number {
-            background: #4ade80;
-            border-color: #4ade80;
+            background: #a4401d;
+            border-color: #a4401d;
             color: #ffffff;
         }
 
         .step-line {
             width: 40px;
             height: 2px;
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(164, 64, 29, 0.3);
             margin: 0 10px;
         }
 
         .step.completed + .step-line {
-            background: #4ade80;
+            background: #a4401d;
         }
 
         /* Selfie Upload */
@@ -244,8 +244,8 @@
             max-width: 250px;
             max-height: 250px;
             border-radius: 15px;
-            border: 3px solid rgba(74, 222, 128, 0.3);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+            border: 3px solid rgba(164, 64, 29, 0.3);
+            box-shadow: 0 8px 25px rgba(56, 24, 25, 0.2);
             margin: 15px auto;
             display: block;
         }
@@ -263,19 +263,19 @@
         .file-input-wrapper label {
             display: block;
             padding: 30px;
-            background: rgba(255, 255, 255, 0.08);
-            border: 2px dashed rgba(74, 222, 128, 0.3);
+            background: rgba(255, 255, 255, 0.6);
+            border: 2px dashed rgba(164, 64, 29, 0.3);
             border-radius: 15px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            color: #9ca3af;
+            color: #381819;
         }
 
         .file-input-wrapper label:hover {
-            border-color: #4ade80;
-            background: rgba(74, 222, 128, 0.05);
-            color: #4ade80;
+            border-color: #a4401d;
+            background: rgba(164, 64, 29, 0.1);
+            color: #a4401d;
         }
 
         /* Selfie Validation */
@@ -287,9 +287,9 @@
         }
 
         .selfie-validation.success {
-            background: rgba(74, 222, 128, 0.1);
-            border: 1px solid rgba(74, 222, 128, 0.3);
-            color: #4ade80;
+            background: rgba(164, 64, 29, 0.1);
+            border: 1px solid rgba(164, 64, 29, 0.3);
+            color: #a4401d;
         }
 
         .selfie-validation.error {
@@ -317,8 +317,8 @@
         }
 
         .spinner {
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top: 3px solid #4ade80;
+            border: 3px solid rgba(164, 64, 29, 0.2);
+            border-top: 3px solid #a4401d;
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -338,7 +338,7 @@
         }
 
         .back-to-login a {
-            color: #4ade80;
+            color: #a4401d;
             text-decoration: none;
             font-weight: 500;
         }
@@ -352,8 +352,8 @@
             text-align: center;
             margin-top: 40px;
             padding-top: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            color: #9ca3af;
+            border-top: 1px solid rgba(164, 64, 29, 0.2);
+            color: #9f8874;
             font-size: 0.8rem;
         }
 
@@ -361,7 +361,7 @@
             display: inline-block;
             width: 20px;
             height: 20px;
-            background: linear-gradient(45deg, #4ade80, #22c55e);
+            background: linear-gradient(45deg, #a4401d, #ba4921);
             border-radius: 50%;
             margin-right: 8px;
             vertical-align: middle;
@@ -403,7 +403,7 @@
             </div>
 
             <div id="registrationForm">
-                <h3 style="text-align: center; margin-bottom: 30px; color: #ffffff;">Créer votre compte</h3>
+                <h3 style="text-align: center; margin-bottom: 30px; color: #381819;">Créer votre compte</h3>
                 
                 <div class="form-group">
                     <label for="username">Nom d'utilisateur</label>
@@ -432,8 +432,8 @@
             </div>
 
             <div class="selfie-upload-section" id="selfieSection">
-                <h3 style="text-align: center; margin-bottom: 30px; color: #ffffff;">Ajoutez votre selfie</h3>
-                <p style="text-align: center; color: #9ca3af; margin-bottom: 20px;">
+                <h3 style="text-align: center; margin-bottom: 30px; color: #381819;">Ajoutez votre selfie</h3>
+                <p style="text-align: center; color: #9f8874; margin-bottom: 20px;">
                     Prenez une photo claire de votre visage pour la reconnaissance faciale
                 </p>
                 
