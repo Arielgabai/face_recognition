@@ -602,10 +602,29 @@
         /* Hamburger Menu - Design moderne */
         .hamburger-menu {
             position: fixed;
-            top: 20px;
-            left: 20px;
+            top: 10px;
+            left: 10px;
             z-index: 1002;
             display: inline-block;
+        }
+
+        /* Bannière de l'événement */
+        .event-banner {
+            width: 100%;
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(34, 197, 94, 0.1));
+            border-bottom: 1px solid rgba(74, 222, 128, 0.2);
+            padding: 15px 0;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .event-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: #ffffff;
+            margin: 0;
+            padding: 0 60px; /* Espace pour le hamburger menu */
         }
 
         .hamburger-btn {
@@ -1392,77 +1411,80 @@
                 <div class="hamburger-btn" onclick="toggleMenu()">
                     <div class="hamburger-icon"></div>
                 </div>
+                <div class="menu-dropdown">
+                    <!-- Section profil utilisateur -->
+                    <div class="menu-profile-section">
+                        <div class="menu-profile-info">
+                            <div class="menu-profile-avatar" id="menuUserAvatar">
+                                A
+                            </div>
+                            <div class="menu-profile-details">
+                                <h4 id="menuUserName">Ariel</h4>
+                                <p id="menuUserEmail">a@h.fr</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Section espace actuel -->
+                    <div class="menu-current-space">
+                        <p>Espace actuel: <span id="menuCurrentEvent">Mariage ariel et anaelle</span></p>
+                        <div class="menu-change-space-btn" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                            <span>↔️</span>
+                            <span>Changer d'espace</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Options de menu -->
+                    <div class="menu-options">
+                        <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                            <span>📋</span>
+                            <span>Politique de confidentialité</span>
+                        </div>
+                        <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                            <span>📄</span>
+                            <span>Conditions générales d'utilisation</span>
+                        </div>
+                        <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                            <span>❓</span>
+                            <span>Besoin d'aide? Contactez-nous</span>
+                        </div>
+                        <div class="menu-divider"></div>
+                        <div class="menu-item danger" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                            <span>🗑️</span>
+                            <span>Supprimer mon compte</span>
+                        </div>
+                        <div class="menu-item danger" onclick="handleLogout()">
+                            <span>🚪</span>
+                            <span>Se déconnecter</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Banner Memento AI -->
+                    <div class="menu-memento-banner" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                        <div class="menu-memento-header">
+                            <div class="menu-memento-logo">M</div>
+                            <div class="menu-memento-title">Memento</div>
+                        </div>
+                        <div class="menu-memento-subtitle">Powered By Memento AI</div>
+                        <div class="menu-memento-link">
+                            Cliquez ici pour en savoir plus sur Memento Photo AI
+                            <span>→</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Version de l'app -->
+                    <div class="menu-app-version">
+                        Face Recognition v. v1.0.0
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Bannière avec le nom de l'événement -->
+            <div class="event-banner">
+                <h1 class="event-title" id="eventTitle">Tableau de bord</h1>
             </div>
             
             <div class="dashboard">
-                <div class="dashboard-header">
-                    <h2 class="dashboard-title" id="dashboardTitle">Tableau de bord</h2>
-                        <div class="menu-dropdown">
-                            <!-- Section profil utilisateur -->
-                            <div class="menu-profile-section">
-                                <div class="menu-profile-info">
-                                    <div class="menu-profile-avatar" id="menuUserAvatar">
-                                        A
-                                    </div>
-                                    <div class="menu-profile-details">
-                                        <h4 id="menuUserName">Ariel</h4>
-                                        <p id="menuUserEmail">a@h.fr</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Section espace actuel -->
-                            <div class="menu-current-space">
-                                <p>Espace actuel: <span id="menuCurrentEvent">Mariage ariel et anaelle</span></p>
-                                <div class="menu-change-space-btn" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
-                                    <span>↔️</span>
-                                    <span>Changer d'espace</span>
-                                </div>
-                            </div>
-                            
-                            <!-- Options de menu -->
-                            <div class="menu-options">
-                                <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
-                                    <span>📋</span>
-                                    <span>Politique de confidentialité</span>
-                                </div>
-                                <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
-                                    <span>📄</span>
-                                    <span>Conditions générales d'utilisation</span>
-                                </div>
-                                <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
-                                    <span>❓</span>
-                                    <span>Besoin d'aide? Contactez-nous</span>
-                                </div>
-                                <div class="menu-divider"></div>
-                                <div class="menu-item danger" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
-                                    <span>🗑️</span>
-                                    <span>Supprimer mon compte</span>
-                                </div>
-                                <div class="menu-item danger" onclick="handleLogout()">
-                                    <span>🚪</span>
-                                    <span>Se déconnecter</span>
-                                </div>
-                            </div>
-                            
-                            <!-- Banner Memento AI -->
-                            <div class="menu-memento-banner" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
-                                <div class="menu-memento-header">
-                                    <div class="menu-memento-logo">M</div>
-                                    <div class="menu-memento-title">Memento</div>
-                                </div>
-                                <div class="menu-memento-subtitle">Powered By Memento AI</div>
-                                <div class="menu-memento-link">
-                                    Cliquez ici pour en savoir plus sur Memento Photo AI
-                                    <span>→</span>
-                                </div>
-                            </div>
-                            
-                            <!-- Version de l'app -->
-                            <div class="menu-app-version">
-                                Face Recognition v. v1.0.0
-                            </div>
-                        </div>
                     </div>
             </div>
             
@@ -1715,15 +1737,15 @@
                             </div>
                         `;
                     } else {
-                        // Mettre à jour le titre du dashboard avec le nom de l'événement
-                        const dashboardTitle = document.getElementById('dashboardTitle');
-                        console.log('Dashboard title element:', dashboardTitle);
+                        // Mettre à jour le titre de l'événement dans la bannière
+                        const eventTitle = document.getElementById('eventTitle');
+                        console.log('Event title element:', eventTitle);
                         console.log('Photos:', photos);
                         console.log('First photo complète:', photos[0]);
                         console.log('First photo event_name:', photos[0]?.event_name);
                         
                         if (photos.length > 0 && photos[0].event_name) {
-                            dashboardTitle.textContent = photos[0].event_name;
+                            eventTitle.textContent = photos[0].event_name;
                             console.log('Titre mis à jour avec:', photos[0].event_name);
                         } else {
                             console.log('Pas de nom d\'événement trouvé dans les photos');
@@ -1788,15 +1810,15 @@
                             </div>
                         `;
                     } else {
-                        // Mettre à jour le titre du dashboard avec le nom de l'événement
-                        const dashboardTitle = document.getElementById('dashboardTitle');
-                        console.log('Dashboard title element (all photos):', dashboardTitle);
+                        // Mettre à jour le titre de l'événement dans la bannière
+                        const eventTitle = document.getElementById('eventTitle');
+                        console.log('Event title element (all photos):', eventTitle);
                         console.log('Photos (all):', photos);
                         console.log('First photo complète (all):', photos[0]);
                         console.log('First photo event_name (all):', photos[0]?.event_name);
                         
                         if (photos.length > 0 && photos[0].event_name) {
-                            dashboardTitle.textContent = photos[0].event_name;
+                            eventTitle.textContent = photos[0].event_name;
                             console.log('Titre mis à jour avec (all):', photos[0].event_name);
                         } else {
                             console.log('Pas de nom d\'événement trouvé dans les photos (all)');
