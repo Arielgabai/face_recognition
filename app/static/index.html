@@ -615,21 +615,30 @@
 
         /* Bannière de l'événement */
         .event-banner {
-            width: 100%;
+            width: 100vw;
             background: #a4401d;
             border-bottom: 1px solid rgba(164, 64, 29, 0.5);
-            padding: 15px 0;
-            margin-bottom: 20px;
+            padding: 40px 0;
+            margin: 0;
+            margin-left: -20px;
+            margin-right: -20px;
+            margin-bottom: 0;
             text-align: center;
+            position: relative;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .event-title {
             font-family: 'Playfair Display', serif;
-            font-size: 1.8rem;
+            font-size: 2.2rem;
             font-weight: 600;
             color: #9f8874;
             margin: 0;
-            padding: 0 60px; /* Espace pour le hamburger menu */
+            padding: 0 80px; /* Espace pour le hamburger menu */
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         /* S'assurer que le dashboard est bien caché par défaut */
@@ -1222,6 +1231,7 @@
             justify-content: flex-start;
             align-items: center;
             margin-bottom: 5px;
+            margin-top: 0;
             background: #9f8874;
             padding: 12px 20px;
             border-radius: 0;
