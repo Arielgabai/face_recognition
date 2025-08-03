@@ -1555,6 +1555,18 @@
                     <span class="btn-text">Se connecter</span>
                     <div class="loading-spinner" style="display: none;"></div>
                 </button>
+                
+                <div style="text-align: center; margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
+                    <a href="/register" style="color: #dfc8a6; text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease;" 
+                       onmouseover="this.style.color='#a4401d'" onmouseout="this.style.color='#dfc8a6'">
+                        🔐 Première connexion ? Créer un compte
+                    </a>
+                    <a href="#" onclick="showAlert('Fonctionnalité en cours de développement', 'info'); return false;" 
+                       style="color: #dfc8a6; text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease;"
+                       onmouseover="this.style.color='#a4401d'" onmouseout="this.style.color='#dfc8a6'">
+                        🔑 Mot de passe oublié ?
+                    </a>
+                </div>
             </div>
         </div>
 
@@ -1584,6 +1596,10 @@
                     
                     <!-- Options de menu -->
                     <div class="menu-options">
+                        <div class="menu-item" onclick="openSelfieModal()">
+                            <span>📷</span>
+                            <span>Modifier mon selfie</span>
+                        </div>
                         <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
                             <span>📋</span>
                             <span>Politique de confidentialité</span>
@@ -1595,10 +1611,6 @@
                         <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
                             <span>❓</span>
                             <span>Besoin d'aide? Contactez-nous</span>
-                        </div>
-                        <div class="menu-item" onclick="openSelfieModal()">
-                            <span>📷</span>
-                            <span>Modifier mon selfie</span>
                         </div>
                         <div class="menu-divider"></div>
 
