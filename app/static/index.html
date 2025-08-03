@@ -627,6 +627,15 @@
             padding: 0 60px; /* Espace pour le hamburger menu */
         }
 
+        /* S'assurer que le dashboard est bien caché par défaut */
+        #dashboard {
+            display: none !important;
+        }
+
+        #dashboard.show {
+            display: block !important;
+        }
+
         .hamburger-btn {
             background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(34, 197, 94, 0.1));
             border: 1px solid rgba(74, 222, 128, 0.3);
@@ -1382,11 +1391,6 @@
     <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
 
     <div class="container">
-            <div class="header">
-                <div class="logo">Face Recognition</div>
-                <div class="subtitle">Reconnaissance faciale intelligente</div>
-            </div>
-        
         <div id="loginForm">
             <div class="login-container">
                 <h2 style="text-align: center; margin-bottom: 30px; color: #ffffff; font-size: 1.5rem;">Connexion</h2>
@@ -1405,7 +1409,7 @@
             </div>
         </div>
 
-        <div id="dashboard" style="display: none;">
+        <div id="dashboard" style="display: none; position: relative;">
             <!-- Hamburger menu en haut à gauche de l'écran -->
             <div class="hamburger-menu" id="hamburgerMenu">
                 <div class="hamburger-btn" onclick="toggleMenu()">
@@ -1689,7 +1693,7 @@
             
             // Masquer le dashboard et afficher le formulaire de connexion
             document.getElementById('loginForm').style.display = 'block';
-            document.getElementById('dashboard').style.display = 'none';
+            document.getElementById('dashboard').classList.remove('show');
             
             // Nettoyer l'affichage
             document.getElementById('myPhotosList').innerHTML = '';
@@ -2315,19 +2319,19 @@
                 if (response.ok) {
                     currentUser = await response.json();
                     document.getElementById('loginForm').style.display = 'none';
-                    document.getElementById('dashboard').style.display = 'block';
+                    document.getElementById('dashboard').classList.add('show');
                     
                     // Mettre à jour le titre avec le nom de l'événement de l'utilisateur
-                    const dashboardTitle = document.getElementById('dashboardTitle');
+                    const eventTitle = document.getElementById('eventTitle');
                     console.log('CurrentUser complet:', currentUser);
                     
                     if (currentUser.event_name) {
-                        dashboardTitle.textContent = currentUser.event_name;
+                        eventTitle.textContent = currentUser.event_name;
                         console.log('Titre mis à jour avec event_name de l\'utilisateur:', currentUser.event_name);
                     } else {
                         // Fallback : utiliser le nom d'utilisateur ou un nom par défaut
                         const eventName = currentUser.username ? `${currentUser.username}'s Event` : 'Mon Événement';
-                        dashboardTitle.textContent = eventName;
+                        eventTitle.textContent = eventName;
                         console.log('Titre mis à jour avec fallback:', eventName);
                     }
                     
