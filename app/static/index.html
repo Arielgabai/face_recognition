@@ -1147,7 +1147,7 @@
         /* Tabs - Design moderne horizontal comme dans l'image */
         .tabs {
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
             align-items: center;
             margin-bottom: 5px;
             background: rgba(0, 0, 0, 0.8);
@@ -1157,6 +1157,7 @@
             width: 100vw;
             margin-left: -20px;
             margin-right: -20px;
+            gap: 0;
         }
 
         .tab {
@@ -1515,8 +1516,8 @@
             </div>
             
                         <div class="tabs">
-                <button class="tab" onclick="showTab('my-photos')">Pour vous</button>
-                <button class="tab active" onclick="showTab('all-photos')">Général</button>
+                <button class="tab" onclick="showTab('my-photos')" id="myPhotosTab">Pour vous (0)</button>
+                <button class="tab active" onclick="showTab('all-photos')" id="allPhotosTab">Général (0)</button>
                 <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤</button>
             </div>
 
@@ -1763,6 +1764,12 @@
                             console.log('Pas de nom d\'événement trouvé dans les photos');
                         }
                         
+                        // Mettre à jour le nombre de photos dans l'onglet
+                        const myPhotosTab = document.getElementById('myPhotosTab');
+                        if (myPhotosTab) {
+                            myPhotosTab.textContent = `Pour vous (${photos.length})`;
+                        }
+                        
                         container.innerHTML = `
                             <div class="gallery">
                                 ${photos.map(photo => `
@@ -1832,6 +1839,12 @@
                             console.log('Titre mis à jour avec (all):', photos[0].event_name);
                         } else {
                             console.log('Pas de nom d\'événement trouvé dans les photos (all)');
+                        }
+                        
+                        // Mettre à jour le nombre de photos dans l'onglet
+                        const allPhotosTab = document.getElementById('allPhotosTab');
+                        if (allPhotosTab) {
+                            allPhotosTab.textContent = `Général (${photos.length})`;
                         }
                         
                         container.innerHTML = `
