@@ -1054,8 +1054,8 @@
 
         /* Galerie responsive moderne */
         .gallery {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            display: flex;
+            flex-wrap: wrap;
             gap: 12px;
             margin-top: 20px;
             width: 100%;
@@ -1063,16 +1063,19 @@
             background-color: #dfc8a6; /* Beige doré */
             border-radius: 12px;
             border: 2px solid #d1bb95; /* Beige doré plus foncé pour la bordure */
+            justify-content: center;
         }
 
         .gallery-image {
-            width: 100%;
-            height: auto;
-            object-fit: cover;
+            width: auto;
+            height: 250px;
+            max-width: 300px;
+            object-fit: contain;
             border-radius: 8px;
             transition: all 0.3s ease;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             border: 3px solid #d1bb95; /* Bordure beige doré autour de chaque photo */
+            flex: 0 0 auto;
         }
 
         .gallery-image:hover {
@@ -1100,25 +1103,64 @@
 
 
 
+        /* Styles de base pour la grille de photos */
+        .photo-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+        
+        .photo-item {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.03);
+            position: relative;
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .photo-item img {
+            width: auto;
+            height: 250px;
+            max-width: 300px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto;
+            transition: all 0.3s ease;
+        }
+
         /* Responsive pour différentes tailles d'écran */
         @media (max-width: 768px) {
             .photo-grid {
-                grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-                gap: 2px;
+                gap: 10px;
+            }
+            .photo-item img {
+                height: 200px;
+                max-width: 250px;
             }
         }
 
         @media (max-width: 480px) {
             .photo-grid {
-                grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
-                gap: 1px;
+                gap: 8px;
+            }
+            .photo-item img {
+                height: 180px;
+                max-width: 200px;
             }
         }
 
         @media (max-width: 320px) {
             .photo-grid {
-                grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
-                gap: 1px;
+                gap: 5px;
+            }
+            .photo-item img {
+                height: 150px;
+                max-width: 150px;
             }
         }
 
@@ -1495,7 +1537,12 @@
             }
 
             .photo-item img {
-                height: 200px;
+                height: 250px;
+                width: auto;
+                max-width: 100%;
+                object-fit: contain;
+                display: block;
+                margin: 0 auto;
             }
 
             .card {
