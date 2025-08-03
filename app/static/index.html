@@ -1030,20 +1030,21 @@
         .photo-item {
             background: transparent;
             border: none;
-            border-radius: 0;
+            border-radius: 8px;
             overflow: hidden;
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             /* Hauteur adaptative */
             height: auto;
             aspect-ratio: 1;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
 
 
         .photo-item:hover {
-            transform: scale(1.02);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            transform: scale(1.05);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
         }
 
         .photo-item img {
@@ -1052,19 +1053,18 @@
             object-fit: cover;
             transition: all 0.4s ease;
             display: block;
+            border-radius: 8px;
         }
 
-        /* Grille adaptative avec colonnes intelligentes */
+        /* Galerie responsive professionnelle */
         .photo-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-            gap: 2px;
-            margin-top: 5px;
-            width: 100vw;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-top: 20px;
+            width: 100%;
             padding: 0;
-            margin-left: -20px;
-            margin-right: -20px;
-            background-color: #000000;
+            background-color: transparent;
         }
 
         /* Responsive pour différentes tailles d'écran */
