@@ -709,7 +709,7 @@
         .menu-dropdown {
             position: fixed;
             top: 0;
-            left: -100%;
+            left: -66.666%;
             width: 66.666%;
             height: 100vh;
             background: rgba(26, 26, 26, 0.98);
@@ -1980,6 +1980,22 @@
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 closeMenu();
+            }
+        });
+
+        // Close menu when clicking on overlay
+        document.addEventListener('DOMContentLoaded', function() {
+            const overlay = document.getElementById('menuOverlay');
+            if (overlay) {
+                overlay.addEventListener('click', function() {
+                    closeMenu();
+                });
+            }
+            
+            // S'assurer que le menu est fermé par défaut
+            const menu = document.getElementById('hamburgerMenu');
+            if (menu) {
+                menu.classList.remove('active');
             }
         });
 
