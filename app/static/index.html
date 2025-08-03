@@ -2640,9 +2640,6 @@
                                 <button class="btn btn-secondary" onclick="document.getElementById('newSelfieInput').click()" id="choosePhotoBtn">
                                     📷 Choisir une nouvelle photo
                                 </button>
-                                <button class="btn btn-secondary" onclick="clearNewSelfie()" id="clearPhotoBtn" style="display: none;">
-                                    🗑️ Annuler la sélection
-                                </button>
                                 <p class="upload-hint">Format recommandé: JPG, PNG. Taille max: 5MB</p>
                             </div>
                             <div class="modal-actions">
@@ -2679,7 +2676,6 @@
             const newImageBadge = document.getElementById('newImageBadge');
             const updateBtn = document.getElementById('updateSelfieBtn');
             const chooseBtn = document.getElementById('choosePhotoBtn');
-            const clearBtn = document.getElementById('clearPhotoBtn');
 
             if (newSelfieInput) newSelfieInput.value = '';
             if (newImageBadge) newImageBadge.style.display = 'none';
@@ -2687,12 +2683,11 @@
                 updateBtn.disabled = true;
                 const btnText = updateBtn.querySelector('.btn-text');
                 if (btnText) {
-                    btnText.textContent = 'Modifier';
+                    btnText.textContent = 'Mettre à jour';
                     btnText.style.color = '';
                 }
             }
             if (chooseBtn) chooseBtn.textContent = '📷 Choisir une nouvelle photo';
-            if (clearBtn) clearBtn.style.display = 'none';
             
             // Recharger le selfie actuel
             loadCurrentSelfie();
@@ -2722,8 +2717,6 @@
                 const newImageBadge = document.getElementById('newImageBadge');
                 const updateBtn = document.getElementById('updateSelfieBtn');
                 const noSelfieText = document.getElementById('noSelfieText');
-                const chooseBtn = document.getElementById('choosePhotoBtn');
-                const clearBtn = document.getElementById('clearPhotoBtn');
 
                 // Remplacer l'image affichée par la nouvelle
                 if (displayedSelfie) {
@@ -2744,30 +2737,13 @@
                 if (noSelfieText) noSelfieText.style.display = 'none';
                 if (updateBtn) {
                     updateBtn.disabled = false;
-                    updateBtn.querySelector('.btn-text').textContent = 'Modifier';
+                    updateBtn.querySelector('.btn-text').textContent = 'Mettre à jour';
                 }
-                if (chooseBtn) chooseBtn.textContent = '📷 Changer de photo';
-                if (clearBtn) clearBtn.style.display = 'inline-block';
             };
             reader.readAsDataURL(file);
         }
 
-        function clearNewSelfie() {
-            const newSelfieInput = document.getElementById('newSelfieInput');
-            const newImageBadge = document.getElementById('newImageBadge');
-            const updateBtn = document.getElementById('updateSelfieBtn');
-            const chooseBtn = document.getElementById('choosePhotoBtn');
-            const clearBtn = document.getElementById('clearPhotoBtn');
 
-            if (newSelfieInput) newSelfieInput.value = '';
-            if (newImageBadge) newImageBadge.style.display = 'none';
-            if (updateBtn) updateBtn.disabled = true;
-            if (chooseBtn) chooseBtn.textContent = '📷 Choisir une nouvelle photo';
-            if (clearBtn) clearBtn.style.display = 'none';
-            
-            // Recharger le selfie actuel pour annuler la sélection
-            loadCurrentSelfie();
-        }
 
         function loadCurrentSelfie() {
             const selfieImg = document.getElementById('displayedSelfie');
@@ -2862,7 +2838,7 @@
 
         async function uploadNewSelfie(file) {
             const formData = new FormData();
-            formData.append('selfie', file);
+            formData.append('file', file);
 
             const updateBtn = document.getElementById('updateSelfieBtn');
             const btnText = updateBtn.querySelector('.btn-text');
