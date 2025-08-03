@@ -1028,11 +1028,11 @@
         /* Photo Grid - Design moderne avec largeur complète */
         .photo-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 6px;
-            margin-top: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 4px;
+            margin-top: 10px;
             width: 100%;
-            padding: 0 5px;
+            padding: 0;
         }
 
         .photo-item {
@@ -1119,7 +1119,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             background: rgba(0, 0, 0, 0.8);
             padding: 12px 20px;
             border-radius: 0;
@@ -1490,70 +1490,57 @@
             </div>
 
                 <div id="my-photos" class="tab-content">
-                <div class="card">
-                        <h3>Pour vous</h3>
-                        <p style="color: #9ca3af; margin-bottom: 20px;">Photos où vous avez été reconnu grâce à votre selfie :</p>
-                        <div id="myPhotosList">
-                            <div class="loading-container" id="myPhotosLoading" style="display: none;">
-                                <div class="loading-spinner"></div>
-                                <span>Chargement de vos photos...</span>
-                    </div>
-                            <div class="empty-state" id="myPhotosEmpty">
-                                <div class="empty-state-icon">🖼️</div>
-                                <h4>Aucune photo trouvée</h4>
-                                <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
+                    <div id="myPhotosList">
+                        <div class="loading-container" id="myPhotosLoading" style="display: none;">
+                            <div class="loading-spinner"></div>
+                            <span>Chargement de vos photos...</span>
+                        </div>
+                        <div class="empty-state" id="myPhotosEmpty">
+                            <div class="empty-state-icon">🖼️</div>
+                            <h4>Aucune photo trouvée</h4>
+                            <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
                         </div>
                     </div>
                 </div>
-            </div>
 
                 <div id="all-photos" class="tab-content active">
-                <div class="card">
-                        <h3>Général</h3>
-                        <p style="color: #9ca3af; margin-bottom: 20px;">Photos de votre événement :</p>
-                        <div id="allPhotosList">
-                            <div class="loading-container" id="allPhotosLoading" style="display: none;">
-                                <div class="loading-spinner"></div>
-                                <span>Chargement des photos...</span>
-                </div>
-                            <div class="empty-state" id="allPhotosEmpty">
-                                <div class="empty-state-icon">📷</div>
-                                <h4>Aucune photo disponible</h4>
-                                <p>Les photos de votre événement apparaîtront ici</p>
-            </div>
+                    <div id="allPhotosList">
+                        <div class="loading-container" id="allPhotosLoading" style="display: none;">
+                            <div class="loading-spinner"></div>
+                            <span>Chargement des photos...</span>
                         </div>
+                        <div class="empty-state" id="allPhotosEmpty">
+                            <div class="empty-state-icon">📷</div>
+                            <h4>Aucune photo disponible</h4>
+                            <p>Les photos de votre événement apparaîtront ici</p>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
             <div id="upload-photos" class="tab-content">
-                <div class="card">
-                        <h3>Ajouter des Photos</h3>
-                        <p style="color: #9ca3af; margin-bottom: 20px;">En tant que photographe, vous pouvez ajouter des photos à votre événement :</p>
-                    
-                    <div class="upload-area" id="uploadArea">
-                        <h4>📸 Glissez-déposez vos photos ici</h4>
-                            <p style="color: #9ca3af;">ou cliquez pour sélectionner des fichiers</p>
-                        <input type="file" id="photoFiles" multiple accept="image/*" style="display: none;">
-                    </div>
-                    
-                    <div id="uploadPreview" style="display: none;">
-                        <h4>Photos sélectionnées :</h4>
-                        <div id="previewGrid" class="photo-grid"></div>
-                            <div style="margin-top: 20px;">
-                                <button onclick="uploadPhotos()" class="btn btn-success" id="uploadBtn">
-                                    <span class="btn-text">Télécharger les photos</span>
-                                    <div class="loading-spinner" style="display: none;"></div>
-                                </button>
-                                <button onclick="cancelUpload()" class="btn btn-secondary">Annuler</button>
-                            </div>
-                    </div>
-                    
-                    <div class="loading" id="uploadLoading">
-                        <div class="spinner"></div>
-                            <p style="color: #9ca3af;">Téléchargement en cours...</p>
-                    </div>
+                <div class="upload-area" id="uploadArea">
+                    <h4>📸 Glissez-déposez vos photos ici</h4>
+                    <p style="color: #9ca3af;">ou cliquez pour sélectionner des fichiers</p>
+                    <input type="file" id="photoFiles" multiple accept="image/*" style="display: none;">
+                </div>
+                
+                <div id="uploadPreview" style="display: none;">
+                    <h4>Photos sélectionnées :</h4>
+                    <div id="previewGrid" class="photo-grid"></div>
+                    <div style="margin-top: 20px;">
+                        <button onclick="uploadPhotos()" class="btn btn-success" id="uploadBtn">
+                            <span class="btn-text">Télécharger les photos</span>
+                            <div class="loading-spinner" style="display: none;"></div>
+                        </button>
+                        <button onclick="cancelUpload()" class="btn btn-secondary">Annuler</button>
                     </div>
                 </div>
+                
+                <div class="loading" id="uploadLoading">
+                    <div class="spinner"></div>
+                    <p style="color: #9ca3af;">Téléchargement en cours...</p>
+                </div>
+            </div>
             </div>
             
             <div class="powered-by">
