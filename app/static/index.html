@@ -724,7 +724,8 @@
             left: 66.666%;
             width: 33.333%;
             height: 100%;
-            background: transparent;
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(8px);
             opacity: 0;
             visibility: hidden;
             transition: all 0.3s ease;
@@ -742,6 +743,8 @@
             .menu-overlay {
                 left: 75%;
                 width: 25%;
+                background: rgba(0, 0, 0, 0.2);
+                backdrop-filter: blur(6px);
             }
         }
 
@@ -1539,6 +1542,13 @@
             /* Menu encore plus large sur très petits écrans */
             .menu-dropdown {
                 width: 80%;
+            }
+            
+            .menu-overlay {
+                left: 80%;
+                width: 20%;
+                background: rgba(0, 0, 0, 0.2);
+                backdrop-filter: blur(4px);
             }
             
             .hamburger-menu.active ~ .dashboard .container {
