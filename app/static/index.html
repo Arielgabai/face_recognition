@@ -1034,8 +1034,8 @@
             overflow: hidden;
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
-            /* Hauteur fixe pour une grille uniforme */
-            height: 120px;
+            /* Hauteur adaptative */
+            height: auto;
             aspect-ratio: 1;
         }
 
@@ -1054,10 +1054,10 @@
             display: block;
         }
 
-        /* Grille fixe avec 3 photos par ligne et bandes noires */
+        /* Grille adaptative avec colonnes intelligentes */
         .photo-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
             gap: 2px;
             margin-top: 5px;
             width: 100vw;
@@ -1070,21 +1070,22 @@
         /* Responsive pour différentes tailles d'écran */
         @media (max-width: 768px) {
             .photo-grid {
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
                 gap: 2px;
-            }
-            .photo-item {
-                height: 100px;
             }
         }
 
         @media (max-width: 480px) {
             .photo-grid {
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
                 gap: 1px;
             }
-            .photo-item {
-                height: 80px;
+        }
+
+        @media (max-width: 320px) {
+            .photo-grid {
+                grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
+                gap: 1px;
             }
         }
 
