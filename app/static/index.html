@@ -761,10 +761,30 @@
             transform: translateX(0);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 1001;
-            overflow-y: auto;
+            overflow-y: scroll;
             display: flex;
             flex-direction: column;
             max-height: 100vh;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(74, 222, 128, 0.3) transparent;
+        }
+
+        /* Style de la scrollbar pour Webkit */
+        .menu-dropdown::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .menu-dropdown::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .menu-dropdown::-webkit-scrollbar-thumb {
+            background: rgba(74, 222, 128, 0.3);
+            border-radius: 3px;
+        }
+
+        .menu-dropdown::-webkit-scrollbar-thumb:hover {
+            background: rgba(74, 222, 128, 0.5);
         }
 
         .hamburger-menu.active .menu-dropdown {
@@ -1285,6 +1305,98 @@
             transform: scale(1.02);
         }
 
+        /* Modal pour la modification du selfie */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background: rgba(26, 26, 26, 0.95);
+            border: 1px solid rgba(74, 222, 128, 0.2);
+            border-radius: 16px;
+            padding: 0;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid rgba(74, 222, 128, 0.1);
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            color: #ffffff;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .selfie-preview {
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            border: 2px dashed rgba(74, 222, 128, 0.3);
+        }
+
+        .upload-section {
+            margin-bottom: 24px;
+        }
+
+        .upload-hint {
+            color: #888;
+            font-size: 0.875rem;
+            margin-top: 8px;
+            text-align: center;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .modal-actions .btn {
+            min-width: 100px;
+        }
+
         /* Responsive Design - Améliorations */
         @media (max-width: 768px) {
             .container {
@@ -1456,14 +1568,14 @@
                         </div>
                     </div>
                     
-                    <!-- Section espace actuel -->
-                    <div class="menu-current-space">
-                        <p>Espace actuel: <span id="menuCurrentEvent">Mariage ariel et anaelle</span></p>
-                        <div class="menu-change-space-btn" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
-                            <span>↔️</span>
-                            <span>Changer d'espace</span>
-                        </div>
-                    </div>
+                                                <!-- Section espace actuel -->
+                            <div class="menu-current-space">
+                                <p>Espace actuel: <span id="menuCurrentUser">Ariel</span></p>
+                                <div class="menu-change-space-btn" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
+                                    <span>↔️</span>
+                                    <span>Changer d'espace</span>
+                                </div>
+                            </div>
                     
                     <!-- Options de menu -->
                     <div class="menu-options">
@@ -1478,6 +1590,10 @@
                         <div class="menu-item" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
                             <span>❓</span>
                             <span>Besoin d'aide? Contactez-nous</span>
+                        </div>
+                        <div class="menu-item" onclick="openSelfieModal()">
+                            <span>📷</span>
+                            <span>Modifier mon selfie</span>
                         </div>
                         <div class="menu-divider"></div>
                         <div class="menu-item danger" onclick="showAlert('Fonctionnalité en cours de développement', 'info')">
@@ -2297,10 +2413,10 @@
                 menuUserEmail.textContent = user.email;
             }
             
-            // Mettre à jour l'événement actuel
-            const menuCurrentEvent = document.getElementById('menuCurrentEvent');
-            if (menuCurrentEvent && user.event_name) {
-                menuCurrentEvent.textContent = user.event_name;
+            // Mettre à jour l'utilisateur actuel
+            const menuCurrentUser = document.getElementById('menuCurrentUser');
+            if (menuCurrentUser && user.username) {
+                menuCurrentUser.textContent = user.username;
             }
         }
 
@@ -2376,6 +2492,182 @@
                 hideGlobalLoading();
             }
         }
+
+        // Modal pour la modification du selfie
+        function openSelfieModal() {
+            // Créer le modal s'il n'existe pas
+            let modal = document.getElementById('selfieModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'selfieModal';
+                modal.className = 'modal-overlay';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Modifier mon selfie</h3>
+                            <button class="modal-close" onclick="closeSelfieModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="selfie-preview" id="selfiePreview">
+                                <img id="currentSelfie" src="" alt="Selfie actuel" style="max-width: 200px; max-height: 200px; border-radius: 8px;">
+                            </div>
+                            <div class="upload-section">
+                                <input type="file" id="newSelfieInput" accept="image/*" style="display: none;">
+                                <button class="btn btn-secondary" onclick="document.getElementById('newSelfieInput').click()">
+                                    📷 Choisir une nouvelle photo
+                                </button>
+                                <p class="upload-hint">Format recommandé: JPG, PNG. Taille max: 5MB</p>
+                            </div>
+                            <div class="modal-actions">
+                                <button class="btn btn-secondary" onclick="closeSelfieModal()">Annuler</button>
+                                <button class="btn btn-primary" onclick="updateSelfie()" id="updateSelfieBtn">
+                                    <span class="btn-text">Mettre à jour</span>
+                                    <div class="loading-spinner" style="display: none;"></div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            
+            // Afficher le modal
+            modal.style.display = 'flex';
+            
+            // Charger le selfie actuel
+            loadCurrentSelfie();
+        }
+
+        function closeSelfieModal() {
+            const modal = document.getElementById('selfieModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        function loadCurrentSelfie() {
+            const selfieImg = document.getElementById('currentSelfie');
+            if (currentUser && currentUser.id) {
+                const timestamp = Date.now();
+                const randomId = Math.random().toString(36).substring(7);
+                selfieImg.src = `/api/selfie/${currentUser.id}?t=${timestamp}&r=${randomId}`;
+            }
+        }
+
+        function updateSelfie() {
+            const fileInput = document.getElementById('newSelfieInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showAlert('Veuillez sélectionner une photo', 'error');
+                return;
+            }
+
+            // Validation du fichier
+            if (file.size > 5 * 1024 * 1024) {
+                showAlert('La taille du fichier ne doit pas dépasser 5MB', 'error');
+                return;
+            }
+
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+            if (!allowedTypes.includes(file.type)) {
+                showAlert('Format de fichier non supporté. Utilisez JPG ou PNG', 'error');
+                return;
+            }
+
+            // Validation du selfie avec face_recognition
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const img = new Image();
+                img.onload = async function() {
+                    try {
+                        // Créer un canvas pour redimensionner l'image
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        ctx.drawImage(img, 0, 0);
+                        
+                        // Convertir en base64
+                        const base64Data = canvas.toDataURL('image/jpeg', 0.8);
+                        
+                        // Validation côté client (simulation)
+                        const hasFace = await validateSelfieClient(file);
+                        if (!hasFace) {
+                            showAlert('Aucun visage détecté ou plusieurs visages détectés. Veuillez prendre une photo avec un seul visage clairement visible.', 'error');
+                            return;
+                        }
+
+                        // Envoyer au serveur
+                        await uploadNewSelfie(file);
+                    } catch (error) {
+                        console.error('Erreur lors de la validation:', error);
+                        showAlert('Erreur lors de la validation de la photo', 'error');
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function validateSelfieClient(file) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = function() {
+                    // Simulation de validation côté client
+                    // En réalité, la validation se fait côté serveur
+                    resolve(true);
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        async function uploadNewSelfie(file) {
+            const formData = new FormData();
+            formData.append('selfie', file);
+
+            const updateBtn = document.getElementById('updateSelfieBtn');
+            const btnText = updateBtn.querySelector('.btn-text');
+            const spinner = updateBtn.querySelector('.loading-spinner');
+
+            btnText.style.display = 'none';
+            spinner.style.display = 'inline-block';
+
+            try {
+                const response = await fetch('/api/upload-selfie', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                if (response.ok) {
+                    showAlert('Selfie mis à jour avec succès!', 'success');
+                    closeSelfieModal();
+                    
+                    // Rafraîchir les données utilisateur
+                    await loadDashboard();
+                } else {
+                    const errorData = await response.json();
+                    showAlert(errorData.detail || 'Erreur lors de la mise à jour du selfie', 'error');
+                }
+            } catch (error) {
+                console.error('Erreur lors de l\'upload:', error);
+                showAlert('Erreur lors de la mise à jour du selfie', 'error');
+            } finally {
+                btnText.style.display = 'inline';
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Fermer le modal en cliquant sur l'overlay
+        document.addEventListener('click', function(e) {
+            const modal = document.getElementById('selfieModal');
+            if (modal && e.target === modal) {
+                closeSelfieModal();
+            }
+        });
 
 
     </script>
