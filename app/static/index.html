@@ -1028,11 +1028,13 @@
         /* Photo Grid - Design moderne avec largeur complète */
         .photo-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-            gap: 4px;
-            margin-top: 10px;
-            width: 100%;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 2px;
+            margin-top: 5px;
+            width: 100vw;
             padding: 0;
+            margin-left: -20px;
+            margin-right: -20px;
         }
 
         .photo-item {
@@ -1119,12 +1121,14 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             background: rgba(0, 0, 0, 0.8);
             padding: 12px 20px;
             border-radius: 0;
             border: none;
-            width: 100%;
+            width: 100vw;
+            margin-left: -20px;
+            margin-right: -20px;
         }
 
         .tab {
@@ -1482,40 +1486,39 @@
                 <h1 class="event-title" id="eventTitle">Tableau de bord</h1>
             </div>
             
-            <div class="dashboard">
-                <div class="tabs">
+                        <div class="tabs">
                 <button class="tab" onclick="showTab('my-photos')">Pour vous</button>
                 <button class="tab active" onclick="showTab('all-photos')">Général</button>
                 <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤</button>
             </div>
 
-                <div id="my-photos" class="tab-content">
-                    <div id="myPhotosList">
-                        <div class="loading-container" id="myPhotosLoading" style="display: none;">
-                            <div class="loading-spinner"></div>
-                            <span>Chargement de vos photos...</span>
-                        </div>
-                        <div class="empty-state" id="myPhotosEmpty">
-                            <div class="empty-state-icon">🖼️</div>
-                            <h4>Aucune photo trouvée</h4>
-                            <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
-                        </div>
+            <div id="my-photos" class="tab-content">
+                <div id="myPhotosList">
+                    <div class="loading-container" id="myPhotosLoading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                        <span>Chargement de vos photos...</span>
+                    </div>
+                    <div class="empty-state" id="myPhotosEmpty">
+                        <div class="empty-state-icon">🖼️</div>
+                        <h4>Aucune photo trouvée</h4>
+                        <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
                     </div>
                 </div>
+            </div>
 
-                <div id="all-photos" class="tab-content active">
-                    <div id="allPhotosList">
-                        <div class="loading-container" id="allPhotosLoading" style="display: none;">
-                            <div class="loading-spinner"></div>
-                            <span>Chargement des photos...</span>
-                        </div>
-                        <div class="empty-state" id="allPhotosEmpty">
-                            <div class="empty-state-icon">📷</div>
-                            <h4>Aucune photo disponible</h4>
-                            <p>Les photos de votre événement apparaîtront ici</p>
-                        </div>
+            <div id="all-photos" class="tab-content active">
+                <div id="allPhotosList">
+                    <div class="loading-container" id="allPhotosLoading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                        <span>Chargement des photos...</span>
+                    </div>
+                    <div class="empty-state" id="allPhotosEmpty">
+                        <div class="empty-state-icon">📷</div>
+                        <h4>Aucune photo disponible</h4>
+                        <p>Les photos de votre événement apparaîtront ici</p>
                     </div>
                 </div>
+            </div>
 
             <div id="upload-photos" class="tab-content">
                 <div class="upload-area" id="uploadArea">
@@ -1540,7 +1543,6 @@
                     <div class="spinner"></div>
                     <p style="color: #9ca3af;">Téléchargement en cours...</p>
                 </div>
-            </div>
             </div>
             
             <div class="powered-by">
