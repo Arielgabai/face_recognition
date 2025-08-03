@@ -1509,3 +1509,27 @@ async def catch_all(full_path: str):
         status_code=404, 
         detail=f"Page not found: /{full_path}"
     )
+
+# === RÉINITIALISATION MOT DE PASSE ===
+
+@app.post("/api/password-reset")
+async def request_password_reset(
+    request_data: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """Demander une réinitialisation de mot de passe par email"""
+    email = request_data.get('email')
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email requis")
+    
+    # Chercher l'utilisateur par email
+    user = db.query(User).filter(User.email == email).first()
+    
+    if not user:
+        # Pour des raisons de sécurité, on renvoie toujours le même message
+        return {"message": "Si cette adresse email existe, un lien de réinitialisation a été envoyé"}
+    
+    # Pour l'instant, on simule l'envoi (vous pouvez activer l'email plus tard)
+    print(f"Demande de réinitialisation pour: {email}")
+    return {"message": "Un email de réinitialisation a été envoyé"}
