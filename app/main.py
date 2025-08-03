@@ -7,13 +7,18 @@ from typing import List
 import os
 import shutil
 import uuid
-from datetime import timedelta
+from datetime import timedelta, datetime
 from sqlalchemy.exc import NoResultFound
 import qrcode
 from io import BytesIO
 from fastapi import Request
 import jwt
 from dotenv import load_dotenv
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import secrets
+import hashlib
 
 load_dotenv()
 
