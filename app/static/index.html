@@ -1557,13 +1557,13 @@
                 </button>
                 
                 <div style="text-align: center; margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
-                    <a href="/register" style="color: #dfc8a6; text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease;" 
-                       onmouseover="this.style.color='#a4401d'" onmouseout="this.style.color='#dfc8a6'">
+                    <a href="/register" style="color: #a4401d; text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease;" 
+                       onmouseover="this.style.color='#dfc8a6'" onmouseout="this.style.color='#a4401d'">
                         🔐 Première connexion ? Créer un compte
                     </a>
-                    <a href="#" onclick="showAlert('Fonctionnalité en cours de développement', 'info'); return false;" 
-                       style="color: #dfc8a6; text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease;"
-                       onmouseover="this.style.color='#a4401d'" onmouseout="this.style.color='#dfc8a6'">
+                    <a href="#" onclick="showPasswordResetModal(); return false;" 
+                       style="color: #a4401d; text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease;"
+                       onmouseover="this.style.color='#dfc8a6'" onmouseout="this.style.color='#a4401d'">
                         🔑 Mot de passe oublié ?
                     </a>
                 </div>
@@ -1725,6 +1725,33 @@
                 <div class="selfie-actions">
                     <button onclick="showAlert('Fonctionnalité en cours de développement', 'info')" class="btn btn-secondary">Paramètres</button>
                     <button onclick="showAlert('Fonctionnalité en cours de développement', 'info')" class="btn btn-secondary">Préférences</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Reset Modal -->
+    <div class="modal-overlay" id="passwordResetModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Réinitialiser le mot de passe</h3>
+                <button class="modal-close" onclick="closePasswordResetModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: #9ca3af; margin-bottom: 20px; text-align: center;">
+                    Entrez votre adresse email pour recevoir un lien de réinitialisation
+                </p>
+                <div class="form-group">
+                    <label for="resetEmail">Adresse email</label>
+                    <input type="email" id="resetEmail" class="form-input" required placeholder="votre@email.com">
+                </div>
+                <div id="resetMessage" style="margin-top: 15px; text-align: center; display: none;"></div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button onclick="closePasswordResetModal()" class="btn btn-secondary" style="flex: 1;">Annuler</button>
+                    <button onclick="sendPasswordReset()" class="btn btn-primary" id="resetBtn" style="flex: 1;">
+                        <span class="btn-text">Envoyer le lien</span>
+                        <div class="loading-spinner" style="display: none;"></div>
+                    </button>
                 </div>
             </div>
         </div>
