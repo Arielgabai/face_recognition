@@ -709,15 +709,15 @@
         .menu-dropdown {
             position: fixed;
             top: 0;
-            left: -66.666%;
+            left: -100%;
             width: 66.666%;
             height: 100vh;
             background: rgba(26, 26, 26, 0.98);
             backdrop-filter: blur(20px);
             border-right: 1px solid rgba(74, 222, 128, 0.2);
             padding: 0;
-            opacity: 1;
-            visibility: visible;
+            opacity: 0;
+            visibility: hidden;
             transform: translateX(0);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 1001;
@@ -729,6 +729,8 @@
 
         .hamburger-menu.active .menu-dropdown {
             left: 0;
+            opacity: 1;
+            visibility: visible;
         }
 
         /* Contenu principal avec effet de décalage et flou */
@@ -740,6 +742,13 @@
         .hamburger-menu.active ~ .container {
             transform: translateX(33.333%);
             filter: blur(3px);
+        }
+
+        /* Responsive pour mobile */
+        @media (max-width: 767px) {
+            .hamburger-menu.active ~ .container {
+                transform: translateX(25%);
+            }
         }
 
         /* Bloquer le scroll du body quand le menu est ouvert */
@@ -1374,8 +1383,7 @@
                     <div class="hamburger-menu" id="hamburgerMenu">
                         <div class="hamburger-btn" onclick="toggleMenu()">
                             <div class="hamburger-icon"></div>
-                            <span style="font-size: 0.9rem; color: #ffffff;">Menu</span>
-            </div>
+                        </div>
                         <div class="menu-dropdown">
                             <!-- Section profil utilisateur -->
                             <div class="menu-profile-section">
@@ -1654,6 +1662,7 @@
             
             // Fermer le menu hamburger s'il est ouvert
             document.getElementById('hamburgerMenu').classList.remove('active');
+            closeMenu(); // Force la fermeture complète
             
             // Fermer le modal de profil s'il est ouvert
             document.getElementById('profileModal').classList.remove('active');
@@ -1996,6 +2005,7 @@
             const menu = document.getElementById('hamburgerMenu');
             if (menu) {
                 menu.classList.remove('active');
+                closeMenu(); // Force la fermeture
             }
         });
 
