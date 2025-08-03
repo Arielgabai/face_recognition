@@ -2860,18 +2860,31 @@
                 });
 
                 if (response.ok) {
-                    btnText.textContent = 'Terminé !';
-                    btnText.style.color = '#22c55e';
+                    btnText.textContent = 'Mise à jour des photos...';
+                    btnText.style.color = '#a4401d';
                     
-                    // Attendre un peu avant de fermer pour montrer le succès
-                    setTimeout(async () => {
-                        showAlert('Selfie mis à jour avec succès!', 'success');
-                        closeSelfieModal();
+                    // Rafraîchir les photos sans déconnecter l'utilisateur
+                    try {
+                        await refreshPhotosAfterSelfieUpdate();
                         
-                        // Rafraîchir toute l'interface utilisateur et forcer le rechargement des photos
-                        await refreshUserInterface();
-                        await refreshPhotoGallery();
-                    }, 1000);
+                        // Succès final
+                        btnText.textContent = 'Terminé !';
+                        btnText.style.color = '#22c55e';
+                        
+                        setTimeout(() => {
+                            showAlert('Selfie et photos mis à jour avec succès!', 'success');
+                            closeSelfieModal();
+                        }, 1000);
+                    } catch (error) {
+                        console.error('Erreur lors du rafraîchissement des photos:', error);
+                        btnText.textContent = 'Terminé !';
+                        btnText.style.color = '#22c55e';
+                        
+                        setTimeout(() => {
+                            showAlert('Selfie mis à jour ! Les photos se mettront à jour automatiquement.', 'success');
+                            closeSelfieModal();
+                        }, 1000);
+                    }
                 } else {
                     const errorData = await response.json();
                     showAlert(errorData.detail || 'Erreur lors de la mise à jour du selfie', 'error');
@@ -2895,12 +2908,100 @@
             }
         }
 
+        async function refreshPhotosAfterSelfieUpdate() {
+            try {
+                // Attendre un peu pour que le backend traite le matching
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Mettre à jour l'image de selfie dans l'interface sans recharger tout le dashboard
+                const timestamp = Date.now();
+                const selfieImages = document.querySelectorAll('[src*="/api/selfie/"]');
+                selfieImages.forEach(img => {
+                    if (currentUser && currentUser.id) {
+                        img.src = `/api/selfie/${currentUser.id}?t=${timestamp}`;
+                    }
+                });
+                
+                // Recharger spécifiquement les photos "pour vous" avec un polling
+                let attempts = 0;
+                const maxAttempts = 10;
+                
+                while (attempts < maxAttempts) {
+                    try {
+                        const response = await fetch('/api/my-photos', {
+                            headers: {
+                                'Authorization': `Bearer ${token}`
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const newPhotos = await response.json();
+                            
+                            // Mettre à jour l'affichage des photos
+                            updatePhotoDisplay(newPhotos);
+                            
+                            console.log(`Photos rafraîchies avec succès (tentative ${attempts + 1})`);
+                            return; // Succès, sortir de la boucle
+                        }
+                    } catch (error) {
+                        console.error(`Erreur tentative ${attempts + 1}:`, error);
+                    }
+                    
+                    attempts++;
+                    if (attempts < maxAttempts) {
+                        // Attendre 1 seconde avant la prochaine tentative
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+                
+                // Si on arrive ici, toutes les tentatives ont échoué
+                throw new Error('Impossible de rafraîchir les photos après plusieurs tentatives');
+                
+            } catch (error) {
+                console.error('Erreur lors du rafraîchissement des photos:', error);
+                throw error;
+            }
+        }
+
+        function updatePhotoDisplay(photos) {
+            const photoGrid = document.querySelector('.photo-grid');
+            if (!photoGrid || !photos) return;
+            
+            // Vider la grille actuelle
+            photoGrid.innerHTML = '';
+            
+            if (photos.length === 0) {
+                photoGrid.innerHTML = `
+                    <div class="no-photos">
+                        <p>Aucune photo trouvée pour le moment.</p>
+                        <p>Vos photos apparaîtront ici dès qu'elles seront reconnues !</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Ajouter les nouvelles photos
+            photos.forEach(photo => {
+                const photoItem = document.createElement('div');
+                photoItem.className = 'photo-item';
+                
+                photoItem.innerHTML = `
+                    <img src="/api/photo/${photo.id}?t=${Date.now()}" 
+                         alt="Photo ${photo.id}" 
+                         class="gallery-image"
+                         loading="lazy">
+                `;
+                
+                photoGrid.appendChild(photoItem);
+            });
+            
+            console.log(`Affichage mis à jour avec ${photos.length} photos`);
+        }
+
+        // Fonction pour recharger le dashboard en cas de besoin (sans affecter les photos)
         async function refreshUserInterface() {
             try {
-                // Rafraîchir les données utilisateur
-                await loadDashboard();
-                
-                // Mettre à jour l'image de profil dans le menu si elle existe
+                // Mettre à jour seulement l'image de profil dans le menu si elle existe
                 const profileImage = document.querySelector('.user-avatar img');
                 if (profileImage && currentUser && currentUser.id) {
                     const timestamp = Date.now();
@@ -2919,30 +3020,6 @@
                 console.log('Interface utilisateur rafraîchie avec succès');
             } catch (error) {
                 console.error('Erreur lors du rafraîchissement de l\'interface:', error);
-            }
-        }
-
-        async function refreshPhotoGallery() {
-            try {
-                // Recharger spécifiquement la galerie "pour vous"
-                if (typeof loadPhotos === 'function') {
-                    await loadPhotos();
-                }
-                
-                // Forcer le rechargement de toutes les photos avec le nouveau selfie
-                const photos = document.querySelectorAll('.photo-item img, .gallery-image');
-                photos.forEach(img => {
-                    const currentSrc = img.src;
-                    if (currentSrc) {
-                        // Ajouter un timestamp pour forcer le rechargement
-                        const separator = currentSrc.includes('?') ? '&' : '?';
-                        img.src = currentSrc.split('?')[0] + `${separator}refresh=${Date.now()}`;
-                    }
-                });
-                
-                console.log('Galerie de photos rafraîchie avec succès');
-            } catch (error) {
-                console.error('Erreur lors du rafraîchissement de la galerie:', error);
             }
         }
 
