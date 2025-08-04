@@ -1,0 +1,380 @@
+/* Galerie Photos Moderne - CSS Responsive */
+/* Inspiré de Google Photos, Pinterest et memento.photo */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.gallery-container {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.gallery-header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.gallery-header h1 {
+    font-size: 2.5rem;
+    font-weight: 300;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.gallery-header .subtitle {
+    font-size: 1.1rem;
+    color: #666;
+    font-weight: 400;
+}
+
+.gallery-section {
+    margin-bottom: 60px;
+}
+
+.gallery-section-title {
+    font-size: 1.8rem;
+    font-weight: 400;
+    color: #444;
+    margin-bottom: 25px;
+    padding-left: 5px;
+    border-left: 4px solid #1976d2;
+}
+
+/* Grille principale - Responsive et adaptative */
+.modern-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+    grid-auto-rows: minmax(200px, auto);
+    grid-auto-flow: row dense;
+}
+
+/* Cartes d'images avec animations */
+.gallery-photo-card {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    background: white;
+    animation: fadeInUp 0.6s ease forwards;
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+.gallery-photo-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+}
+
+.gallery-photo-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.gallery-photo-card:hover img {
+    transform: scale(1.05);
+}
+
+/* Overlay d'interaction */
+.gallery-photo-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(45deg, rgba(25, 118, 210, 0.8), rgba(220, 0, 78, 0.8));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.gallery-photo-card:hover .gallery-photo-overlay {
+    opacity: 1;
+}
+
+/* Adaptation automatique aux proportions d'images */
+.gallery-photo-card.portrait {
+    grid-row-end: span 2;
+}
+
+.gallery-photo-card.landscape {
+    grid-column-end: span 2;
+}
+
+.gallery-photo-card.large {
+    grid-column-end: span 2;
+    grid-row-end: span 2;
+}
+
+/* Lightbox/Modal moderne */
+.gallery-lightbox {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.gallery-lightbox.active {
+    display: flex;
+}
+
+.gallery-lightbox img {
+    max-width: 95%;
+    max-height: 95%;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+}
+
+/* Contrôles du lightbox */
+.gallery-lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 30px;
+    color: white;
+    font-size: 40px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 1001;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.3s ease;
+}
+
+.gallery-lightbox-close:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.gallery-lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    color: white;
+    font-size: 30px;
+    font-weight: bold;
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.3s ease;
+    user-select: none;
+}
+
+.gallery-lightbox-nav:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.gallery-lightbox-prev {
+    left: 30px;
+}
+
+.gallery-lightbox-next {
+    right: 30px;
+}
+
+.gallery-photo-counter {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+}
+
+/* États d'chargement */
+.gallery-photo-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #f5f5f5;
+    color: #666;
+}
+
+.gallery-empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+}
+
+.gallery-empty-state h3 {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+    font-weight: 400;
+}
+
+.gallery-empty-state p {
+    font-size: 1rem;
+    opacity: 0.8;
+}
+
+/* Animations séquentielles */
+.gallery-photo-card:nth-child(1) { animation-delay: 0.1s; }
+.gallery-photo-card:nth-child(2) { animation-delay: 0.2s; }
+.gallery-photo-card:nth-child(3) { animation-delay: 0.3s; }
+.gallery-photo-card:nth-child(4) { animation-delay: 0.4s; }
+.gallery-photo-card:nth-child(5) { animation-delay: 0.5s; }
+.gallery-photo-card:nth-child(6) { animation-delay: 0.6s; }
+.gallery-photo-card:nth-child(7) { animation-delay: 0.7s; }
+.gallery-photo-card:nth-child(8) { animation-delay: 0.8s; }
+.gallery-photo-card:nth-child(9) { animation-delay: 0.9s; }
+.gallery-photo-card:nth-child(10) { animation-delay: 1s; }
+
+@keyframes fadeInUp {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .modern-gallery {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 14px;
+    }
+}
+
+@media (max-width: 768px) {
+    .modern-gallery {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+    }
+
+    .gallery-photo-card.landscape {
+        grid-column-end: span 1;
+    }
+
+    .gallery-photo-card.large {
+        grid-column-end: span 1;
+        grid-row-end: span 2;
+    }
+
+    .gallery-header h1 {
+        font-size: 2rem;
+    }
+
+    .gallery-section-title {
+        font-size: 1.5rem;
+    }
+
+    .gallery-lightbox-nav {
+        width: 40px;
+        height: 40px;
+        font-size: 24px;
+    }
+
+    .gallery-lightbox-close {
+        width: 40px;
+        height: 40px;
+        font-size: 24px;
+    }
+}
+
+@media (max-width: 480px) {
+    .modern-gallery {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 8px;
+    }
+
+    .gallery-container {
+        padding: 0 10px;
+    }
+
+    .gallery-photo-card.portrait {
+        grid-row-end: span 1;
+    }
+
+    .gallery-lightbox-prev {
+        left: 10px;
+    }
+
+    .gallery-lightbox-next {
+        right: 10px;
+    }
+
+    .gallery-lightbox-close {
+        top: 10px;
+        right: 10px;
+    }
+}
+
+/* Thèmes de couleur alternatifs */
+.gallery-theme-dark {
+    background: #1a1a1a;
+    color: white;
+}
+
+.gallery-theme-dark .gallery-header h1 {
+    color: white;
+}
+
+.gallery-theme-dark .gallery-section-title {
+    color: #e0e0e0;
+    border-left-color: #64b5f6;
+}
+
+.gallery-theme-dark .gallery-photo-card {
+    background: #2a2a2a;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Variantes de taille de grille */
+.gallery-compact .modern-gallery {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+}
+
+.gallery-large .modern-gallery {
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 24px;
+}
+
+/* Effet de focus pour accessibilité */
+.gallery-photo-card:focus {
+    outline: 3px solid #1976d2;
+    outline-offset: 2px;
+}
+
+.gallery-lightbox-nav:focus,
+.gallery-lightbox-close:focus {
+    outline: 2px solid white;
+    outline-offset: 2px;
+} 

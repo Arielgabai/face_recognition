@@ -1,21 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box,
-  Container,
   Typography,
-  Tabs,
-  Tab,
-  Grid,
   Card,
   CardMedia,
-  CardContent,
-  Button,
-  Alert,
-  CircularProgress,
-  Paper,
   Dialog,
   DialogContent,
   IconButton,
+  CircularProgress,
+  Alert,
   Fade,
   Backdrop,
 } from '@mui/material';
@@ -24,50 +17,30 @@ import {
   ArrowBack as ArrowBackIcon, 
   ArrowForward as ArrowForwardIcon 
 } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
-import { photoService } from '../services/api';
-import { Photo, UserProfile } from '../types';
-import SelfieUpload from './SelfieUpload';
-import PhotoUpload from './PhotoUpload';
-import EventSelector from './EventSelector';
-import JoinEvent from './JoinEvent';
-import PhotographerEventManager from './PhotographerEventManager';
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
+export interface Photo {
+  id: number;
+  filename: string;
+  original_filename: string;
+  url?: string;
+  alt?: string;
+  aspectRatio?: number;
 }
 
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`simple-tabpanel-${index}`}
-      aria-labelledby={`simple-tab-${index}`}
-      {...other}
-    >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
-    </div>
-  );
-}
-
-// Composant Galerie moderne intégré
-interface ModernGalleryProps {
+interface GalleryProps {
   photos: Photo[];
   title?: string;
   loading?: boolean;
   error?: string;
+  getImageUrl: (photo: Photo) => string;
 }
 
-const ModernGallery: React.FC<ModernGalleryProps> = ({ 
+const Gallery: React.FC<GalleryProps> = ({ 
   photos, 
   title, 
   loading = false, 
-  error 
+  error,
+  getImageUrl
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<number | null>(null);
   const [imageLoaded, setImageLoaded] = useState<{ [key: number]: boolean }>({});
@@ -146,14 +119,15 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
   }
 
   return (
-    <Box sx={{ width: '100%' }}>
+    <Box sx={{ width: '100%', p: { xs: 1, sm: 2 } }}>
       {title && (
         <Typography 
-          variant="h6" 
-          component="h2" 
+          variant="h4" 
+          component="h1" 
           sx={{ 
-            mb: 2, 
-            fontWeight: 'medium',
+            mb: 3, 
+            textAlign: 'center',
+            fontWeight: 'light',
             color: 'text.primary' 
           }}
         >
@@ -178,10 +152,22 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
       >
         {photos.map((photo, index) => {
           const isLoaded = imageLoaded[photo.id];
+          const imageUrl = getImageUrl(photo);
           
-          // Déterminer la taille de la grille (on peut améliorer avec l'aspect ratio plus tard)
+          // Logique pour déterminer la taille de la grille basée sur l'aspect ratio
+          const aspectRatio = photo.aspectRatio || 1;
           let gridRowSpan = 1;
           let gridColSpan = 1;
+          
+          // Images hautes (portrait)
+          if (aspectRatio < 0.7) {
+            gridRowSpan = 2;
+          }
+          // Images très larges (panorama)
+          else if (aspectRatio > 1.8) {
+            gridColSpan = 2;
+          }
+          // Images carrées ou légèrement rectangulaires restent par défaut
 
           return (
             <Card
@@ -257,7 +243,7 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
 
               <CardMedia
                 component="img"
-                image={`/api/photo/${photo.id}`}
+                image={imageUrl}
                 alt={photo.original_filename}
                 onLoad={() => handleImageLoad(photo.id)}
                 sx={{
@@ -370,7 +356,7 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
               <Fade in={true} timeout={300}>
                 <Box
                   component="img"
-                  src={`/api/photo/${photos[selectedPhoto].id}`}
+                  src={getImageUrl(photos[selectedPhoto])}
                   alt={photos[selectedPhoto].original_filename}
                   sx={{
                     maxWidth: '100%',
@@ -407,189 +393,4 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
   );
 };
 
-const Dashboard: React.FC = () => {
-  const { user, logout } = useAuth();
-  const [tabValue, setTabValue] = useState(0);
-  const [myPhotos, setMyPhotos] = useState<Photo[]>([]);
-  const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [currentEventId, setCurrentEventId] = useState<number | null>(null);
-
-  useEffect(() => {
-    loadDashboardData();
-  }, [currentEventId]);
-
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
-      
-      if (user?.user_type === 'user' && currentEventId) {
-        // Pour les utilisateurs, charger les photos de l'événement sélectionné
-        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
-          photoService.getProfile(),
-          photoService.getUserEventPhotos(currentEventId),
-          photoService.getAllEventPhotos(currentEventId),
-        ]);
-        
-        setProfile(profileData.data);
-        setMyPhotos(myPhotosData.data);
-        setAllPhotos(allPhotosData.data);
-      } else {
-        // Chargement normal pour les photographes ou sans événement sélectionné
-        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
-          photoService.getProfile(),
-          photoService.getMyPhotos(),
-          photoService.getAllPhotos(),
-        ]);
-        
-        setProfile(profileData.data);
-        setMyPhotos(myPhotosData.data);
-        setAllPhotos(allPhotosData.data);
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Erreur lors du chargement des données');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleEventChange = (eventId: number) => {
-    setCurrentEventId(eventId);
-  };
-
-  const handleEventJoined = () => {
-    // Recharger les données après avoir rejoint un événement
-    loadDashboardData();
-  };
-
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-
-  const handleLogout = () => {
-    logout();
-  };
-
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  return (
-    <Container maxWidth="lg">
-      <Box sx={{ mt: 4, mb: 4 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-          <Typography variant="h4" component="h1">
-            Tableau de bord
-          </Typography>
-          <Button variant="outlined" onClick={handleLogout}>
-            Déconnexion
-          </Button>
-        </Box>
-
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        <Paper sx={{ mb: 3, p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Bonjour, {user?.username} !
-          </Typography>
-          {profile && (
-            <Typography variant="body2" color="text.secondary">
-              Vous avez {profile.photos_with_face} photos où vous apparaissez sur un total de {profile.total_photos} photos.
-            </Typography>
-          )}
-        </Paper>
-
-        {/* Gestion des événements selon le type d'utilisateur */}
-        {user?.user_type === 'user' && (
-          <Box sx={{ mb: 3 }}>
-            <EventSelector onEventChange={handleEventChange} currentEventId={currentEventId} />
-            <JoinEvent onEventJoined={handleEventJoined} />
-          </Box>
-        )}
-
-        {user?.user_type === 'photographer' && (
-          <Box sx={{ mb: 3 }}>
-            <PhotographerEventManager onEventChange={handleEventChange} currentEventId={currentEventId} />
-          </Box>
-        )}
-
-        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs value={tabValue} onChange={handleTabChange}>
-            <Tab label="Mes Photos" />
-            <Tab label="Toutes les Photos" />
-            <Tab label="Upload Selfie" />
-            {user?.user_type === 'photographer' && (
-              <Tab label="Upload Photo" />
-            )}
-            <Tab label="Mon Profil" />
-          </Tabs>
-        </Box>
-
-        <TabPanel value={tabValue} index={0}>
-          <ModernGallery 
-            photos={myPhotos}
-            title={`📸 Vos photos (${myPhotos.length})`}
-            loading={loading && myPhotos.length === 0}
-            error={error}
-          />
-        </TabPanel>
-
-        <TabPanel value={tabValue} index={1}>
-          <ModernGallery 
-            photos={allPhotos}
-            title={`🖼 Toutes les photos disponibles (${allPhotos.length})`}
-            loading={loading && allPhotos.length === 0}
-            error={error}
-          />
-        </TabPanel>
-
-        <TabPanel value={tabValue} index={2}>
-          <SelfieUpload onSuccess={loadDashboardData} />
-        </TabPanel>
-
-        {user?.user_type === 'photographer' && (
-          <TabPanel value={tabValue} index={3}>
-            <PhotoUpload onSuccess={loadDashboardData} eventId={currentEventId} />
-          </TabPanel>
-        )}
-
-        <TabPanel value={tabValue} index={user?.user_type === 'photographer' ? 4 : 3}>
-          <Typography variant="h6" gutterBottom>
-            Informations du profil
-          </Typography>
-          {profile && (
-            <Box>
-              <Typography variant="body1">
-                <strong>Nom d'utilisateur:</strong> {profile.user.username}
-              </Typography>
-              <Typography variant="body1">
-                <strong>Email:</strong> {profile.user.email}
-              </Typography>
-              <Typography variant="body1">
-                <strong>Type de compte:</strong> {profile.user.user_type}
-              </Typography>
-              <Typography variant="body1">
-                <strong>Total de photos:</strong> {profile.total_photos}
-              </Typography>
-              <Typography variant="body1">
-                <strong>Photos où vous apparaissez:</strong> {profile.photos_with_face}
-              </Typography>
-            </Box>
-          )}
-        </TabPanel>
-      </Box>
-    </Container>
-  );
-};
-
-export default Dashboard; 
+export default Gallery; 

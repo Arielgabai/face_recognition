@@ -1,9 +1,13 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Body
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy import func, text
+from pydantic import BaseModel
+from typing import List, Optional
 import os
 import shutil
 import uuid
@@ -19,6 +23,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import secrets
 import hashlib
+from PIL import Image
+import base64
 
 load_dotenv()
 
@@ -32,6 +38,9 @@ from face_recognizer import FaceRecognizer
 create_tables()
 
 app = FastAPI(title="Face Recognition API", version="1.0.0")
+
+# Templates pour le rendu HTML
+templates = Jinja2Templates(directory="templates")
 
 # Configuration CORS
 app.add_middleware(
@@ -1474,6 +1483,41 @@ async def get_photographer_event(
         "date": event.date,
         "photographer_id": event.photographer_id
     }
+
+@app.get("/gallery-test/{user_id}")
+async def gallery_test(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Test de la galerie moderne pour un utilisateur"""
+    # Récupérer les photos où l'utilisateur apparaît
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    # Photos où l'utilisateur apparaît
+    photos_match = db.query(Photo).join(FaceMatch).filter(
+        FaceMatch.user_id == user_id,
+        FaceMatch.photo_id == Photo.id
+    ).all()
+    
+    # Toutes les photos de l'événement de l'utilisateur
+    user_event = db.query(UserEvent).filter_by(user_id=user_id).first()
+    photos_all = []
+    if user_event:
+        photos_all = db.query(Photo).filter(Photo.event_id == user_event.event_id).all()
+    
+    return templates.TemplateResponse(
+        "gallery_modern.html", 
+        {
+            "request": request,
+            "user_id": user_id,
+            "username": user.username,
+            "photos_match": photos_match,
+            "photos_all": photos_all
+        }
+    )
 
 # === ROUTE CATCH-ALL POUR LE FRONTEND ===
 

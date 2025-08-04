@@ -1,0 +1,344 @@
+/**
+ * Galerie Photos Moderne - JavaScript
+ * Système de galerie responsive inspiré de Google Photos et Pinterest
+ * 
+ * Usage:
+ * const gallery = new ModernGallery(container, options);
+ * gallery.loadImages(images);
+ */
+
+class ModernGallery {
+    constructor(container, options = {}) {
+        this.container = typeof container === 'string' ? document.querySelector(container) : container;
+        this.options = {
+            autoDetectRatio: true,
+            lightbox: true,
+            keyboardNavigation: true,
+            animations: true,
+            lazy: true,
+            theme: 'light', // 'light', 'dark'
+            size: 'normal', // 'compact', 'normal', 'large'
+            ...options
+        };
+        
+        this.images = [];
+        this.currentIndex = 0;
+        this.lightboxElement = null;
+        
+        this.init();
+    }
+    
+    init() {
+        if (!this.container) {
+            console.error('Container not found');
+            return;
+        }
+        
+        this.container.classList.add('gallery-container');
+        if (this.options.theme === 'dark') {
+            this.container.classList.add('gallery-theme-dark');
+        }
+        if (this.options.size !== 'normal') {
+            this.container.classList.add(`gallery-${this.options.size}`);
+        }
+        
+        if (this.options.lightbox) {
+            this.createLightbox();
+        }
+        
+        if (this.options.keyboardNavigation) {
+            this.setupKeyboardNavigation();
+        }
+    }
+    
+    /**
+     * Charge et affiche une liste d'images
+     * @param {Array} images - Array d'objets {src, alt, aspectRatio?}
+     */
+    loadImages(images) {
+        this.images = images;
+        this.renderGallery();
+    }
+    
+    /**
+     * Ajoute des images à la galerie existante
+     * @param {Array} newImages - Nouvelles images à ajouter
+     */
+    addImages(newImages) {
+        this.images = [...this.images, ...newImages];
+        this.renderNewImages(newImages);
+    }
+    
+    renderGallery() {
+        const galleryGrid = document.createElement('div');
+        galleryGrid.className = 'modern-gallery';
+        galleryGrid.innerHTML = '';
+        
+        this.images.forEach((image, index) => {
+            const card = this.createImageCard(image, index);
+            galleryGrid.appendChild(card);
+        });
+        
+        // Remplace le contenu existant
+        this.container.innerHTML = '';
+        this.container.appendChild(galleryGrid);
+        
+        if (this.options.animations) {
+            this.animateCards();
+        }
+    }
+    
+    renderNewImages(newImages) {
+        const galleryGrid = this.container.querySelector('.modern-gallery');
+        const startIndex = this.images.length - newImages.length;
+        
+        newImages.forEach((image, index) => {
+            const card = this.createImageCard(image, startIndex + index);
+            galleryGrid.appendChild(card);
+        });
+        
+        if (this.options.animations) {
+            this.animateNewCards(galleryGrid.children.length - newImages.length);
+        }
+    }
+    
+    createImageCard(image, index) {
+        const card = document.createElement('div');
+        card.className = 'gallery-photo-card';
+        card.setAttribute('data-index', index);
+        
+        const img = document.createElement('img');
+        img.alt = image.alt || `Image ${index + 1}`;
+        
+        if (this.options.lazy) {
+            img.loading = 'lazy';
+        }
+        
+        // Gestion du chargement d'image
+        img.onload = () => {
+            if (this.options.autoDetectRatio) {
+                this.detectAndApplyRatio(img, card);
+            }
+            card.classList.remove('loading');
+        };
+        
+        img.onerror = () => {
+            card.classList.add('error');
+            card.innerHTML = '<div class="gallery-photo-loading">❌ Erreur de chargement</div>';
+        };
+        
+        img.src = image.src;
+        
+        // Ajouter un indicateur de chargement
+        if (this.options.lazy) {
+            card.classList.add('loading');
+            const loader = document.createElement('div');
+            loader.className = 'gallery-photo-loading';
+            loader.innerHTML = '⏳ Chargement...';
+            card.appendChild(loader);
+        }
+        
+        // Overlay d'interaction
+        const overlay = document.createElement('div');
+        overlay.className = 'gallery-photo-overlay';
+        overlay.innerHTML = '<span>Voir en grand</span>';
+        
+        card.appendChild(img);
+        card.appendChild(overlay);
+        
+        // Event listeners
+        if (this.options.lightbox) {
+            card.addEventListener('click', () => this.openLightbox(index));
+            card.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.openLightbox(index);
+                }
+            });
+            card.setAttribute('tabindex', '0');
+        }
+        
+        return card;
+    }
+    
+    detectAndApplyRatio(img, card) {
+        const aspectRatio = img.naturalWidth / img.naturalHeight;
+        
+        // Retirer les classes existantes
+        card.classList.remove('portrait', 'landscape', 'large');
+        
+        // Appliquer les classes selon le ratio
+        if (aspectRatio < 0.7) {
+            card.classList.add('portrait');
+        } else if (aspectRatio > 1.8) {
+            card.classList.add('landscape');
+        }
+        
+        // Images exceptionnellement grandes
+        if (img.naturalWidth > 1500 && img.naturalHeight > 1000) {
+            card.classList.add('large');
+        }
+    }
+    
+    createLightbox() {
+        this.lightboxElement = document.createElement('div');
+        this.lightboxElement.className = 'gallery-lightbox';
+        this.lightboxElement.innerHTML = `
+            <span class="gallery-lightbox-close">&times;</span>
+            <div class="gallery-lightbox-nav gallery-lightbox-prev">‹</div>
+            <div class="gallery-lightbox-nav gallery-lightbox-next">›</div>
+            <img src="" alt="">
+            <div class="gallery-photo-counter">1 / 1</div>
+        `;
+        
+        document.body.appendChild(this.lightboxElement);
+        
+        // Event listeners
+        const closeBtn = this.lightboxElement.querySelector('.gallery-lightbox-close');
+        const prevBtn = this.lightboxElement.querySelector('.gallery-lightbox-prev');
+        const nextBtn = this.lightboxElement.querySelector('.gallery-lightbox-next');
+        
+        closeBtn.addEventListener('click', () => this.closeLightbox());
+        prevBtn.addEventListener('click', () => this.previousImage());
+        nextBtn.addEventListener('click', () => this.nextImage());
+        
+        // Fermer en cliquant à l'extérieur
+        this.lightboxElement.addEventListener('click', (e) => {
+            if (e.target === this.lightboxElement) {
+                this.closeLightbox();
+            }
+        });
+    }
+    
+    openLightbox(index) {
+        if (!this.lightboxElement || !this.images[index]) return;
+        
+        this.currentIndex = index;
+        const image = this.images[index];
+        
+        const img = this.lightboxElement.querySelector('img');
+        const counter = this.lightboxElement.querySelector('.gallery-photo-counter');
+        const prevBtn = this.lightboxElement.querySelector('.gallery-lightbox-prev');
+        const nextBtn = this.lightboxElement.querySelector('.gallery-lightbox-next');
+        
+        img.src = image.src;
+        img.alt = image.alt || `Image ${index + 1}`;
+        counter.textContent = `${index + 1} / ${this.images.length}`;
+        
+        // Afficher/masquer les boutons de navigation
+        prevBtn.style.display = index > 0 ? 'flex' : 'none';
+        nextBtn.style.display = index < this.images.length - 1 ? 'flex' : 'none';
+        
+        this.lightboxElement.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        
+        // Focus pour l'accessibilité
+        this.lightboxElement.focus();
+    }
+    
+    closeLightbox() {
+        if (!this.lightboxElement) return;
+        
+        this.lightboxElement.classList.remove('active');
+        document.body.style.overflow = 'auto';
+    }
+    
+    previousImage() {
+        if (this.currentIndex > 0) {
+            this.openLightbox(this.currentIndex - 1);
+        }
+    }
+    
+    nextImage() {
+        if (this.currentIndex < this.images.length - 1) {
+            this.openLightbox(this.currentIndex + 1);
+        }
+    }
+    
+    setupKeyboardNavigation() {
+        document.addEventListener('keydown', (e) => {
+            if (!this.lightboxElement?.classList.contains('active')) return;
+            
+            switch(e.key) {
+                case 'Escape':
+                    this.closeLightbox();
+                    break;
+                case 'ArrowLeft':
+                    this.previousImage();
+                    break;
+                case 'ArrowRight':
+                    this.nextImage();
+                    break;
+            }
+        });
+    }
+    
+    animateCards() {
+        const cards = this.container.querySelectorAll('.gallery-photo-card');
+        cards.forEach((card, index) => {
+            card.style.animationDelay = `${index * 0.1}s`;
+        });
+    }
+    
+    animateNewCards(startIndex) {
+        const cards = this.container.querySelectorAll('.gallery-photo-card');
+        for (let i = startIndex; i < cards.length; i++) {
+            cards[i].style.animationDelay = `${(i - startIndex) * 0.1}s`;
+        }
+    }
+    
+    /**
+     * Actualise la galerie avec de nouvelles options
+     * @param {Object} newOptions - Nouvelles options
+     */
+    updateOptions(newOptions) {
+        this.options = { ...this.options, ...newOptions };
+        this.renderGallery();
+    }
+    
+    /**
+     * Supprime une image par index
+     * @param {number} index - Index de l'image à supprimer
+     */
+    removeImage(index) {
+        if (index >= 0 && index < this.images.length) {
+            this.images.splice(index, 1);
+            this.renderGallery();
+        }
+    }
+    
+    /**
+     * Vide la galerie
+     */
+    clear() {
+        this.images = [];
+        this.container.innerHTML = '<div class="gallery-empty-state"><h3>Aucune image</h3><p>La galerie est vide</p></div>';
+    }
+    
+    /**
+     * Détruit la galerie et nettoie les event listeners
+     */
+    destroy() {
+        if (this.lightboxElement) {
+            this.lightboxElement.remove();
+        }
+        this.container.innerHTML = '';
+        this.container.classList.remove('gallery-container', 'gallery-theme-dark', 'gallery-compact', 'gallery-large');
+    }
+}
+
+// Fonction utilitaire pour créer rapidement une galerie
+function createGallery(container, images, options = {}) {
+    const gallery = new ModernGallery(container, options);
+    gallery.loadImages(images);
+    return gallery;
+}
+
+// Export pour utilisation en module
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { ModernGallery, createGallery };
+}
+
+// Disponible globalement
+window.ModernGallery = ModernGallery;
+window.createGallery = createGallery; 

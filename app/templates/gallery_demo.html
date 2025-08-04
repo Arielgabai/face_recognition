@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Galerie - {{ user_id }}</title>
+    <title>Démonstration Galerie Photos</title>
     <style>
         * {
             margin: 0;
@@ -260,6 +260,10 @@
         .photo-card:nth-child(4) { animation-delay: 0.4s; }
         .photo-card:nth-child(5) { animation-delay: 0.5s; }
         .photo-card:nth-child(6) { animation-delay: 0.6s; }
+        .photo-card:nth-child(7) { animation-delay: 0.7s; }
+        .photo-card:nth-child(8) { animation-delay: 0.8s; }
+        .photo-card:nth-child(9) { animation-delay: 0.9s; }
+        .photo-card:nth-child(10) { animation-delay: 1s; }
 
         @keyframes fadeInUp {
             to {
@@ -268,75 +272,124 @@
             }
         }
 
-        .empty-state {
+        .demo-note {
+            background: rgba(25, 118, 210, 0.1);
+            border: 1px solid rgba(25, 118, 210, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 30px;
             text-align: center;
-            padding: 60px 20px;
-            color: #666;
-        }
-
-        .empty-state h3 {
-            font-size: 1.5rem;
-            margin-bottom: 10px;
-            font-weight: 400;
-        }
-
-        .empty-state p {
-            font-size: 1rem;
-            opacity: 0.8;
+            color: #1976d2;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Galerie Photos</h1>
-            <p class="subtitle">Utilisateur: {{ user_id }}</p>
+            <h1>Galerie Photos Moderne</h1>
+            <p class="subtitle">Démonstration de la galerie responsive</p>
         </div>
 
-        {% if photos_match %}
+        <div class="demo-note">
+            <strong>Démonstration :</strong> Cette galerie s'adapte automatiquement aux différentes proportions d'images.
+            Cliquez sur une image pour l'agrandir. Navigation au clavier avec les flèches ← → et Échap.
+        </div>
+
         <div class="section">
-            <h2 class="section-title">📸 Photos où vous apparaissez</h2>
-            <div class="gallery" id="match-gallery">
-                {% for photo in photos_match %}
-                <div class="photo-card" onclick="openLightbox('{{ loop.index0 }}', 'match')">
-                    <img src="/static/uploads/sorted/{{ user_id }}/match/{{ photo }}" 
-                         alt="Photo {{ loop.index }}" 
-                         loading="lazy"
-                         onload="checkImageRatio(this)">
+            <h2 class="section-title">🖼 Galerie événementielle</h2>
+            <div class="gallery">
+                <!-- Images de démonstration avec différentes proportions -->
+                <div class="photo-card portrait" onclick="openLightbox(0)">
+                    <img src="https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=400&h=600&fit=crop" 
+                         alt="Portrait photo" 
+                         loading="lazy">
                     <div class="photo-overlay">
                         <span>Voir en grand</span>
                     </div>
                 </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
 
-        {% if photos_all %}
-        <div class="section">
-            <h2 class="section-title">🖼 Toutes les photos</h2>
-            <div class="gallery" id="all-gallery">
-                {% for photo in photos_all %}
-                <div class="photo-card" onclick="openLightbox('{{ loop.index0 }}', 'all')">
-                    <img src="/static/uploads/groupes/{{ photo }}" 
-                         alt="Photo {{ loop.index }}" 
-                         loading="lazy"
-                         onload="checkImageRatio(this)">
+                <div class="photo-card" onclick="openLightbox(1)">
+                    <img src="https://images.unsplash.com/photo-1549298916-b41d501d3772?w=400&h=400&fit=crop" 
+                         alt="Carré photo" 
+                         loading="lazy">
                     <div class="photo-overlay">
                         <span>Voir en grand</span>
                     </div>
                 </div>
-                {% endfor %}
+
+                <div class="photo-card landscape" onclick="openLightbox(2)">
+                    <img src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=600&h=300&fit=crop" 
+                         alt="Paysage photo" 
+                         loading="lazy">
+                    <div class="photo-overlay">
+                        <span>Voir en grand</span>
+                    </div>
+                </div>
+
+                <div class="photo-card" onclick="openLightbox(3)">
+                    <img src="https://images.unsplash.com/photo-1543373014-cfe4f4bc1cdf?w=400&h=400&fit=crop" 
+                         alt="Photo carrée" 
+                         loading="lazy">
+                    <div class="photo-overlay">
+                        <span>Voir en grand</span>
+                    </div>
+                </div>
+
+                <div class="photo-card portrait" onclick="openLightbox(4)">
+                    <img src="https://images.unsplash.com/photo-1516410529446-2c777d2884cd?w=400&h=600&fit=crop" 
+                         alt="Portrait photo" 
+                         loading="lazy">
+                    <div class="photo-overlay">
+                        <span>Voir en grand</span>
+                    </div>
+                </div>
+
+                <div class="photo-card" onclick="openLightbox(5)">
+                    <img src="https://images.unsplash.com/photo-1511593358241-7eea1f3c84e5?w=400&h=400&fit=crop" 
+                         alt="Photo architecture" 
+                         loading="lazy">
+                    <div class="photo-overlay">
+                        <span>Voir en grand</span>
+                    </div>
+                </div>
+
+                <div class="photo-card" onclick="openLightbox(6)">
+                    <img src="https://images.unsplash.com/photo-1515378960530-7c0da6231fb1?w=400&h=400&fit=crop" 
+                         alt="Photo nature" 
+                         loading="lazy">
+                    <div class="photo-overlay">
+                        <span>Voir en grand</span>
+                    </div>
+                </div>
+
+                <div class="photo-card landscape" onclick="openLightbox(7)">
+                    <img src="https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=600&h=300&fit=crop" 
+                         alt="Photo panoramique" 
+                         loading="lazy">
+                    <div class="photo-overlay">
+                        <span>Voir en grand</span>
+                    </div>
+                </div>
+
+                <div class="photo-card" onclick="openLightbox(8)">
+                    <img src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=400&h=400&fit=crop" 
+                         alt="Photo urbaine" 
+                         loading="lazy">
+                    <div class="photo-overlay">
+                        <span>Voir en grand</span>
+                    </div>
+                </div>
+
+                <div class="photo-card portrait" onclick="openLightbox(9)">
+                    <img src="https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=400&h=600&fit=crop" 
+                         alt="Portrait photo" 
+                         loading="lazy">
+                    <div class="photo-overlay">
+                        <span>Voir en grand</span>
+                    </div>
+                </div>
             </div>
         </div>
-        {% endif %}
-
-        {% if not photos_match and not photos_all %}
-        <div class="empty-state">
-            <h3>Aucune photo disponible</h3>
-            <p>Il n'y a pas encore de photos dans cette galerie.</p>
-        </div>
-        {% endif %}
     </div>
 
     <!-- Lightbox -->
@@ -345,66 +398,71 @@
         <div class="lightbox-nav lightbox-prev" onclick="previousImage()" id="prev-btn">‹</div>
         <div class="lightbox-nav lightbox-next" onclick="nextImage()" id="next-btn">›</div>
         <img id="lightbox-img" src="" alt="">
-        <div class="photo-counter" id="photo-counter">1 / 1</div>
+        <div class="photo-counter" id="photo-counter">1 / 10</div>
     </div>
 
     <script>
         let currentImageIndex = 0;
-        let currentGallery = 'match';
-        let galleryData = {
-            'match': [
-                {% for photo in photos_match %}
-                {
-                    src: "/static/uploads/sorted/{{ user_id }}/match/{{ photo }}",
-                    alt: "Photo {{ loop.index }}"
-                }{% if not loop.last %},{% endif %}
-                {% endfor %}
-            ],
-            'all': [
-                {% for photo in photos_all %}
-                {
-                    src: "/static/uploads/groupes/{{ photo }}",
-                    alt: "Photo {{ loop.index }}"
-                }{% if not loop.last %},{% endif %}
-                {% endfor %}
-            ]
-        };
-
-        function checkImageRatio(img) {
-            const aspectRatio = img.naturalWidth / img.naturalHeight;
-            const card = img.closest('.photo-card');
-            
-            // Remove existing classes
-            card.classList.remove('portrait', 'landscape');
-            
-            // Add appropriate class based on aspect ratio
-            if (aspectRatio < 0.7) {
-                card.classList.add('portrait');
-            } else if (aspectRatio > 1.8) {
-                card.classList.add('landscape');
+        
+        const galleryImages = [
+            {
+                src: "https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=800&h=1200&fit=crop",
+                alt: "Portrait photo"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=800&h=800&fit=crop",
+                alt: "Carré photo"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1200&h=600&fit=crop",
+                alt: "Paysage photo"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1543373014-cfe4f4bc1cdf?w=800&h=800&fit=crop",
+                alt: "Photo carrée"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1516410529446-2c777d2884cd?w=800&h=1200&fit=crop",
+                alt: "Portrait photo"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1511593358241-7eea1f3c84e5?w=800&h=800&fit=crop",
+                alt: "Photo architecture"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1515378960530-7c0da6231fb1?w=800&h=800&fit=crop",
+                alt: "Photo nature"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=1200&h=600&fit=crop",
+                alt: "Photo panoramique"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=800&h=800&fit=crop",
+                alt: "Photo urbaine"
+            },
+            {
+                src: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=800&h=1200&fit=crop",
+                alt: "Portrait photo"
             }
-        }
+        ];
 
-        function openLightbox(index, gallery) {
-            currentImageIndex = parseInt(index);
-            currentGallery = gallery;
+        function openLightbox(index) {
+            currentImageIndex = index;
             const lightbox = document.getElementById('lightbox');
             const img = document.getElementById('lightbox-img');
             const counter = document.getElementById('photo-counter');
             
-            const images = galleryData[gallery];
-            if (images && images[currentImageIndex]) {
-                img.src = images[currentImageIndex].src;
-                img.alt = images[currentImageIndex].alt;
-                counter.textContent = `${currentImageIndex + 1} / ${images.length}`;
-                
-                // Show/hide navigation buttons
-                document.getElementById('prev-btn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
-                document.getElementById('next-btn').style.display = currentImageIndex < images.length - 1 ? 'flex' : 'none';
-                
-                lightbox.classList.add('active');
-                document.body.style.overflow = 'hidden';
-            }
+            img.src = galleryImages[currentImageIndex].src;
+            img.alt = galleryImages[currentImageIndex].alt;
+            counter.textContent = `${currentImageIndex + 1} / ${galleryImages.length}`;
+            
+            // Show/hide navigation buttons
+            document.getElementById('prev-btn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
+            document.getElementById('next-btn').style.display = currentImageIndex < galleryImages.length - 1 ? 'flex' : 'none';
+            
+            lightbox.classList.add('active');
+            document.body.style.overflow = 'hidden';
         }
 
         function closeLightbox(event) {
@@ -419,14 +477,13 @@
 
         function previousImage() {
             if (currentImageIndex > 0) {
-                openLightbox(currentImageIndex - 1, currentGallery);
+                openLightbox(currentImageIndex - 1);
             }
         }
 
         function nextImage() {
-            const images = galleryData[currentGallery];
-            if (currentImageIndex < images.length - 1) {
-                openLightbox(currentImageIndex + 1, currentGallery);
+            if (currentImageIndex < galleryImages.length - 1) {
+                openLightbox(currentImageIndex + 1);
             }
         }
 
@@ -453,4 +510,4 @@
         });
     </script>
 </body>
-</html>
+</html> 

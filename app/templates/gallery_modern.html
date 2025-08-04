@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Galerie - {{ user_id }}</title>
+    <title>Galerie Photos - {{ username }}</title>
     <style>
         * {
             margin: 0;
@@ -27,6 +27,10 @@
         .header {
             text-align: center;
             margin-bottom: 40px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
         }
 
         .header h1 {
@@ -42,8 +46,47 @@
             font-weight: 400;
         }
 
+        .tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            padding: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .tab {
+            padding: 12px 24px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 8px;
+            margin: 0 4px;
+            font-size: 16px;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.3s ease;
+        }
+
+        .tab.active {
+            background: linear-gradient(45deg, #1976d2, #dc004e);
+            color: white;
+            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);
+        }
+
+        .tab:hover:not(.active) {
+            background: rgba(25, 118, 210, 0.1);
+            color: #1976d2;
+        }
+
         .section {
             margin-bottom: 60px;
+            display: none;
+        }
+
+        .section.active {
+            display: block;
         }
 
         .section-title {
@@ -109,15 +152,6 @@
 
         .photo-card:hover .photo-overlay {
             opacity: 1;
-        }
-
-        /* Styles pour différentes proportions d'images */
-        .photo-card.portrait {
-            grid-row-end: span 2;
-        }
-
-        .photo-card.landscape {
-            grid-column-end: span 2;
         }
 
         /* Lightbox */
@@ -212,15 +246,30 @@
             font-size: 14px;
         }
 
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            font-weight: 400;
+        }
+
+        .empty-state p {
+            font-size: 1rem;
+            opacity: 0.8;
+        }
+
         /* Responsive design */
         @media (max-width: 768px) {
             .gallery {
                 grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
                 gap: 12px;
-            }
-
-            .photo-card.landscape {
-                grid-column-end: span 1;
             }
 
             .header h1 {
@@ -229,6 +278,16 @@
 
             .section-title {
                 font-size: 1.5rem;
+            }
+
+            .tabs {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .tab {
+                width: 200px;
+                margin: 4px 0;
             }
         }
 
@@ -268,75 +327,95 @@
             }
         }
 
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #666;
+        .back-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            padding: 12px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #1976d2;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
-        .empty-state h3 {
-            font-size: 1.5rem;
-            margin-bottom: 10px;
-            font-weight: 400;
-        }
-
-        .empty-state p {
-            font-size: 1rem;
-            opacity: 0.8;
+        .back-btn:hover {
+            background: #1976d2;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(25, 118, 210, 0.3);
         }
     </style>
 </head>
 <body>
+    <a href="/static/index.html" class="back-btn">← Retour au Dashboard</a>
+    
     <div class="container">
         <div class="header">
             <h1>Galerie Photos</h1>
-            <p class="subtitle">Utilisateur: {{ user_id }}</p>
+            <p class="subtitle">{{ username }} • Galerie moderne et responsive</p>
         </div>
 
-        {% if photos_match %}
-        <div class="section">
+        <div class="tabs">
+            <button class="tab active" onclick="showTab(0)">
+                📸 Vos photos ({{ photos_match|length }})
+            </button>
+            <button class="tab" onclick="showTab(1)">
+                🖼 Toutes les photos ({{ photos_all|length }})
+            </button>
+        </div>
+
+        <!-- Section Photos où vous apparaissez -->
+        <div class="section active" id="section-0">
             <h2 class="section-title">📸 Photos où vous apparaissez</h2>
+            {% if photos_match %}
             <div class="gallery" id="match-gallery">
                 {% for photo in photos_match %}
-                <div class="photo-card" onclick="openLightbox('{{ loop.index0 }}', 'match')">
-                    <img src="/static/uploads/sorted/{{ user_id }}/match/{{ photo }}" 
-                         alt="Photo {{ loop.index }}" 
-                         loading="lazy"
-                         onload="checkImageRatio(this)">
+                <div class="photo-card" onclick="openLightbox({{ loop.index0 }}, 'match')">
+                    <img src="/api/photo/{{ photo.id }}" 
+                         alt="{{ photo.original_filename }}" 
+                         loading="lazy">
                     <div class="photo-overlay">
                         <span>Voir en grand</span>
                     </div>
                 </div>
                 {% endfor %}
             </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>Aucune photo trouvée</h3>
+                <p>Vous n'apparaissez dans aucune photo pour le moment.</p>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
 
-        {% if photos_all %}
-        <div class="section">
-            <h2 class="section-title">🖼 Toutes les photos</h2>
+        <!-- Section Toutes les photos -->
+        <div class="section" id="section-1">
+            <h2 class="section-title">🖼 Toutes les photos disponibles</h2>
+            {% if photos_all %}
             <div class="gallery" id="all-gallery">
                 {% for photo in photos_all %}
-                <div class="photo-card" onclick="openLightbox('{{ loop.index0 }}', 'all')">
-                    <img src="/static/uploads/groupes/{{ photo }}" 
-                         alt="Photo {{ loop.index }}" 
-                         loading="lazy"
-                         onload="checkImageRatio(this)">
+                <div class="photo-card" onclick="openLightbox({{ loop.index0 }}, 'all')">
+                    <img src="/api/photo/{{ photo.id }}" 
+                         alt="{{ photo.original_filename }}" 
+                         loading="lazy">
                     <div class="photo-overlay">
                         <span>Voir en grand</span>
                     </div>
                 </div>
                 {% endfor %}
             </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>Aucune photo disponible</h3>
+                <p>Aucune photo n'a été uploadée pour cet événement.</p>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
-
-        {% if not photos_match and not photos_all %}
-        <div class="empty-state">
-            <h3>Aucune photo disponible</h3>
-            <p>Il n'y a pas encore de photos dans cette galerie.</p>
-        </div>
-        {% endif %}
     </div>
 
     <!-- Lightbox -->
@@ -355,34 +434,35 @@
             'match': [
                 {% for photo in photos_match %}
                 {
-                    src: "/static/uploads/sorted/{{ user_id }}/match/{{ photo }}",
-                    alt: "Photo {{ loop.index }}"
+                    src: "/api/photo/{{ photo.id }}",
+                    alt: "{{ photo.original_filename }}"
                 }{% if not loop.last %},{% endif %}
                 {% endfor %}
             ],
             'all': [
                 {% for photo in photos_all %}
                 {
-                    src: "/static/uploads/groupes/{{ photo }}",
-                    alt: "Photo {{ loop.index }}"
+                    src: "/api/photo/{{ photo.id }}",
+                    alt: "{{ photo.original_filename }}"
                 }{% if not loop.last %},{% endif %}
                 {% endfor %}
             ]
         };
 
-        function checkImageRatio(img) {
-            const aspectRatio = img.naturalWidth / img.naturalHeight;
-            const card = img.closest('.photo-card');
+        function showTab(index) {
+            // Masquer toutes les sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.classList.remove('active');
+            });
             
-            // Remove existing classes
-            card.classList.remove('portrait', 'landscape');
+            // Désactiver tous les onglets
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
             
-            // Add appropriate class based on aspect ratio
-            if (aspectRatio < 0.7) {
-                card.classList.add('portrait');
-            } else if (aspectRatio > 1.8) {
-                card.classList.add('landscape');
-            }
+            // Activer la section et l'onglet sélectionnés
+            document.getElementById(`section-${index}`).classList.add('active');
+            document.querySelectorAll('.tab')[index].classList.add('active');
         }
 
         function openLightbox(index, gallery) {
@@ -451,6 +531,14 @@
         document.getElementById('lightbox').addEventListener('wheel', function(e) {
             e.preventDefault();
         });
+
+        // Animation des cartes au chargement
+        window.addEventListener('load', function() {
+            const cards = document.querySelectorAll('.photo-card');
+            cards.forEach((card, index) => {
+                card.style.animationDelay = `${index * 0.1}s`;
+            });
+        });
     </script>
 </body>
-</html>
+</html> 
