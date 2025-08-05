@@ -11,6 +11,7 @@ from models import User, Photo, FaceMatch
 import uuid
 import io
 from PIL import Image
+from photo_optimizer import PhotoOptimizer
 
 class FaceRecognizer:
     def __init__(self, tolerance=0.6):
@@ -110,14 +111,16 @@ class FaceRecognizer:
         
         # Lire le fichier et le convertir en données binaires
         with open(photo_path, 'rb') as f:
-            photo_data = f.read()
+            original_data = f.read()
         
-        # Déterminer le type de contenu
-        content_type = self._get_content_type(original_filename)
+        # Optimiser l'image avant sauvegarde
+        optimization_result = PhotoOptimizer.optimize_image(
+            image_data=original_data,
+            photo_type='uploaded'
+        )
         
-        # Générer un nom de fichier unique
-        file_extension = os.path.splitext(original_filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        # Générer un nom de fichier unique (toujours JPG après optimisation)
+        unique_filename = f"{uuid.uuid4()}.jpg"
         
         # Trouver l'événement associé au photographe
         event_id = None
@@ -132,23 +135,29 @@ class FaceRecognizer:
         else:
             print("⚠️  Aucun photographe_id fourni")
         
-        # Créer l'enregistrement Photo avec les données binaires
+        # Créer l'enregistrement Photo avec les données optimisées
         photo = Photo(
             filename=unique_filename,
             original_filename=original_filename,
-            photo_data=photo_data,
-            content_type=content_type,
+            photo_data=optimization_result['compressed_data'],
+            content_type=optimization_result['content_type'],
             photo_type="uploaded",
             photographer_id=photographer_id,
-            event_id=event_id
+            event_id=event_id,
+            original_size=optimization_result['original_size'],
+            compressed_size=optimization_result['compressed_size'],
+            compression_ratio=optimization_result['compression_ratio'],
+            quality_level=optimization_result['quality_level'],
+            retention_days=optimization_result['retention_days'],
+            expires_at=optimization_result['expires_at']
         )
         print(f"📸 Photo créée: {original_filename} -> Event ID: {event_id}")
         db.add(photo)
         db.commit()
         db.refresh(photo)
         
-        # Traiter la reconnaissance faciale
-        matches = self.process_photo(photo_data, db)
+        # Traiter la reconnaissance faciale avec les données optimisées
+        matches = self.process_photo(optimization_result['compressed_data'], db)
         
         # Sauvegarder les correspondances
         for match in matches:
@@ -168,32 +177,40 @@ class FaceRecognizer:
         
         # Lire le fichier et le convertir en données binaires
         with open(photo_path, 'rb') as f:
-            photo_data = f.read()
+            original_data = f.read()
         
-        # Déterminer le type de contenu
-        content_type = self._get_content_type(original_filename)
+        # Optimiser l'image avant sauvegarde
+        optimization_result = PhotoOptimizer.optimize_image(
+            image_data=original_data,
+            photo_type='uploaded'
+        )
         
-        # Générer un nom de fichier unique
-        file_extension = os.path.splitext(original_filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        # Générer un nom de fichier unique (toujours JPG après optimisation)
+        unique_filename = f"{uuid.uuid4()}.jpg"
         
-        # Créer l'enregistrement Photo avec les données binaires
+        # Créer l'enregistrement Photo avec les données optimisées
         photo = Photo(
             filename=unique_filename,
             original_filename=original_filename,
-            photo_data=photo_data,
-            content_type=content_type,
+            photo_data=optimization_result['compressed_data'],
+            content_type=optimization_result['content_type'],
             photo_type="uploaded",
             photographer_id=photographer_id,
-            event_id=event_id
+            event_id=event_id,
+            original_size=optimization_result['original_size'],
+            compressed_size=optimization_result['compressed_size'],
+            compression_ratio=optimization_result['compression_ratio'],
+            quality_level=optimization_result['quality_level'],
+            retention_days=optimization_result['retention_days'],
+            expires_at=optimization_result['expires_at']
         )
         print(f"📸 Photo créée pour événement {event_id}: {original_filename}")
         db.add(photo)
         db.commit()
         db.refresh(photo)
         
-        # Traiter la reconnaissance faciale pour cet événement spécifique
-        matches = self.process_photo_for_event(photo_data, event_id, db)
+        # Traiter la reconnaissance faciale pour cet événement spécifique avec les données optimisées
+        matches = self.process_photo_for_event(optimization_result['compressed_data'], event_id, db)
         
         # Sauvegarder les correspondances
         for match in matches:

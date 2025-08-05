@@ -28,8 +28,9 @@ from models import User, Photo, FaceMatch, UserType, Event, UserEvent
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
 from face_recognizer import FaceRecognizer
+from photo_optimizer import PhotoOptimizer
 
-# Cr+�er les tables au d+�marrage
+# Créer les tables au démarrage
 create_tables()
 
 app = FastAPI(title="Face Recognition API", version="1.0.0")
@@ -1474,6 +1475,154 @@ async def get_photographer_event(
         "event_code": event.event_code,
         "date": event.date,
         "photographer_id": event.photographer_id
+    }
+
+# === ENDPOINTS D'OPTIMISATION PHOTOS (ADMIN) ===
+
+@app.get("/api/admin/photo-optimization/stats")
+async def get_photo_optimization_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer les statistiques d'optimisation des photos (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder aux statistiques")
+    
+    # Récupérer toutes les photos avec métadonnées d'optimisation
+    photos = db.query(Photo).filter(
+        Photo.original_size.isnot(None),
+        Photo.compressed_size.isnot(None)
+    ).all()
+    
+    if not photos:
+        return {
+            "total_photos": 0,
+            "total_original_size_mb": 0,
+            "total_compressed_size_mb": 0,
+            "total_space_saved_mb": 0,
+            "average_compression_ratio": 0,
+            "photos_by_quality": {},
+            "expired_photos_count": 0
+        }
+    
+    # Calculer les statistiques
+    photos_data = []
+    for photo in photos:
+        photos_data.append({
+            'original_size': photo.original_size,
+            'compressed_size': photo.compressed_size,
+            'expires_at': photo.expires_at
+        })
+    
+    stats = PhotoOptimizer.calculate_storage_savings(photos_data)
+    expired_count = PhotoOptimizer.get_expired_photos_count(photos_data)
+    
+    # Statistiques par niveau de qualité
+    quality_stats = {}
+    for photo in photos:
+        quality = photo.quality_level or 85
+        if quality not in quality_stats:
+            quality_stats[quality] = 0
+        quality_stats[quality] += 1
+    
+    return {
+        "total_photos": stats['total_photos'],
+        "total_original_size_mb": stats['original_size_mb'],
+        "total_compressed_size_mb": stats['compressed_size_mb'],
+        "total_space_saved_mb": stats['space_saved_mb'],
+        "average_compression_ratio": stats['average_compression_ratio'],
+        "photos_by_quality": quality_stats,
+        "expired_photos_count": expired_count
+    }
+
+@app.get("/api/admin/photo-optimization/estimate")
+async def estimate_photo_compression(
+    file_size: int,
+    quality_profile: str = "high",
+    current_user: User = Depends(get_current_user)
+):
+    """Estimer la compression pour une taille de fichier donnée (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette fonctionnalité")
+    
+    if quality_profile not in PhotoOptimizer.QUALITY_PROFILES:
+        raise HTTPException(status_code=400, detail="Profil de qualité invalide")
+    
+    estimation = PhotoOptimizer.estimate_compression(file_size, quality_profile)
+    
+    return {
+        "original_size_mb": round(estimation['original_size'] / (1024 * 1024), 2),
+        "estimated_compressed_size_mb": round(estimation['estimated_compressed_size'] / (1024 * 1024), 2),
+        "estimated_space_saved_mb": round(estimation['estimated_space_saved'] / (1024 * 1024), 2),
+        "estimated_compression_ratio": estimation['estimated_compression_ratio'],
+        "quality_profile": estimation['quality_profile']
+    }
+
+@app.post("/api/admin/photo-optimization/cleanup-expired")
+async def cleanup_expired_photos(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Nettoyer les photos expirées (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent nettoyer les photos")
+    
+    from datetime import datetime
+    now = datetime.utcnow()
+    
+    # Trouver les photos expirées
+    expired_photos = db.query(Photo).filter(
+        Photo.expires_at.isnot(None),
+        Photo.expires_at < now
+    ).all()
+    
+    if not expired_photos:
+        return {
+            "message": "Aucune photo expirée trouvée",
+            "deleted_count": 0,
+            "space_freed_mb": 0
+        }
+    
+    deleted_count = 0
+    space_freed = 0
+    
+    try:
+        for photo in expired_photos:
+            # Calculer l'espace libéré
+            if photo.compressed_size:
+                space_freed += photo.compressed_size
+            
+            # Supprimer les correspondances de visages
+            db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()
+            
+            # Supprimer la photo
+            db.delete(photo)
+            deleted_count += 1
+        
+        db.commit()
+        
+        return {
+            "message": f"{deleted_count} photos expirées supprimées avec succès",
+            "deleted_count": deleted_count,
+            "space_freed_mb": round(space_freed / (1024 * 1024), 2)
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur lors du nettoyage: {str(e)}")
+
+@app.get("/api/admin/photo-optimization/profiles")
+async def get_quality_profiles(
+    current_user: User = Depends(get_current_user)
+):
+    """Récupérer les profils de qualité disponibles (admin uniquement)"""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder aux profils")
+    
+    return {
+        "profiles": PhotoOptimizer.QUALITY_PROFILES,
+        "default_profile": "high",
+        "default_retention_days": PhotoOptimizer.DEFAULT_RETENTION_DAYS
     }
 
 # === ROUTE CATCH-ALL POUR LE FRONTEND ===
