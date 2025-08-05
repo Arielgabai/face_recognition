@@ -1,7 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates`nfrom fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
 from sqlalchemy.orm import Session
 from typing import List
 import os
@@ -28,7 +29,7 @@ from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as P
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
 from face_recognizer import FaceRecognizer
 
-# Cr+®er les tables au d+®marrage
+# Cr+ï¿½er les tables au d+ï¿½marrage
 create_tables()
 
 app = FastAPI(title="Face Recognition API", version="1.0.0")
@@ -53,7 +54,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 face_recognizer = FaceRecognizer()
 
 def photo_to_dict(photo: Photo) -> dict:
-    """Convertit un objet Photo en dictionnaire sans les donn+®es binaires"""
+    """Convertit un objet Photo en dictionnaire sans les donn+ï¿½es binaires"""
     return {
         "id": photo.id,
         "filename": photo.filename,
@@ -67,7 +68,7 @@ def photo_to_dict(photo: Photo) -> dict:
         "event_id": photo.event_id
     }
 
-# Cr+®er les dossiers n+®cessaires
+# Cr+ï¿½er les dossiers n+ï¿½cessaires
 os.makedirs("static/uploads/selfies", exist_ok=True)
 os.makedirs("static/uploads/photos", exist_ok=True)
 
@@ -75,15 +76,15 @@ os.makedirs("static/uploads/photos", exist_ok=True)
 async def root(request: Request):
     """Servir le frontend HTML selon le type d'utilisateur"""
     try:
-        # V+®rifier si l'utilisateur est connect+® et son type
+        # V+ï¿½rifier si l'utilisateur est connect+ï¿½ et son type
         token = request.headers.get('authorization')
         if token and token.startswith('Bearer '):
             try:
-                # D+®coder le token pour obtenir le type d'utilisateur
+                # D+ï¿½coder le token pour obtenir le type d'utilisateur
                 payload = jwt.decode(token.split(' ')[1], SECRET_KEY, algorithms=[ALGORITHM])
                 username = payload.get("sub")
                 if username:
-                    # R+®cup+®rer l'utilisateur depuis la base de donn+®es
+                    # R+ï¿½cup+ï¿½rer l'utilisateur depuis la base de donn+ï¿½es
                     db = next(get_db())
                     user = db.query(User).filter(User.username == username).first()
                     if user and user.user_type == UserType.ADMIN:
@@ -105,7 +106,7 @@ async def root(request: Request):
 
 @app.get("/api")
 async def api_root():
-    """Point d'entr+®e de l'API"""
+    """Point d'entr+ï¿½e de l'API"""
     return {"message": "Face Recognition API"}
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -128,15 +129,15 @@ async def photographer_interface():
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(event_code: str = None):
-    """Page d'inscription pour les invit+®s avec code +®v+®nement"""
+    """Page d'inscription pour les invit+ï¿½s avec code +ï¿½v+ï¿½nement"""
     try:
         with open("static/register.html", "r", encoding="utf-8") as f:
             content = f.read()
-            # Injecter le code +®v+®nement dans le JavaScript
+            # Injecter le code +ï¿½v+ï¿½nement dans le JavaScript
             content = content.replace('{{EVENT_CODE}}', event_code or '')
             return HTMLResponse(content=content)
     except FileNotFoundError:
-        return HTMLResponse(content="<h1>Page d'inscription</h1><p>Page d'inscription non trouv+®e</p>")
+        return HTMLResponse(content="<h1>Page d'inscription</h1><p>Page d'inscription non trouv+ï¿½e</p>")
 
 # === AUTHENTIFICATION ===
 
@@ -149,9 +150,9 @@ async def register(
     selfie: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Inscription d'un nouvel utilisateur avec selfie et v+®rification"""
+    """Inscription d'un nouvel utilisateur avec selfie et v+ï¿½rification"""
     
-    # V+®rifier si l'utilisateur existe d+®j+á
+    # V+ï¿½rifier si l'utilisateur existe d+ï¿½j+ï¿½
     existing_user = db.query(User).filter(
         (User.username == username) | (User.email == email)
     ).first()
@@ -159,17 +160,17 @@ async def register(
     if existing_user:
         raise HTTPException(
             status_code=400,
-            detail="Un utilisateur avec ce nom d'utilisateur ou cet email existe d+®j+á"
+            detail="Un utilisateur avec ce nom d'utilisateur ou cet email existe d+ï¿½j+ï¿½"
         )
     
-    # V+®rifier le type de fichier
+    # V+ï¿½rifier le type de fichier
     if not selfie.content_type.startswith("image/"):
         raise HTTPException(
             status_code=400,
-            detail="Le fichier doit +¬tre une image"
+            detail="Le fichier doit +ï¿½tre une image"
         )
     
-    # V+®rifier la taille du fichier (max 5MB)
+    # V+ï¿½rifier la taille du fichier (max 5MB)
     file_size = 0
     file_data = b""
     for chunk in selfie.file:
@@ -181,29 +182,29 @@ async def register(
                 detail="Le fichier est trop volumineux (maximum 5MB)"
             )
     
-    # V+®rifier la selfie avec la reconnaissance faciale
+    # V+ï¿½rifier la selfie avec la reconnaissance faciale
     try:
-        # V+®rifier qu'il y a un visage dans l'image
+        # V+ï¿½rifier qu'il y a un visage dans l'image
         face_locations = face_recognizer.detect_faces(file_data)
         
         if len(face_locations) == 0:
             raise HTTPException(
                 status_code=400,
-                detail="Aucun visage d+®tect+® dans l'image. Veuillez prendre une photo claire de votre visage."
+                detail="Aucun visage d+ï¿½tect+ï¿½ dans l'image. Veuillez prendre une photo claire de votre visage."
             )
         
         if len(face_locations) > 1:
             raise HTTPException(
                 status_code=400,
-                detail="Plusieurs visages d+®tect+®s dans l'image. Veuillez prendre une photo avec un seul visage."
+                detail="Plusieurs visages d+ï¿½tect+ï¿½s dans l'image. Veuillez prendre une photo avec un seul visage."
             )
         
-        # V+®rifier la qualit+® du visage (taille minimale)
+        # V+ï¿½rifier la qualit+ï¿½ du visage (taille minimale)
         face_location = face_locations[0]
         face_size = (face_location[2] - face_location[0]) * (face_location[3] - face_location[1])
         
-        # Si le visage est trop petit, c'est probablement de mauvaise qualit+®
-        if face_size < 1000:  # Seuil arbitraire, +á ajuster selon vos besoins
+        # Si le visage est trop petit, c'est probablement de mauvaise qualit+ï¿½
+        if face_size < 1000:  # Seuil arbitraire, +ï¿½ ajuster selon vos besoins
             raise HTTPException(
                 status_code=400,
                 detail="Le visage est trop petit ou flou. Veuillez prendre une photo plus claire et plus proche."
@@ -215,10 +216,10 @@ async def register(
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Erreur lors de la v+®rification de la selfie. Veuillez r+®essayer."
+                detail="Erreur lors de la v+ï¿½rification de la selfie. Veuillez r+ï¿½essayer."
             )
     
-    # Cr+®er le nouvel utilisateur
+    # Cr+ï¿½er le nouvel utilisateur
     hashed_password = get_password_hash(password)
     new_user = User(
         username=username,
@@ -234,7 +235,7 @@ async def register(
     db.commit()
     db.refresh(new_user)
     
-    # Cr+®er un token d'acc+¿s
+    # Cr+ï¿½er un token d'acc+ï¿½s
     access_token = create_access_token(data={"sub": new_user.username})
     
     return {"access_token": access_token, "token_type": "bearer"}
@@ -245,21 +246,21 @@ async def register_invite(
     event_code: str = Body(...),
     db: Session = Depends(get_db)
 ):
-    """Inscription d'un invit+® +á partir d'un event_code (QR code)"""
-    # V+®rifier si l'utilisateur existe d+®j+á
+    """Inscription d'un invit+ï¿½ +ï¿½ partir d'un event_code (QR code)"""
+    # V+ï¿½rifier si l'utilisateur existe d+ï¿½j+ï¿½
     existing_user = db.query(User).filter(
         (User.username == user_data.username) | (User.email == user_data.email)
     ).first()
     if existing_user:
         raise HTTPException(
             status_code=400,
-            detail="Username ou email d+®j+á utilis+®"
+            detail="Username ou email d+ï¿½j+ï¿½ utilis+ï¿½"
         )
-    # V+®rifier l'event_code
+    # V+ï¿½rifier l'event_code
     event = db.query(Event).filter_by(event_code=event_code).first()
     if not event:
         raise HTTPException(status_code=404, detail="event_code invalide")
-    # Cr+®er le nouvel utilisateur
+    # Cr+ï¿½er le nouvel utilisateur
     hashed_password = get_password_hash(user_data.password)
     db_user = User(
         username=user_data.username,
@@ -270,7 +271,7 @@ async def register_invite(
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    # Lier l'utilisateur +á l'+®v+®nement
+    # Lier l'utilisateur +ï¿½ l'+ï¿½v+ï¿½nement
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
@@ -285,21 +286,21 @@ async def register_invite_with_selfie(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Inscription d'un invit+® avec selfie et event_code (QR code)"""
-    # V+®rifier si l'utilisateur existe d+®j+á
+    """Inscription d'un invit+ï¿½ avec selfie et event_code (QR code)"""
+    # V+ï¿½rifier si l'utilisateur existe d+ï¿½j+ï¿½
     existing_user = db.query(User).filter(
         (User.username == username) | (User.email == email)
     ).first()
     if existing_user:
         raise HTTPException(
             status_code=400,
-            detail="Username ou email d+®j+á utilis+®"
+            detail="Username ou email d+ï¿½j+ï¿½ utilis+ï¿½"
         )
-    # V+®rifier l'event_code
+    # V+ï¿½rifier l'event_code
     event = db.query(Event).filter_by(event_code=event_code).first()
     if not event:
         raise HTTPException(status_code=404, detail="event_code invalide")
-    # Cr+®er le nouvel utilisateur
+    # Cr+ï¿½er le nouvel utilisateur
     hashed_password = get_password_hash(password)
     db_user = User(
         username=username,
@@ -310,13 +311,13 @@ async def register_invite_with_selfie(
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    # Lier l'utilisateur +á l'+®v+®nement
+    # Lier l'utilisateur +ï¿½ l'+ï¿½v+ï¿½nement
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
-    # G+®rer la selfie
+    # G+ï¿½rer la selfie
     if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Le fichier doit +¬tre une image")
+        raise HTTPException(status_code=400, detail="Le fichier doit +ï¿½tre une image")
     import uuid, os, shutil
     file_extension = os.path.splitext(file.filename)[1]
     unique_filename = f"{db_user.id}_{uuid.uuid4()}{file_extension}"
@@ -325,7 +326,7 @@ async def register_invite_with_selfie(
         shutil.copyfileobj(file.file, buffer)
     db_user.selfie_path = file_path
     db.commit()
-    # Relancer le matching de la selfie avec toutes les photos de l'+®v+®nement
+    # Relancer le matching de la selfie avec toutes les photos de l'+ï¿½v+ï¿½nement
     face_recognizer.match_user_selfie_with_photos_event(db_user, event.id, db)
     return db_user
 
@@ -350,14 +351,14 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
 
 @app.get("/api/me", response_model=UserSchema)
 async def get_current_user_info(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """R+®cup+®rer les informations de l'utilisateur connect+® avec son +®v+®nement associ+®"""
-    # R+®cup+®rer l'+®v+®nement associ+® +á l'utilisateur
+    """R+ï¿½cup+ï¿½rer les informations de l'utilisateur connect+ï¿½ avec son +ï¿½v+ï¿½nement associ+ï¿½"""
+    # R+ï¿½cup+ï¿½rer l'+ï¿½v+ï¿½nement associ+ï¿½ +ï¿½ l'utilisateur
     user_event = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).first()
     
     if user_event:
         event = db.query(Event).filter(Event.id == user_event.event_id).first()
         if event:
-            # Cr+®er un dictionnaire avec les informations de l'utilisateur et de l'+®v+®nement
+            # Cr+ï¿½er un dictionnaire avec les informations de l'utilisateur et de l'+ï¿½v+ï¿½nement
             user_dict = {
                 "id": current_user.id,
                 "username": current_user.username,
@@ -372,14 +373,14 @@ async def get_current_user_info(current_user: User = Depends(get_current_user), 
             }
             return user_dict
     
-    # Si pas d'+®v+®nement associ+®, retourner juste les infos utilisateur
+    # Si pas d'+ï¿½v+ï¿½nement associ+ï¿½, retourner juste les infos utilisateur
     return current_user
 
 @app.get("/api/my-selfie")
 async def get_my_selfie(current_user: User = Depends(get_current_user)):
-    """R+®cup+®rer les informations de la selfie de l'utilisateur connect+®"""
+    """R+ï¿½cup+ï¿½rer les informations de la selfie de l'utilisateur connect+ï¿½"""
     if not current_user.selfie_data:
-        raise HTTPException(status_code=404, detail="Aucune selfie trouv+®e")
+        raise HTTPException(status_code=404, detail="Aucune selfie trouv+ï¿½e")
     
     return {
         "user_id": current_user.id,
@@ -391,18 +392,18 @@ async def delete_my_selfie(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Supprimer la selfie de l'utilisateur connect+® et les correspondances associ+®es"""
+    """Supprimer la selfie de l'utilisateur connect+ï¿½ et les correspondances associ+ï¿½es"""
     if not current_user.selfie_data:
-        raise HTTPException(status_code=404, detail="Aucune selfie +á supprimer")
+        raise HTTPException(status_code=404, detail="Aucune selfie +ï¿½ supprimer")
 
-    # Supprimer les donn+®es binaires de la base utilisateur
+    # Supprimer les donn+ï¿½es binaires de la base utilisateur
     current_user.selfie_data = None
     current_user.selfie_path = None
     db.commit()
-    # Supprimer tous les FaceMatch li+®s +á cet utilisateur
+    # Supprimer tous les FaceMatch li+ï¿½s +ï¿½ cet utilisateur
     db.query(FaceMatch).filter(FaceMatch.user_id == current_user.id).delete()
     db.commit()
-    return {"message": "Selfie supprim+®e avec succ+¿s"}
+    return {"message": "Selfie supprim+ï¿½e avec succ+ï¿½s"}
 
 # === GESTION DES SELFIES ===
 
@@ -420,12 +421,12 @@ async def upload_selfie(
         )
     
     if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Le fichier doit +¬tre une image")
+        raise HTTPException(status_code=400, detail="Le fichier doit +ï¿½tre une image")
     
-    # Lire les donn+®es binaires du fichier
+    # Lire les donn+ï¿½es binaires du fichier
     file_data = await file.read()
     
-    # Mettre +á jour l'utilisateur avec les donn+®es binaires
+    # Mettre +ï¿½ jour l'utilisateur avec les donn+ï¿½es binaires
     current_user.selfie_data = file_data
     current_user.selfie_path = None  # Plus besoin du chemin de fichier
     db.commit()
@@ -433,7 +434,7 @@ async def upload_selfie(
     # Relancer le matching de la selfie avec toutes les photos existantes
     match_count = face_recognizer.match_user_selfie_with_photos(current_user, db)
 
-    return {"message": "Selfie upload+®e avec succ+¿s", "matches": match_count}
+    return {"message": "Selfie upload+ï¿½e avec succ+ï¿½s", "matches": match_count}
 
 # === GESTION DES PHOTOS (PHOTOGRAPHES) ===
 
@@ -479,7 +480,7 @@ async def upload_multiple_photos(
                 os.remove(temp_path)
     
     return {
-        "message": f"{len(uploaded_photos)} photos upload+®es et trait+®es avec succ+¿s",
+        "message": f"{len(uploaded_photos)} photos upload+ï¿½es et trait+ï¿½es avec succ+ï¿½s",
         "uploaded_photos": uploaded_photos
     }
 
@@ -497,7 +498,7 @@ async def upload_photo(
         )
     
     if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Le fichier doit +¬tre une image")
+        raise HTTPException(status_code=400, detail="Le fichier doit +ï¿½tre une image")
     
     # Sauvegarder temporairement le fichier
     temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
@@ -511,7 +512,7 @@ async def upload_photo(
         )
         
         return {
-            "message": "Photo upload+®e et trait+®e avec succ+¿s",
+            "message": "Photo upload+ï¿½e et trait+ï¿½e avec succ+ï¿½s",
             "photo_id": photo.id,
             "filename": photo.filename
         }
@@ -527,14 +528,14 @@ async def get_my_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer toutes les photos o+¦ l'utilisateur appara+«t pour son +®v+®nement principal"""
+    """R+ï¿½cup+ï¿½rer toutes les photos o+ï¿½ l'utilisateur appara+ï¿½t pour son +ï¿½v+ï¿½nement principal"""
     if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+ï¿½der +ï¿½ cette route")
     
-    # Trouver le premier +®v+®nement de l'utilisateur (+®v+®nement principal)
+    # Trouver le premier +ï¿½v+ï¿½nement de l'utilisateur (+ï¿½v+ï¿½nement principal)
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
     if not user_event:
-        raise HTTPException(status_code=404, detail="Aucun +®v+®nement associ+® +á cet utilisateur")
+        raise HTTPException(status_code=404, detail="Aucun +ï¿½v+ï¿½nement associ+ï¿½ +ï¿½ cet utilisateur")
     event_id = user_event.event_id
     photos = db.query(Photo).join(FaceMatch).filter(
         FaceMatch.user_id == current_user.id,
@@ -548,17 +549,17 @@ async def get_all_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer toutes les photos de l'+®v+®nement principal de l'utilisateur"""
+    """R+ï¿½cup+ï¿½rer toutes les photos de l'+ï¿½v+ï¿½nement principal de l'utilisateur"""
     if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+ï¿½der +ï¿½ cette route")
     
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
     if not user_event:
-        raise HTTPException(status_code=404, detail="Aucun +®v+®nement associ+® +á cet utilisateur")
+        raise HTTPException(status_code=404, detail="Aucun +ï¿½v+ï¿½nement associ+ï¿½ +ï¿½ cet utilisateur")
     event_id = user_event.event_id
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     
-    # Retourner seulement les m+®tadonn+®es, pas les donn+®es binaires
+    # Retourner seulement les m+ï¿½tadonn+ï¿½es, pas les donn+ï¿½es binaires
     return [photo_to_dict(photo) for photo in photos]
 
 @app.get("/api/my-uploaded-photos", response_model=List[PhotoSchema])
@@ -566,16 +567,16 @@ async def get_my_uploaded_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer les photos upload+®es par le photographe connect+®"""
+    """R+ï¿½cup+ï¿½rer les photos upload+ï¿½es par le photographe connect+ï¿½"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
-        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+ï¿½der +ï¿½ cette route")
     
     photos = db.query(Photo).filter(
         Photo.photographer_id == current_user.id,
         Photo.photo_type == "uploaded"
     ).all()
     
-    # Retourner seulement les m+®tadonn+®es, pas les donn+®es binaires
+    # Retourner seulement les m+ï¿½tadonn+ï¿½es, pas les donn+ï¿½es binaires
     photo_list = []
     for photo in photos:
         photo_list.append({
@@ -598,7 +599,7 @@ async def get_user_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer le profil complet de l'utilisateur"""
+    """R+ï¿½cup+ï¿½rer le profil complet de l'utilisateur"""
     photos_with_face = face_recognizer.get_user_photos_with_face(current_user.id, db)
     all_photos = face_recognizer.get_all_photos_for_user(current_user.id, db)
     
@@ -612,8 +613,8 @@ async def get_user_profile(
 
 @app.get("/api/image/{filename}")
 async def get_image(filename: str):
-    """Servir une image depuis les dossiers static (pour compatibilit+®)"""
-    # Chercher dans diff+®rents dossiers possibles
+    """Servir une image depuis les dossiers static (pour compatibilit+ï¿½)"""
+    # Chercher dans diff+ï¿½rents dossiers possibles
     possible_paths = [
         os.path.join("static", filename),
         os.path.join("static/uploads/photos", filename),
@@ -624,24 +625,24 @@ async def get_image(filename: str):
         if os.path.exists(file_path):
             return FileResponse(file_path)
     
-    # Si aucune image n'est trouv+®e
-    raise HTTPException(status_code=404, detail=f"Image non trouv+®e: {filename}")
+    # Si aucune image n'est trouv+ï¿½e
+    raise HTTPException(status_code=404, detail=f"Image non trouv+ï¿½e: {filename}")
 
 @app.get("/api/photo/{photo_id}")
 async def get_photo_by_id(
     photo_id: int,
     db: Session = Depends(get_db)
 ):
-    """Servir une photo depuis la base de donn+®es par son ID"""
+    """Servir une photo depuis la base de donn+ï¿½es par son ID"""
     photo = db.query(Photo).filter(Photo.id == photo_id).first()
     
     if not photo:
-        raise HTTPException(status_code=404, detail="Photo non trouv+®e")
+        raise HTTPException(status_code=404, detail="Photo non trouv+ï¿½e")
     
     if not photo.photo_data:
-        raise HTTPException(status_code=404, detail="Donn+®es de photo non disponibles")
+        raise HTTPException(status_code=404, detail="Donn+ï¿½es de photo non disponibles")
     
-    # Retourner les donn+®es binaires avec le bon type MIME
+    # Retourner les donn+ï¿½es binaires avec le bon type MIME
     return Response(
         content=photo.photo_data,
         media_type=photo.content_type or "image/jpeg",
@@ -653,19 +654,19 @@ async def get_selfie_by_user_id(
     user_id: int,
     db: Session = Depends(get_db)
 ):
-    """Servir une selfie depuis la base de donn+®es par l'ID utilisateur"""
+    """Servir une selfie depuis la base de donn+ï¿½es par l'ID utilisateur"""
     user = db.query(User).filter(User.id == user_id).first()
     
     if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouv+®")
+        raise HTTPException(status_code=404, detail="Utilisateur non trouv+ï¿½")
     
     if not user.selfie_data:
         raise HTTPException(status_code=404, detail="Selfie non disponible")
     
-    # Retourner les donn+®es binaires avec le bon type MIME
+    # Retourner les donn+ï¿½es binaires avec le bon type MIME
     return Response(
         content=user.selfie_data,
-        media_type="image/jpeg",  # Par d+®faut pour les selfies
+        media_type="image/jpeg",  # Par d+ï¿½faut pour les selfies
         headers={"Cache-Control": "public, max-age=31536000"}  # Cache pour 1 an
     )
 
@@ -681,31 +682,31 @@ async def delete_photo(
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent supprimer des photos")
     
-    # R+®cup+®rer la photo
+    # R+ï¿½cup+ï¿½rer la photo
     photo = db.query(Photo).filter(Photo.id == photo_id).first()
     if not photo:
-        raise HTTPException(status_code=404, detail="Photo non trouv+®e")
+        raise HTTPException(status_code=404, detail="Photo non trouv+ï¿½e")
     
-    # V+®rifier que le photographe est bien le propri+®taire de la photo
+    # V+ï¿½rifier que le photographe est bien le propri+ï¿½taire de la photo
     if photo.photographer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Vous ne pouvez supprimer que vos propres photos")
     
     try:
-        # Supprimer les correspondances de visages associ+®es
+        # Supprimer les correspondances de visages associ+ï¿½es
         db.query(FaceMatch).filter(FaceMatch.photo_id == photo_id).delete()
         
-        # Supprimer l'enregistrement de la base de donn+®es
+        # Supprimer l'enregistrement de la base de donn+ï¿½es
         db.delete(photo)
         db.commit()
         
-        return {"message": "Photo supprim+®e avec succ+¿s"}
+        return {"message": "Photo supprim+ï¿½e avec succ+ï¿½s"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression: {str(e)}")
 
 @app.delete("/api/photos")
 async def delete_multiple_photos(
-    photo_ids: str,  # Recevoir comme string s+®par+®e par des virgules
+    photo_ids: str,  # Recevoir comme string s+ï¿½par+ï¿½e par des virgules
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -714,7 +715,7 @@ async def delete_multiple_photos(
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent supprimer des photos")
     
     if not photo_ids:
-        raise HTTPException(status_code=400, detail="Aucune photo s+®lectionn+®e")
+        raise HTTPException(status_code=400, detail="Aucune photo s+ï¿½lectionn+ï¿½e")
     
     # Convertir la string en liste d'IDs
     try:
@@ -723,29 +724,29 @@ async def delete_multiple_photos(
         raise HTTPException(status_code=400, detail="Format d'ID invalide")
     
     if not photo_id_list:
-        raise HTTPException(status_code=400, detail="Aucune photo s+®lectionn+®e")
+        raise HTTPException(status_code=400, detail="Aucune photo s+ï¿½lectionn+ï¿½e")
     
-    # R+®cup+®rer les photos du photographe
+    # R+ï¿½cup+ï¿½rer les photos du photographe
     photos = db.query(Photo).filter(
         Photo.id.in_(photo_id_list),
         Photo.photographer_id == current_user.id
     ).all()
     
     if not photos:
-        raise HTTPException(status_code=404, detail="Aucune photo trouv+®e")
+        raise HTTPException(status_code=404, detail="Aucune photo trouv+ï¿½e")
     
     deleted_count = 0
     try:
         for photo in photos:
-            # Supprimer les correspondances de visages associ+®es
+            # Supprimer les correspondances de visages associ+ï¿½es
             db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()
             
-            # Supprimer l'enregistrement de la base de donn+®es
+            # Supprimer l'enregistrement de la base de donn+ï¿½es
             db.delete(photo)
             deleted_count += 1
         
         db.commit()
-        return {"message": f"{deleted_count} photos supprim+®es avec succ+¿s"}
+        return {"message": f"{deleted_count} photos supprim+ï¿½es avec succ+ï¿½s"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression: {str(e)}")
@@ -757,9 +758,9 @@ async def admin_get_photographers(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer tous les photographes (admin uniquement)"""
+    """R+ï¿½cup+ï¿½rer tous les photographes (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent acc+ï¿½der +ï¿½ cette route")
     
     photographers = db.query(User).filter(User.user_type == UserType.PHOTOGRAPHER).all()
     return photographers
@@ -772,18 +773,18 @@ async def admin_create_photographer(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Cr+®er un nouveau photographe (admin uniquement)"""
+    """Cr+ï¿½er un nouveau photographe (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent cr+®er des photographes")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent cr+ï¿½er des photographes")
     
-    # V+®rifier si l'utilisateur existe d+®j+á
+    # V+ï¿½rifier si l'utilisateur existe d+ï¿½j+ï¿½
     existing_user = db.query(User).filter(
         (User.username == username) | (User.email == email)
     ).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username ou email d+®j+á utilis+®")
+        raise HTTPException(status_code=400, detail="Username ou email d+ï¿½j+ï¿½ utilis+ï¿½")
     
-    # Cr+®er le nouveau photographe
+    # Cr+ï¿½er le nouveau photographe
     hashed_password = get_password_hash(password)
     db_photographer = User(
         username=username,
@@ -796,7 +797,7 @@ async def admin_create_photographer(
     db.commit()
     db.refresh(db_photographer)
     
-    return {"message": "Photographe cr+®+® avec succ+¿s", "photographer_id": db_photographer.id}
+    return {"message": "Photographe cr+ï¿½+ï¿½ avec succ+ï¿½s", "photographer_id": db_photographer.id}
 
 @app.put("/api/admin/photographers/{photographer_id}")
 async def admin_update_photographer(
@@ -810,30 +811,30 @@ async def admin_update_photographer(
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent modifier des photographes")
     
-    # R+®cup+®rer le photographe
+    # R+ï¿½cup+ï¿½rer le photographe
     photographer = db.query(User).filter(
         User.id == photographer_id,
         User.user_type == UserType.PHOTOGRAPHER
     ).first()
     
     if not photographer:
-        raise HTTPException(status_code=404, detail="Photographe non trouv+®")
+        raise HTTPException(status_code=404, detail="Photographe non trouv+ï¿½")
     
-    # V+®rifier si le nouveau username/email n'est pas d+®j+á utilis+® par un autre utilisateur
+    # V+ï¿½rifier si le nouveau username/email n'est pas d+ï¿½j+ï¿½ utilis+ï¿½ par un autre utilisateur
     existing_user = db.query(User).filter(
         (User.username == username) | (User.email == email),
         User.id != photographer_id
     ).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username ou email d+®j+á utilis+®")
+        raise HTTPException(status_code=400, detail="Username ou email d+ï¿½j+ï¿½ utilis+ï¿½")
     
-    # Mettre +á jour le photographe
+    # Mettre +ï¿½ jour le photographe
     photographer.username = username
     photographer.email = email
     db.commit()
     db.refresh(photographer)
     
-    return {"message": "Photographe modifi+® avec succ+¿s"}
+    return {"message": "Photographe modifi+ï¿½ avec succ+ï¿½s"}
 
 @app.delete("/api/admin/photographers/{photographer_id}")
 async def admin_delete_photographer(
@@ -845,25 +846,25 @@ async def admin_delete_photographer(
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer des photographes")
     
-    # R+®cup+®rer le photographe
+    # R+ï¿½cup+ï¿½rer le photographe
     photographer = db.query(User).filter(
         User.id == photographer_id,
         User.user_type == UserType.PHOTOGRAPHER
     ).first()
     
     if not photographer:
-        raise HTTPException(status_code=404, detail="Photographe non trouv+®")
+        raise HTTPException(status_code=404, detail="Photographe non trouv+ï¿½")
     
-    # V+®rifier s'il y a des +®v+®nements associ+®s
+    # V+ï¿½rifier s'il y a des +ï¿½v+ï¿½nements associ+ï¿½s
     events = db.query(Event).filter(Event.photographer_id == photographer_id).all()
     if events:
         event_names = [event.name for event in events]
         raise HTTPException(
             status_code=400, 
-            detail=f"Impossible de supprimer le photographe car il est associ+® aux +®v+®nements: {', '.join(event_names)}"
+            detail=f"Impossible de supprimer le photographe car il est associ+ï¿½ aux +ï¿½v+ï¿½nements: {', '.join(event_names)}"
         )
     
-    # Supprimer les photos upload+®es par ce photographe
+    # Supprimer les photos upload+ï¿½es par ce photographe
     photos = db.query(Photo).filter(Photo.photographer_id == photographer_id).all()
     for photo in photos:
         # Supprimer les correspondances de visages
@@ -878,16 +879,16 @@ async def admin_delete_photographer(
     db.delete(photographer)
     db.commit()
     
-    return {"message": "Photographe supprim+® avec succ+¿s"}
+    return {"message": "Photographe supprim+ï¿½ avec succ+ï¿½s"}
 
 @app.get("/api/admin/events")
 async def admin_get_events(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer tous les +®v+®nements (admin uniquement)"""
+    """R+ï¿½cup+ï¿½rer tous les +ï¿½v+ï¿½nements (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent acc+ï¿½der +ï¿½ cette route")
     
     events = db.query(Event).all()
     return events
@@ -901,17 +902,17 @@ async def admin_create_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Cr+®er un +®v+®nement (mariage) et l'assigner +á un photographe (admin uniquement)"""
+    """Cr+ï¿½er un +ï¿½v+ï¿½nement (mariage) et l'assigner +ï¿½ un photographe (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent cr+®er des +®v+®nements")
-    # V+®rifier unicit+® du code
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent cr+ï¿½er des +ï¿½v+ï¿½nements")
+    # V+ï¿½rifier unicit+ï¿½ du code
     if db.query(Event).filter_by(event_code=event_code).first():
-        raise HTTPException(status_code=400, detail="event_code d+®j+á utilis+®")
-    # V+®rifier que le photographe existe
+        raise HTTPException(status_code=400, detail="event_code d+ï¿½j+ï¿½ utilis+ï¿½")
+    # V+ï¿½rifier que le photographe existe
     photographer = db.query(User).filter_by(id=photographer_id, user_type=UserType.PHOTOGRAPHER).first()
     if not photographer:
-        raise HTTPException(status_code=404, detail="Photographe non trouv+®")
-    # Cr+®er l'+®v+®nement
+        raise HTTPException(status_code=404, detail="Photographe non trouv+ï¿½")
+    # Cr+ï¿½er l'+ï¿½v+ï¿½nement
     from datetime import datetime as dt
     event = Event(
         name=name,
@@ -922,7 +923,7 @@ async def admin_create_event(
     db.add(event)
     db.commit()
     db.refresh(event)
-    return {"message": "+ëv+®nement cr+®+®", "event_id": event.id, "event_code": event.event_code}
+    return {"message": "+ï¿½v+ï¿½nement cr+ï¿½+ï¿½", "event_id": event.id, "event_code": event.event_code}
 
 @app.post("/api/admin/register-admin")
 async def register_admin(
@@ -931,13 +932,13 @@ async def register_admin(
     password: str = Body(...),
     db: Session = Depends(get_db)
 ):
-    """Cr+®er le premier compte admin (seulement si aucun admin n'existe)"""
+    """Cr+ï¿½er le premier compte admin (seulement si aucun admin n'existe)"""
     from models import UserType
     existing_admin = db.query(User).filter(User.user_type == UserType.ADMIN).first()
     if existing_admin:
-        raise HTTPException(status_code=403, detail="Un admin existe d+®j+á")
+        raise HTTPException(status_code=403, detail="Un admin existe d+ï¿½j+ï¿½")
     if db.query(User).filter((User.username == username) | (User.email == email)).first():
-        raise HTTPException(status_code=400, detail="Username ou email d+®j+á utilis+®")
+        raise HTTPException(status_code=400, detail="Username ou email d+ï¿½j+ï¿½ utilis+ï¿½")
     hashed_password = get_password_hash(password)
     db_user = User(
         username=username,
@@ -948,7 +949,7 @@ async def register_admin(
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return {"message": "Admin cr+®+®", "user_id": db_user.id}
+    return {"message": "Admin cr+ï¿½+ï¿½", "user_id": db_user.id}
 
 @app.post("/api/admin/create-photographer")
 async def create_photographer(
@@ -958,11 +959,11 @@ async def create_photographer(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Cr+®er un photographe (admin uniquement)"""
+    """Cr+ï¿½er un photographe (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent cr+®er un photographe")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent cr+ï¿½er un photographe")
     if db.query(User).filter((User.username == username) | (User.email == email)).first():
-        raise HTTPException(status_code=400, detail="Username ou email d+®j+á utilis+®")
+        raise HTTPException(status_code=400, detail="Username ou email d+ï¿½j+ï¿½ utilis+ï¿½")
     hashed_password = get_password_hash(password)
     db_user = User(
         username=username,
@@ -973,21 +974,21 @@ async def create_photographer(
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return {"message": "Photographe cr+®+®", "user_id": db_user.id}
+    return {"message": "Photographe cr+ï¿½+ï¿½", "user_id": db_user.id}
 
 @app.get("/api/admin/event-qr/{event_code}")
 async def generate_event_qr(event_code: str, current_user: User = Depends(get_current_user)):
-    """G+®n+®rer un QR code pour l'inscription +á un +®v+®nement (admin uniquement)"""
+    """G+ï¿½n+ï¿½rer un QR code pour l'inscription +ï¿½ un +ï¿½v+ï¿½nement (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent g+®n+®rer un QR code")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent g+ï¿½n+ï¿½rer un QR code")
     
-    # V+®rifier que l'+®v+®nement existe
+    # V+ï¿½rifier que l'+ï¿½v+ï¿½nement existe
     db = next(get_db())
     event = db.query(Event).filter(Event.event_code == event_code).first()
     if not event:
-        raise HTTPException(status_code=404, detail="+ëv+®nement non trouv+®")
+        raise HTTPException(status_code=404, detail="+ï¿½v+ï¿½nement non trouv+ï¿½")
     
-    # G+®n+®rer l'URL d'inscription vers le domaine de production
+    # G+ï¿½n+ï¿½rer l'URL d'inscription vers le domaine de production
     url = f"https://facerecognition-d0r8.onrender.com/register?event_code={event_code}"
     img = qrcode.make(url)
     buf = BytesIO()
@@ -995,16 +996,16 @@ async def generate_event_qr(event_code: str, current_user: User = Depends(get_cu
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/png")
 
-# === NOUVELLES ROUTES POUR LA GESTION DES +ëV+ëNEMENTS ===
+# === NOUVELLES ROUTES POUR LA GESTION DES +ï¿½V+ï¿½NEMENTS ===
 
 @app.get("/api/photographer/events")
 async def get_photographer_events(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer tous les +®v+®nements du photographe connect+®"""
+    """R+ï¿½cup+ï¿½rer tous les +ï¿½v+ï¿½nements du photographe connect+ï¿½"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
-        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+ï¿½der +ï¿½ cette route")
     
     events = db.query(Event).filter(Event.photographer_id == current_user.id).all()
     return events
@@ -1015,22 +1016,22 @@ async def get_event_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer toutes les photos d'un +®v+®nement sp+®cifique pour un photographe"""
+    """R+ï¿½cup+ï¿½rer toutes les photos d'un +ï¿½v+ï¿½nement sp+ï¿½cifique pour un photographe"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
-        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+ï¿½der +ï¿½ cette route")
     
-    # V+®rifier que l'+®v+®nement appartient au photographe
+    # V+ï¿½rifier que l'+ï¿½v+ï¿½nement appartient au photographe
     event = db.query(Event).filter(
         Event.id == event_id,
         Event.photographer_id == current_user.id
     ).first()
     
     if not event:
-        raise HTTPException(status_code=404, detail="+ëv+®nement non trouv+®")
+        raise HTTPException(status_code=404, detail="+ï¿½v+ï¿½nement non trouv+ï¿½")
     
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     
-    # Retourner seulement les m+®tadonn+®es, pas les donn+®es binaires
+    # Retourner seulement les m+ï¿½tadonn+ï¿½es, pas les donn+ï¿½es binaires
     photo_list = []
     for photo in photos:
         photo_list.append({
@@ -1055,18 +1056,18 @@ async def upload_photos_to_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Upload de photos pour un +®v+®nement sp+®cifique"""
+    """Upload de photos pour un +ï¿½v+ï¿½nement sp+ï¿½cifique"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent uploader des photos")
     
-    # V+®rifier que l'+®v+®nement appartient au photographe
+    # V+ï¿½rifier que l'+ï¿½v+ï¿½nement appartient au photographe
     event = db.query(Event).filter(
         Event.id == event_id,
         Event.photographer_id == current_user.id
     ).first()
     
     if not event:
-        raise HTTPException(status_code=404, detail="+ëv+®nement non trouv+®")
+        raise HTTPException(status_code=404, detail="+ï¿½v+ï¿½nement non trouv+ï¿½")
     
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
@@ -1083,7 +1084,7 @@ async def upload_photos_to_event(
             shutil.copyfileobj(file.file, buffer)
         
         try:
-            # Traiter la photo avec reconnaissance faciale pour l'+®v+®nement sp+®cifique
+            # Traiter la photo avec reconnaissance faciale pour l'+ï¿½v+ï¿½nement sp+ï¿½cifique
             photo = face_recognizer.process_and_save_photo_for_event(
                 temp_path, file.filename, current_user.id, event_id, db
             )
@@ -1096,7 +1097,7 @@ async def upload_photos_to_event(
                 os.remove(temp_path)
     
     return {
-        "message": f"{len(uploaded_photos)} photos upload+®es et trait+®es avec succ+¿s",
+        "message": f"{len(uploaded_photos)} photos upload+ï¿½es et trait+ï¿½es avec succ+ï¿½s",
         "uploaded_photos": uploaded_photos
     }
 
@@ -1105,9 +1106,9 @@ async def get_user_events(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer tous les +®v+®nements auxquels l'utilisateur est inscrit"""
+    """R+ï¿½cup+ï¿½rer tous les +ï¿½v+ï¿½nements auxquels l'utilisateur est inscrit"""
     if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+ï¿½der +ï¿½ cette route")
     
     user_events = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).all()
     events = []
@@ -1130,27 +1131,27 @@ async def get_user_event_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer les photos d'un +®v+®nement sp+®cifique pour un utilisateur"""
+    """R+ï¿½cup+ï¿½rer les photos d'un +ï¿½v+ï¿½nement sp+ï¿½cifique pour un utilisateur"""
     if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+ï¿½der +ï¿½ cette route")
     
-    # V+®rifier que l'utilisateur est inscrit +á cet +®v+®nement
+    # V+ï¿½rifier que l'utilisateur est inscrit +ï¿½ cet +ï¿½v+ï¿½nement
     user_event = db.query(UserEvent).filter(
         UserEvent.user_id == current_user.id,
         UserEvent.event_id == event_id
     ).first()
     
     if not user_event:
-        raise HTTPException(status_code=403, detail="Vous n'+¬tes pas inscrit +á cet +®v+®nement")
+        raise HTTPException(status_code=403, detail="Vous n'+ï¿½tes pas inscrit +ï¿½ cet +ï¿½v+ï¿½nement")
     
-    # R+®cup+®rer les photos o+¦ l'utilisateur appara+«t dans cet +®v+®nement
+    # R+ï¿½cup+ï¿½rer les photos o+ï¿½ l'utilisateur appara+ï¿½t dans cet +ï¿½v+ï¿½nement
     photos = db.query(Photo).join(FaceMatch).filter(
         FaceMatch.user_id == current_user.id,
         FaceMatch.photo_id == Photo.id,
         Photo.event_id == event_id
     ).all()
     
-    # Retourner seulement les m+®tadonn+®es, pas les donn+®es binaires
+    # Retourner seulement les m+ï¿½tadonn+ï¿½es, pas les donn+ï¿½es binaires
     photo_list = []
     for photo in photos:
         photo_list.append({
@@ -1174,23 +1175,23 @@ async def get_all_event_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer toutes les photos d'un +®v+®nement pour un utilisateur"""
+    """R+ï¿½cup+ï¿½rer toutes les photos d'un +ï¿½v+ï¿½nement pour un utilisateur"""
     if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+®der +á cette route")
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+ï¿½der +ï¿½ cette route")
     
-    # V+®rifier que l'utilisateur est inscrit +á cet +®v+®nement
+    # V+ï¿½rifier que l'utilisateur est inscrit +ï¿½ cet +ï¿½v+ï¿½nement
     user_event = db.query(UserEvent).filter(
         UserEvent.user_id == current_user.id,
         UserEvent.event_id == event_id
     ).first()
     
     if not user_event:
-        raise HTTPException(status_code=403, detail="Vous n'+¬tes pas inscrit +á cet +®v+®nement")
+        raise HTTPException(status_code=403, detail="Vous n'+ï¿½tes pas inscrit +ï¿½ cet +ï¿½v+ï¿½nement")
     
-    # R+®cup+®rer toutes les photos de l'+®v+®nement
+    # R+ï¿½cup+ï¿½rer toutes les photos de l'+ï¿½v+ï¿½nement
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     
-    # Retourner seulement les m+®tadonn+®es, pas les donn+®es binaires
+    # Retourner seulement les m+ï¿½tadonn+ï¿½es, pas les donn+ï¿½es binaires
     photo_list = []
     for photo in photos:
         photo_list.append({
@@ -1208,7 +1209,7 @@ async def get_all_event_photos(
     
     return photo_list
 
-# === ROUTES POUR LES CODES +ëV+ëNEMENT MANUELS ===
+# === ROUTES POUR LES CODES +ï¿½V+ï¿½NEMENT MANUELS ===
 
 @app.post("/api/register-with-event-code")
 async def register_with_event_code(
@@ -1216,20 +1217,20 @@ async def register_with_event_code(
     event_code: str = Body(...),
     db: Session = Depends(get_db)
 ):
-    """Inscription d'un utilisateur avec un code +®v+®nement saisi manuellement"""
-    # V+®rifier si l'utilisateur existe d+®j+á
+    """Inscription d'un utilisateur avec un code +ï¿½v+ï¿½nement saisi manuellement"""
+    # V+ï¿½rifier si l'utilisateur existe d+ï¿½j+ï¿½
     existing_user = db.query(User).filter(
         (User.username == user_data.username) | (User.email == user_data.email)
     ).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username ou email d+®j+á utilis+®")
+        raise HTTPException(status_code=400, detail="Username ou email d+ï¿½j+ï¿½ utilis+ï¿½")
     
-    # V+®rifier l'event_code
+    # V+ï¿½rifier l'event_code
     event = db.query(Event).filter_by(event_code=event_code).first()
     if not event:
-        raise HTTPException(status_code=404, detail="Code +®v+®nement invalide")
+        raise HTTPException(status_code=404, detail="Code +ï¿½v+ï¿½nement invalide")
     
-    # Cr+®er le nouvel utilisateur
+    # Cr+ï¿½er le nouvel utilisateur
     hashed_password = get_password_hash(user_data.password)
     db_user = User(
         username=user_data.username,
@@ -1241,7 +1242,7 @@ async def register_with_event_code(
     db.commit()
     db.refresh(db_user)
     
-    # Lier l'utilisateur +á l'+®v+®nement
+    # Lier l'utilisateur +ï¿½ l'+ï¿½v+ï¿½nement
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
@@ -1254,32 +1255,32 @@ async def join_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Rejoindre un +®v+®nement avec un code (pour utilisateurs d+®j+á inscrits)"""
+    """Rejoindre un +ï¿½v+ï¿½nement avec un code (pour utilisateurs d+ï¿½j+ï¿½ inscrits)"""
     if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent rejoindre des +®v+®nements")
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent rejoindre des +ï¿½v+ï¿½nements")
     
-    # V+®rifier l'event_code
+    # V+ï¿½rifier l'event_code
     event = db.query(Event).filter_by(event_code=event_code).first()
     if not event:
-        raise HTTPException(status_code=404, detail="Code +®v+®nement invalide")
+        raise HTTPException(status_code=404, detail="Code +ï¿½v+ï¿½nement invalide")
     
-    # V+®rifier si l'utilisateur est d+®j+á inscrit +á cet +®v+®nement
+    # V+ï¿½rifier si l'utilisateur est d+ï¿½j+ï¿½ inscrit +ï¿½ cet +ï¿½v+ï¿½nement
     existing_user_event = db.query(UserEvent).filter(
         UserEvent.user_id == current_user.id,
         UserEvent.event_id == event.id
     ).first()
     
     if existing_user_event:
-        raise HTTPException(status_code=400, detail="Vous +¬tes d+®j+á inscrit +á cet +®v+®nement")
+        raise HTTPException(status_code=400, detail="Vous +ï¿½tes d+ï¿½j+ï¿½ inscrit +ï¿½ cet +ï¿½v+ï¿½nement")
     
-    # Inscrire l'utilisateur +á l'+®v+®nement
+    # Inscrire l'utilisateur +ï¿½ l'+ï¿½v+ï¿½nement
     user_event = UserEvent(user_id=current_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
     
-    return {"message": f"Inscrit avec succ+¿s +á l'+®v+®nement {event.name}"}
+    return {"message": f"Inscrit avec succ+ï¿½s +ï¿½ l'+ï¿½v+ï¿½nement {event.name}"}
 
-# === ROUTES ADMIN POUR CR+ëER DES CODES +ëV+ëNEMENT COMPLEXES ===
+# === ROUTES ADMIN POUR CR+ï¿½ER DES CODES +ï¿½V+ï¿½NEMENT COMPLEXES ===
 
 @app.post("/api/admin/generate-event-code")
 async def generate_complex_event_code(
@@ -1287,27 +1288,27 @@ async def generate_complex_event_code(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """G+®n+®rer un nouveau code +®v+®nement complexe (admin uniquement)"""
+    """G+ï¿½n+ï¿½rer un nouveau code +ï¿½v+ï¿½nement complexe (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent g+®n+®rer des codes +®v+®nement")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent g+ï¿½n+ï¿½rer des codes +ï¿½v+ï¿½nement")
     
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="+ëv+®nement non trouv+®")
+        raise HTTPException(status_code=404, detail="+ï¿½v+ï¿½nement non trouv+ï¿½")
     
-    # G+®n+®rer un code complexe (8 caract+¿res alphanum+®riques)
+    # G+ï¿½n+ï¿½rer un code complexe (8 caract+ï¿½res alphanum+ï¿½riques)
     import random
     import string
     new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     
-    # V+®rifier l'unicit+®
+    # V+ï¿½rifier l'unicit+ï¿½
     while db.query(Event).filter(Event.event_code == new_code).first():
         new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     
     event.event_code = new_code
     db.commit()
     
-    return {"message": "Code +®v+®nement g+®n+®r+®", "event_code": new_code}
+    return {"message": "Code +ï¿½v+ï¿½nement g+ï¿½n+ï¿½r+ï¿½", "event_code": new_code}
 
 @app.post("/api/admin/set-event-code")
 async def set_custom_event_code(
@@ -1316,28 +1317,28 @@ async def set_custom_event_code(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """D+®finir un code +®v+®nement personnalis+® (admin uniquement)"""
+    """D+ï¿½finir un code +ï¿½v+ï¿½nement personnalis+ï¿½ (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent d+®finir des codes +®v+®nement")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent d+ï¿½finir des codes +ï¿½v+ï¿½nement")
     
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="+ëv+®nement non trouv+®")
+        raise HTTPException(status_code=404, detail="+ï¿½v+ï¿½nement non trouv+ï¿½")
     
-    # V+®rifier l'unicit+®
+    # V+ï¿½rifier l'unicit+ï¿½
     existing_event = db.query(Event).filter(
         Event.event_code == event_code,
         Event.id != event_id
     ).first()
     if existing_event:
-        raise HTTPException(status_code=400, detail="Ce code +®v+®nement est d+®j+á utilis+®")
+        raise HTTPException(status_code=400, detail="Ce code +ï¿½v+ï¿½nement est d+ï¿½j+ï¿½ utilis+ï¿½")
     
     event.event_code = event_code
     db.commit()
     
-    return {"message": "Code +®v+®nement d+®fini", "event_code": event_code}
+    return {"message": "Code +ï¿½v+ï¿½nement d+ï¿½fini", "event_code": event_code}
 
-# === NOUVELLES ROUTES POUR LA GESTION DES PHOTOGRAPHES ET +ëV+ëNEMENTS ===
+# === NOUVELLES ROUTES POUR LA GESTION DES PHOTOGRAPHES ET +ï¿½V+ï¿½NEMENTS ===
 
 @app.delete("/api/admin/events/{event_id}")
 async def delete_event(
@@ -1345,15 +1346,15 @@ async def delete_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Supprimer un +®v+®nement (admin uniquement)"""
+    """Supprimer un +ï¿½v+ï¿½nement (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer un +®v+®nement")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer un +ï¿½v+ï¿½nement")
     
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="+ëv+®nement non trouv+®")
+        raise HTTPException(status_code=404, detail="+ï¿½v+ï¿½nement non trouv+ï¿½")
     
-    # Supprimer les photos associ+®es +á cet +®v+®nement
+    # Supprimer les photos associ+ï¿½es +ï¿½ cet +ï¿½v+ï¿½nement
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     for photo in photos:
         # Supprimer le fichier physique
@@ -1367,13 +1368,13 @@ async def delete_event(
         # Supprimer la photo
         db.delete(photo)
     
-    # Supprimer les associations utilisateur-+®v+®nement
+    # Supprimer les associations utilisateur-+ï¿½v+ï¿½nement
     db.query(UserEvent).filter(UserEvent.event_id == event_id).delete()
     
-    # Supprimer l'+®v+®nement
+    # Supprimer l'+ï¿½v+ï¿½nement
     db.delete(event)
     db.commit()
-    return {"message": "+ëv+®nement supprim+® avec succ+¿s"}
+    return {"message": "+ï¿½v+ï¿½nement supprim+ï¿½ avec succ+ï¿½s"}
 
 @app.put("/api/admin/events/{event_id}")
 async def admin_update_event(
@@ -1385,29 +1386,29 @@ async def admin_update_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Modifier un +®v+®nement (admin uniquement)"""
+    """Modifier un +ï¿½v+ï¿½nement (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent modifier des +®v+®nements")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent modifier des +ï¿½v+ï¿½nements")
     
-    # R+®cup+®rer l'+®v+®nement
+    # R+ï¿½cup+ï¿½rer l'+ï¿½v+ï¿½nement
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="+ëv+®nement non trouv+®")
+        raise HTTPException(status_code=404, detail="+ï¿½v+ï¿½nement non trouv+ï¿½")
     
-    # V+®rifier unicit+® du code (sauf pour l'+®v+®nement actuel)
+    # V+ï¿½rifier unicit+ï¿½ du code (sauf pour l'+ï¿½v+ï¿½nement actuel)
     existing_event = db.query(Event).filter(
         Event.event_code == event_code,
         Event.id != event_id
     ).first()
     if existing_event:
-        raise HTTPException(status_code=400, detail="event_code d+®j+á utilis+®")
+        raise HTTPException(status_code=400, detail="event_code d+ï¿½j+ï¿½ utilis+ï¿½")
     
-    # V+®rifier que le photographe existe
+    # V+ï¿½rifier que le photographe existe
     photographer = db.query(User).filter_by(id=photographer_id, user_type=UserType.PHOTOGRAPHER).first()
     if not photographer:
-        raise HTTPException(status_code=404, detail="Photographe non trouv+®")
+        raise HTTPException(status_code=404, detail="Photographe non trouv+ï¿½")
     
-    # Mettre +á jour l'+®v+®nement
+    # Mettre +ï¿½ jour l'+ï¿½v+ï¿½nement
     from datetime import datetime as dt
     event.name = name
     event.event_code = event_code
@@ -1417,7 +1418,7 @@ async def admin_update_event(
     db.commit()
     db.refresh(event)
     
-    return {"message": "+ëv+®nement modifi+® avec succ+¿s"}
+    return {"message": "+ï¿½v+ï¿½nement modifi+ï¿½ avec succ+ï¿½s"}
 
 @app.delete("/api/admin/events/{event_id}")
 async def admin_delete_event(
@@ -1425,16 +1426,16 @@ async def admin_delete_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Supprimer un +®v+®nement (admin uniquement)"""
+    """Supprimer un +ï¿½v+ï¿½nement (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer des +®v+®nements")
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer des +ï¿½v+ï¿½nements")
     
-    # R+®cup+®rer l'+®v+®nement
+    # R+ï¿½cup+ï¿½rer l'+ï¿½v+ï¿½nement
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="+ëv+®nement non trouv+®")
+        raise HTTPException(status_code=404, detail="+ï¿½v+ï¿½nement non trouv+ï¿½")
     
-    # Supprimer toutes les photos associ+®es +á cet +®v+®nement
+    # Supprimer toutes les photos associ+ï¿½es +ï¿½ cet +ï¿½v+ï¿½nement
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     for photo in photos:
         # Supprimer les correspondances de visages
@@ -1445,27 +1446,27 @@ async def admin_delete_event(
         # Supprimer l'enregistrement photo
         db.delete(photo)
     
-    # Supprimer les associations utilisateur-+®v+®nement
+    # Supprimer les associations utilisateur-+ï¿½v+ï¿½nement
     db.query(UserEvent).filter(UserEvent.event_id == event_id).delete()
     
-    # Supprimer l'+®v+®nement
+    # Supprimer l'+ï¿½v+ï¿½nement
     db.delete(event)
     db.commit()
     
-    return {"message": "+ëv+®nement supprim+® avec succ+¿s"}
+    return {"message": "+ï¿½v+ï¿½nement supprim+ï¿½ avec succ+ï¿½s"}
 
 @app.get("/api/photographer/my-event")
 async def get_photographer_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+®cup+®rer l'+®v+®nement assign+® au photographe connect+®"""
+    """R+ï¿½cup+ï¿½rer l'+ï¿½v+ï¿½nement assign+ï¿½ au photographe connect+ï¿½"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
-        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+®der +á cette ressource")
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+ï¿½der +ï¿½ cette ressource")
     
     event = db.query(Event).filter(Event.photographer_id == current_user.id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="Aucun +®v+®nement assign+® +á ce photographe")
+        raise HTTPException(status_code=404, detail="Aucun +ï¿½v+ï¿½nement assign+ï¿½ +ï¿½ ce photographe")
     
     return {
         "id": event.id,
@@ -1483,10 +1484,10 @@ async def catch_all(full_path: str):
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
     
-    # V+®rifier si c'est une route valide pour le frontend
+    # V+ï¿½rifier si c'est une route valide pour le frontend
     valid_frontend_routes = ["", "admin", "photographer", "register"]
     
-    # Si c'est une route valide, servir le frontend appropri+®
+    # Si c'est une route valide, servir le frontend appropri+ï¿½
     if full_path in valid_frontend_routes:
         try:
             if full_path == "admin":
@@ -1510,14 +1511,14 @@ async def catch_all(full_path: str):
         detail=f"Page not found: /{full_path}"
     )
 
-# === R+ëINITIALISATION MOT DE PASSE ===
+# === R+ï¿½INITIALISATION MOT DE PASSE ===
 
 @app.post("/api/password-reset")
 async def request_password_reset(
     request_data: dict = Body(...),
     db: Session = Depends(get_db)
 ):
-    """Demander une r+®initialisation de mot de passe par email"""
+    """Demander une r+ï¿½initialisation de mot de passe par email"""
     email = request_data.get('email')
     
     if not email:
@@ -1527,9 +1528,9 @@ async def request_password_reset(
     user = db.query(User).filter(User.email == email).first()
     
     if not user:
-        # Pour des raisons de s+®curit+®, on renvoie toujours le m+¬me message
-        return {"message": "Si cette adresse email existe, un lien de r+®initialisation a +®t+® envoy+®"}
+        # Pour des raisons de s+ï¿½curit+ï¿½, on renvoie toujours le m+ï¿½me message
+        return {"message": "Si cette adresse email existe, un lien de r+ï¿½initialisation a +ï¿½t+ï¿½ envoy+ï¿½"}
     
     # Pour l'instant, on simule l'envoi (vous pouvez activer l'email plus tard)
-    print(f"Demande de r+®initialisation pour: {email}")
-    return {"message": "Un email de r+®initialisation a +®t+® envoy+®"}
+    print(f"Demande de r+ï¿½initialisation pour: {email}")
+    return {"message": "Un email de r+ï¿½initialisation a +ï¿½t+ï¿½ envoy+ï¿½"}
