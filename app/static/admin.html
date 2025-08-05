@@ -176,6 +176,53 @@
                 flex-direction: column;
             }
         }
+        
+        /* Styles pour l'optimisation des photos */
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        .profile-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .profile-card h5 {
+            margin: 0 0 10px 0;
+            color: #495057;
+        }
+        .profile-card p {
+            margin: 5px 0;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        #estimationResult {
+            background: #e7f3ff;
+            border: 1px solid #b3d7ff;
+            border-radius: 5px;
+            padding: 15px;
+        }
+        #cleanupResult {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 5px;
+            padding: 15px;
+        }
     </style>
 </head>
 <body>
@@ -209,6 +256,7 @@
                 <button class="tab active" onclick="showTab('photographers')">📸 Photographes</button>
                 <button class="tab" onclick="showTab('events')">🎉 Événements</button>
                 <button class="tab" onclick="showTab('qr-codes')">📱 QR Codes</button>
+                <button class="tab" onclick="showTab('optimization')">🗜️ Optimisation Photos</button>
                 <button class="tab" onclick="showTab('create-admin')">👤 Créer Admin</button>
             </div>
 
@@ -286,6 +334,100 @@
                     </div>
                     <button onclick="generateQRCode()" class="success">Générer le QR Code</button>
                     <div id="qrCodeResult"></div>
+                </div>
+            </div>
+
+            <div id="optimization" class="tab-content">
+                <h3>🗜️ Optimisation des Photos</h3>
+                
+                <!-- Statistiques d'optimisation -->
+                <div class="card">
+                    <h4>📊 Statistiques d'Optimisation</h4>
+                    <div id="optimizationStats">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0;">
+                            <div class="stat-card">
+                                <div class="stat-number" id="totalPhotos">-</div>
+                                <div class="stat-label">Photos traitées</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="totalSpaceSaved">-</div>
+                                <div class="stat-label">Espace économisé (MB)</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="avgCompression">-</div>
+                                <div class="stat-label">Compression moyenne (%)</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="expiredPhotos">-</div>
+                                <div class="stat-label">Photos expirées</div>
+                            </div>
+                        </div>
+                        <button onclick="loadOptimizationStats()" class="success">🔄 Actualiser</button>
+                    </div>
+                </div>
+
+                <!-- Estimateur de compression -->
+                <div class="card">
+                    <h4>🧮 Estimateur de Compression</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="fileSize">Taille du fichier (MB):</label>
+                            <input type="number" id="fileSize" step="0.1" min="0.1" placeholder="ex: 5.2">
+                        </div>
+                        <div class="form-group">
+                            <label for="qualityProfile">Profil de qualité:</label>
+                            <select id="qualityProfile">
+                                <option value="low">🔴 Low (60% qualité)</option>
+                                <option value="medium">🟡 Medium (75% qualité)</option>
+                                <option value="high" selected>🟢 High (85% qualité)</option>
+                                <option value="ultra">🔵 Ultra (95% qualité)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button onclick="estimateCompression()">📏 Estimer</button>
+                    <div id="estimationResult" style="margin-top: 15px;"></div>
+                </div>
+
+                <!-- Gestion des profils -->
+                <div class="card">
+                    <h4>⚙️ Profils de Qualité</h4>
+                    <div id="qualityProfiles">
+                        <div class="profiles-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                            <div class="profile-card">
+                                <h5>🔴 Low Quality</h5>
+                                <p>Qualité: 60% • Max: 1280x720</p>
+                                <p>Idéal pour: Aperçus, miniatures</p>
+                            </div>
+                            <div class="profile-card">
+                                <h5>🟡 Medium Quality</h5>
+                                <p>Qualité: 75% • Max: 1600x900</p>
+                                <p>Idéal pour: Web, partage social</p>
+                            </div>
+                            <div class="profile-card">
+                                <h5>🟢 High Quality</h5>
+                                <p>Qualité: 85% • Max: 1920x1080</p>
+                                <p>Idéal pour: Production standard</p>
+                            </div>
+                            <div class="profile-card">
+                                <h5>🔵 Ultra Quality</h5>
+                                <p>Qualité: 95% • Max: 2560x1440</p>
+                                <p>Idéal pour: Archivage, impression</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nettoyage des photos expirées -->
+                <div class="card">
+                    <h4>🗑️ Nettoyage des Photos</h4>
+                    <p style="color: #666;">
+                        Supprime automatiquement les photos dont la durée de rétention a expiré.
+                    </p>
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
+                        <strong>⚠️ Attention:</strong> Cette action est irréversible. Les photos supprimées ne peuvent pas être récupérées.
+                    </div>
+                    <button onclick="cleanupExpiredPhotos()" class="danger">🗑️ Nettoyer les photos expirées</button>
+                    <div id="cleanupResult" style="margin-top: 15px;"></div>
                 </div>
             </div>
 
@@ -881,6 +1023,120 @@
             
             console.log('Déconnexion effectuée - session nettoyée');
         }
+
+        // === FONCTIONS D'OPTIMISATION DES PHOTOS ===
+
+        async function loadOptimizationStats() {
+            try {
+                const response = await fetch('/api/admin/photo-optimization/stats', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const stats = await response.json();
+                    
+                    document.getElementById('totalPhotos').textContent = stats.total_photos;
+                    document.getElementById('totalSpaceSaved').textContent = stats.total_space_saved_mb + ' MB';
+                    document.getElementById('avgCompression').textContent = stats.average_compression_ratio + '%';
+                    document.getElementById('expiredPhotos').textContent = stats.expired_photos_count;
+                    
+                    showAlert('✅ Statistiques mises à jour', 'success');
+                } else {
+                    showAlert('❌ Erreur lors du chargement des statistiques', 'error');
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                showAlert('❌ Erreur de connexion', 'error');
+            }
+        }
+
+        async function estimateCompression() {
+            const fileSize = document.getElementById('fileSize').value;
+            const qualityProfile = document.getElementById('qualityProfile').value;
+            
+            if (!fileSize || fileSize <= 0) {
+                showAlert('❌ Veuillez entrer une taille de fichier valide', 'error');
+                return;
+            }
+
+            try {
+                const fileSizeBytes = parseFloat(fileSize) * 1024 * 1024; // Convertir MB en bytes
+                const response = await fetch(`/api/admin/photo-optimization/estimate?file_size=${fileSizeBytes}&quality_profile=${qualityProfile}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const estimation = await response.json();
+                    
+                    document.getElementById('estimationResult').innerHTML = `
+                        <h5>📊 Résultats de l'estimation:</h5>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px;">
+                            <div><strong>Taille originale:</strong><br/>${estimation.original_size_mb} MB</div>
+                            <div><strong>Taille compressée:</strong><br/>${estimation.estimated_compressed_size_mb} MB</div>
+                            <div><strong>Espace économisé:</strong><br/>${estimation.estimated_space_saved_mb} MB</div>
+                            <div><strong>Compression:</strong><br/>${estimation.estimated_compression_ratio}%</div>
+                        </div>
+                        <p style="margin-top: 10px; color: #666;">
+                            <em>Profil utilisé: ${estimation.quality_profile}</em>
+                        </p>
+                    `;
+                } else {
+                    showAlert('❌ Erreur lors de l\'estimation', 'error');
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                showAlert('❌ Erreur de connexion', 'error');
+            }
+        }
+
+        async function cleanupExpiredPhotos() {
+            if (!confirm('⚠️ Êtes-vous sûr de vouloir supprimer toutes les photos expirées ? Cette action est irréversible.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/photo-optimization/cleanup-expired', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    document.getElementById('cleanupResult').innerHTML = `
+                        <h5>✅ ${result.message}</h5>
+                        <p><strong>Photos supprimées:</strong> ${result.deleted_count}</p>
+                        <p><strong>Espace libéré:</strong> ${result.space_freed_mb} MB</p>
+                    `;
+                    
+                    showAlert('✅ Nettoyage terminé avec succès', 'success');
+                    
+                    // Recharger les statistiques
+                    loadOptimizationStats();
+                } else {
+                    const error = await response.json();
+                    showAlert(`❌ ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                showAlert('❌ Erreur de connexion', 'error');
+            }
+        }
+
+        // Charger les statistiques automatiquement quand on ouvre l'onglet optimisation
+        const originalShowTab = showTab;
+        showTab = function(tabName) {
+            originalShowTab(tabName);
+            if (tabName === 'optimization') {
+                loadOptimizationStats();
+            }
+        };
     </script>
 </body>
 </html> 
