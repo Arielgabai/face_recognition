@@ -363,6 +363,7 @@
                             </div>
                         </div>
                         <button onclick="loadOptimizationStats()" class="success">🔄 Actualiser</button>
+                        <button onclick="runMigration()" class="warning" style="margin-left: 10px;">⚙️ Migration BDD</button>
                     </div>
                 </div>
 
@@ -1126,6 +1127,52 @@
             } catch (error) {
                 console.error('Erreur:', error);
                 showAlert('❌ Erreur de connexion', 'error');
+            }
+        }
+
+        async function runMigration() {
+            if (!confirm('⚙️ Êtes-vous sûr de vouloir exécuter la migration de la base de données ? Cette opération va ajouter les colonnes d\'optimisation manquantes.')) {
+                return;
+            }
+
+            try {
+                showAlert('🔄 Migration en cours...', 'info');
+                
+                const response = await fetch('/api/admin/migrate-photo-optimization', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    let logDisplay = result.log.map(line => `<p>• ${line}</p>`).join('');
+                    
+                    document.getElementById('cleanupResult').innerHTML = `
+                        <h5>✅ ${result.message}</h5>
+                        <p><strong>Photos mises à jour:</strong> ${result.photos_updated}</p>
+                        <p><strong>Total photos avec métadonnées:</strong> ${result.total_photos_with_metadata}</p>
+                        <div style="margin-top: 15px; max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 5px;">
+                            <h6>📋 Journal de la migration:</h6>
+                            ${logDisplay}
+                        </div>
+                    `;
+                    
+                    showAlert('✅ Migration terminée avec succès ! Vous pouvez maintenant utiliser les fonctionnalités d\'optimisation.', 'success');
+                    
+                    // Recharger les statistiques
+                    setTimeout(() => {
+                        loadOptimizationStats();
+                    }, 2000);
+                } else {
+                    const error = await response.json();
+                    showAlert(`❌ Erreur de migration: ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                showAlert('❌ Erreur de connexion lors de la migration', 'error');
             }
         }
 

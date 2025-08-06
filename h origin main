@@ -1,0 +1,5 @@
+[33m1d49f7c[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Replace all occurrences of color #ba4921 with #a4401d (darker terra cotta)
+[33me2a98df[m Update event banner background to terra cotta color #ba4921
+[33mc860bfd[m Update banner background color to #9f8874 and restore original text color for 'Pour vous/Général' tabs
+[33m003a1f2[m Update banner tabs color from gray to #9f8874 for 'Pour vous/Général' section
+[33m37e0788[m Update color scheme: replace terra cotta with #ba4921 and dark background with #dfc8a6
