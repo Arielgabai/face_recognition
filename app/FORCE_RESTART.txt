@@ -1,0 +1,4 @@
+🔄 Force restart pour synchroniser SQLAlchemy après migration BDD
+
+Migration PostgreSQL réussie, redémarrage nécessaire pour recharger les modèles.
+Timestamp: 2025-01-08 22:00:00
