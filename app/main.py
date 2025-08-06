@@ -1685,106 +1685,106 @@ async def request_password_reset(
     return {"message": "Un email de r+�initialisation a +�t+� envoy+�"}
 
 @app.post("/api/admin/migrate-photo-optimization")
-async def migrate_photo_optimization_endpoint(current_user: User = Depends(get_current_user)):
+async def migrate_photo_optimization_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Endpoint pour exécuter la migration des colonnes d'optimisation photo"""
     try:
-        import sqlite3
         from datetime import datetime, timedelta
-        
-        DATABASE_PATH = 'app.db'
-        
-        # Vérifier si la base de données existe
-        if not os.path.exists(DATABASE_PATH):
-            raise HTTPException(status_code=500, detail="Base de données non trouvée")
-        
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
-        
-        # Vérifier si les colonnes existent déjà
-        cursor.execute("PRAGMA table_info(photos)")
-        columns = [column[1] for column in cursor.fetchall()]
-        
-        new_columns = [
-            'original_size',
-            'compressed_size', 
-            'compression_ratio',
-            'retention_days',
-            'expires_at',
-            'quality_level'
-        ]
+        from sqlalchemy import text, inspect
         
         migration_log = []
+        migration_log.append("🔄 Début de la migration pour l'optimisation photos...")
+        
+        # Obtenir l'inspecteur pour vérifier les colonnes existantes
+        inspector = inspect(db.bind)
+        existing_columns = [col['name'] for col in inspector.get_columns('photos')]
+        
+        migration_log.append(f"📋 Colonnes existantes: {existing_columns}")
+        
+        new_columns_definitions = {
+            'original_size': 'INTEGER',
+            'compressed_size': 'INTEGER', 
+            'compression_ratio': 'REAL',
+            'retention_days': 'INTEGER DEFAULT 30',
+            'expires_at': 'TIMESTAMP',
+            'quality_level': 'VARCHAR(20) DEFAULT \'medium\''
+        }
         
         # Ajouter les colonnes manquantes
-        for column in new_columns:
-            if column not in columns:
-                migration_log.append(f"Ajout de la colonne '{column}'...")
+        for column_name, column_def in new_columns_definitions.items():
+            if column_name not in existing_columns:
+                migration_log.append(f"📝 Ajout de la colonne '{column_name}'...")
                 
-                if column == 'original_size':
-                    cursor.execute("ALTER TABLE photos ADD COLUMN original_size INTEGER")
-                elif column == 'compressed_size':
-                    cursor.execute("ALTER TABLE photos ADD COLUMN compressed_size INTEGER")
-                elif column == 'compression_ratio':
-                    cursor.execute("ALTER TABLE photos ADD COLUMN compression_ratio REAL")
-                elif column == 'retention_days':
-                    cursor.execute("ALTER TABLE photos ADD COLUMN retention_days INTEGER DEFAULT 30")
-                elif column == 'expires_at':
-                    cursor.execute("ALTER TABLE photos ADD COLUMN expires_at DATETIME")
-                elif column == 'quality_level':
-                    cursor.execute("ALTER TABLE photos ADD COLUMN quality_level VARCHAR(20) DEFAULT 'medium'")
-                    
-                migration_log.append(f"✅ Colonne '{column}' ajoutée avec succès")
+                try:
+                    # Utiliser SQLAlchemy pour exécuter la commande ALTER TABLE
+                    alter_query = text(f"ALTER TABLE photos ADD COLUMN {column_name} {column_def}")
+                    db.execute(alter_query)
+                    db.commit()
+                    migration_log.append(f"✅ Colonne '{column_name}' ajoutée avec succès")
+                except Exception as col_error:
+                    migration_log.append(f"❌ Erreur ajout '{column_name}': {str(col_error)}")
             else:
-                migration_log.append(f"⏭️ Colonne '{column}' existe déjà")
+                migration_log.append(f"⏭️ Colonne '{column_name}' existe déjà")
         
         # Mettre à jour les photos existantes avec des valeurs par défaut
-        migration_log.append("Mise à jour des photos existantes...")
+        migration_log.append("🔄 Mise à jour des photos existantes...")
         
-        # Obtenir toutes les photos existantes
-        cursor.execute("SELECT id, photo_data FROM photos WHERE original_size IS NULL")
-        photos_to_update = cursor.fetchall()
+        # Compter les photos à mettre à jour
+        count_query = text("SELECT COUNT(*) FROM photos WHERE original_size IS NULL")
+        photos_to_update_count = db.execute(count_query).scalar()
         
-        migration_log.append(f"📊 {len(photos_to_update)} photos à mettre à jour")
+        migration_log.append(f"📊 {photos_to_update_count} photos à mettre à jour")
         
-        for photo_id, data in photos_to_update:
-            if data:
-                # Calculer la taille originale (taille des données binaires)
-                original_size = len(data)
+        if photos_to_update_count > 0:
+            # Obtenir les photos à mettre à jour (avec limite pour éviter les timeouts)
+            photos_query = text("SELECT id, LENGTH(photo_data) as data_size FROM photos WHERE original_size IS NULL LIMIT 100")
+            photos_result = db.execute(photos_query).fetchall()
+            
+            for photo_row in photos_result:
+                photo_id = photo_row[0]
+                data_size = photo_row[1] or 0
                 
                 # Calculer la date d'expiration (30 jours par défaut)
                 expires_at = datetime.now() + timedelta(days=30)
                 
-                cursor.execute("""
+                update_query = text("""
                     UPDATE photos 
-                    SET original_size = ?,
-                        compressed_size = ?,
+                    SET original_size = :original_size,
+                        compressed_size = :compressed_size,
                         compression_ratio = 1.0,
                         retention_days = 30,
-                        expires_at = ?,
+                        expires_at = :expires_at,
                         quality_level = 'medium'
-                    WHERE id = ?
-                """, (original_size, original_size, expires_at, photo_id))
+                    WHERE id = :photo_id
+                """)
+                
+                db.execute(update_query, {
+                    'original_size': data_size,
+                    'compressed_size': data_size,
+                    'expires_at': expires_at,
+                    'photo_id': photo_id
+                })
+            
+            db.commit()
+            migration_log.append(f"✅ {len(photos_result)} photos mises à jour")
         
-        conn.commit()
-        migration_log.append(f"✅ {len(photos_to_update)} photos mises à jour")
-        
-        # Vérifier le résultat
-        cursor.execute("SELECT COUNT(*) FROM photos WHERE original_size IS NOT NULL")
-        updated_count = cursor.fetchone()[0]
+        # Vérifier le résultat final
+        final_count_query = text("SELECT COUNT(*) FROM photos WHERE original_size IS NOT NULL")
+        updated_count = db.execute(final_count_query).scalar()
         
         migration_log.append(f"📈 Total photos avec métadonnées d'optimisation : {updated_count}")
-        
-        conn.close()
-        
         migration_log.append("🎉 Migration terminée avec succès !")
         
         return {
             "success": True,
             "message": "Migration exécutée avec succès",
             "log": migration_log,
-            "photos_updated": len(photos_to_update),
+            "photos_updated": photos_to_update_count,
             "total_photos_with_metadata": updated_count
         }
         
     except Exception as e:
+        migration_log.append(f"❌ Erreur lors de la migration : {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la migration : {str(e)}")
