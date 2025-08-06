@@ -1685,7 +1685,7 @@ async def request_password_reset(
     return {"message": "Un email de r+�initialisation a +�t+� envoy+�"}
 
 @app.post("/api/admin/migrate-photo-optimization")
-async def migrate_photo_optimization_endpoint(current_user: dict = Depends(get_current_admin_user)):
+async def migrate_photo_optimization_endpoint(current_user: User = Depends(get_current_user)):
     """Endpoint pour exécuter la migration des colonnes d'optimisation photo"""
     try:
         import sqlite3
