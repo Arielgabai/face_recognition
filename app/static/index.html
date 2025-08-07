@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Recognition App</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/gallery.css">
     <style>
         * {
             margin: 0;
@@ -1630,6 +1631,7 @@
     </style>
 </head>
 <body>
+    <script src="/static/js/gallery.js"></script>
         <!-- Loading Overlay -->
         <div id="loadingOverlay" class="loading-overlay" style="display: none;">
             <div class="loading-modal">
@@ -2006,13 +2008,14 @@
                             myPhotosTab.textContent = `Pour vous (${photos.length})`;
                         }
                         
-                        container.innerHTML = `
-                            <div class="gallery">
-                                ${photos.map(photo => `
-                                    <img src="/api/photo/${photo.id}" alt="Photo" class="gallery-image">
-                                `).join('')}
-                            </div>
-                        `;
+                        // Utiliser la galerie moderne avec lightbox et téléchargement
+                        const images = photos.map((p, idx) => ({
+                            src: `/api/photo/${p.id}`,
+                            alt: p.original_filename || `Photo ${idx + 1}`
+                        }));
+                        container.innerHTML = '<div id="myModernGallery"></div>';
+                        const g1 = new ModernGallery('#myModernGallery', { lightbox: true, keyboardNavigation: true, lazy: true });
+                        g1.loadImages(images);
                     }
                 } else {
                     container.innerHTML = `
@@ -2083,13 +2086,13 @@
                             allPhotosTab.textContent = `Général (${photos.length})`;
                         }
                         
-                        container.innerHTML = `
-                            <div class="gallery">
-                                ${photos.map(photo => `
-                                    <img src="/api/photo/${photo.id}" alt="Photo" class="gallery-image">
-                                `).join('')}
-                            </div>
-                        `;
+                        const images = photos.map((p, idx) => ({
+                            src: `/api/photo/${p.id}`,
+                            alt: p.original_filename || `Photo ${idx + 1}`
+                        }));
+                        container.innerHTML = '<div id="allModernGallery"></div>';
+                        const g2 = new ModernGallery('#allModernGallery', { lightbox: true, keyboardNavigation: true, lazy: true });
+                        g2.loadImages(images);
                     }
                 } else {
                     container.innerHTML = `
@@ -3012,14 +3015,14 @@
                 }
             }
             
-            // Afficher les nouvelles photos avec la même structure que loadMyPhotos
-            container.innerHTML = `
-                <div class="gallery">
-                    ${photos.map(photo => `
-                        <img src="/api/photo/${photo.id}?t=${Date.now()}" alt="Photo" class="gallery-image">
-                    `).join('')}
-                </div>
-            `;
+            // Afficher via la galerie moderne et forcer un cache-busting
+            const images = photos.map((p, idx) => ({
+                src: `/api/photo/${p.id}?t=${Date.now()}`,
+                alt: p.original_filename || `Photo ${idx + 1}`
+            }));
+            container.innerHTML = '<div id="myModernGallery"></div>';
+            const g = new ModernGallery('#myModernGallery', { lightbox: true, keyboardNavigation: true, lazy: true });
+            g.loadImages(images);
             
             console.log(`Affichage mis à jour avec succès: ${photos.length} photos`);
         }

@@ -184,11 +184,12 @@ class ModernGallery {
         this.lightboxElement = document.createElement('div');
         this.lightboxElement.className = 'gallery-lightbox';
         this.lightboxElement.innerHTML = `
-            <span class="gallery-lightbox-close">&times;</span>
-            <div class="gallery-lightbox-nav gallery-lightbox-prev">‹</div>
-            <div class="gallery-lightbox-nav gallery-lightbox-next">›</div>
+            <span class="gallery-lightbox-close" title="Fermer">&times;</span>
+            <div class="gallery-lightbox-nav gallery-lightbox-prev" title="Précédente">‹</div>
+            <div class="gallery-lightbox-nav gallery-lightbox-next" title="Suivante">›</div>
             <img src="" alt="">
             <div class="gallery-photo-counter">1 / 1</div>
+            <button class="gallery-download-btn" title="Enregistrer">⬇︎ Enregistrer</button>
         `;
         
         document.body.appendChild(this.lightboxElement);
@@ -197,6 +198,7 @@ class ModernGallery {
         const closeBtn = this.lightboxElement.querySelector('.gallery-lightbox-close');
         const prevBtn = this.lightboxElement.querySelector('.gallery-lightbox-prev');
         const nextBtn = this.lightboxElement.querySelector('.gallery-lightbox-next');
+        const downloadBtn = this.lightboxElement.querySelector('.gallery-download-btn');
         
         closeBtn.addEventListener('click', () => this.closeLightbox());
         prevBtn.addEventListener('click', () => this.previousImage());
@@ -208,6 +210,14 @@ class ModernGallery {
                 this.closeLightbox();
             }
         });
+
+        // Télécharger l'image courante
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.downloadCurrentImage();
+            });
+        }
     }
     
     openLightbox(index) {
@@ -252,6 +262,38 @@ class ModernGallery {
     nextImage() {
         if (this.currentIndex < this.images.length - 1) {
             this.openLightbox(this.currentIndex + 1);
+        }
+    }
+
+    async downloadCurrentImage() {
+        try {
+            const image = this.images[this.currentIndex];
+            if (!image) return;
+            const response = await fetch(image.src, { cache: 'no-store' });
+            const blob = await response.blob();
+            const fileName = (image.alt || 'photo') + '.jpg';
+
+            // Utiliser l'API Web Share si disponible (meilleure expérience mobile)
+            const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: 'Photo' });
+                return;
+            }
+
+            // Fallback: lien de téléchargement
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        } catch (e) {
+            console.error('Erreur lors du téléchargement de l\'image:', e);
+            // Fallback ultime: ouvrir l'image dans un nouvel onglet pour sauvegarde manuelle
+            const image = this.images[this.currentIndex];
+            if (image) window.open(image.src, '_blank');
         }
     }
     
