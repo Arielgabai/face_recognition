@@ -241,6 +241,12 @@ class ModernGallery {
         
         this.lightboxElement.classList.add('active');
         document.body.style.overflow = 'hidden';
+        // Marquer l'état lightbox pour le CSS et masquer le hamburger
+        document.body.classList.add('lightbox-open');
+        try {
+            const menu = document.getElementById('hamburgerMenu');
+            if (menu) menu.style.display = 'none';
+        } catch {}
         
         // Focus pour l'accessibilité
         this.lightboxElement.focus();
@@ -251,6 +257,12 @@ class ModernGallery {
         
         this.lightboxElement.classList.remove('active');
         document.body.style.overflow = 'auto';
+        document.body.classList.remove('lightbox-open');
+        // Réafficher le hamburger proprement
+        try {
+            const menu = document.getElementById('hamburgerMenu');
+            if (menu) menu.style.display = '';
+        } catch {}
     }
     
     previousImage() {

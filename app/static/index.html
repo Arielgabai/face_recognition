@@ -1661,14 +1661,17 @@
 <body>
     <script src="/static/js/gallery.js"></script>
     <script>
-        // Masquer/afficher le hamburger selon l'état de la lightbox
-        document.addEventListener('click', function(e) {
-            const lb = document.querySelector('.gallery-lightbox');
+        // Sécurise l'état si des interactions externes modifient la lightbox
+        function syncHamburgerVisibility() {
             const menu = document.getElementById('hamburgerMenu');
-            if (!lb || !menu) return;
-            const isActive = lb.classList.contains('active');
-            menu.style.display = isActive ? 'none' : '';
-        }, true);
+            if (!menu) return;
+            const shouldHide = document.body.classList.contains('lightbox-open');
+            menu.style.display = shouldHide ? 'none' : '';
+        }
+        const observer = new MutationObserver(syncHamburgerVisibility);
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        document.addEventListener('visibilitychange', syncHamburgerVisibility);
+        window.addEventListener('pageshow', syncHamburgerVisibility);
     </script>
         <!-- Loading Overlay -->
         <div id="loadingOverlay" class="loading-overlay" style="display: none;">

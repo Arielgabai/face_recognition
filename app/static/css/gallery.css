@@ -153,10 +153,9 @@
 }
 
 /* Masquer le hamburger quand la lightbox est ouverte */
-.gallery-lightbox.active ~ .hamburger-menu,
-body:has(.gallery-lightbox.active) .hamburger-menu {
-    display: none !important;
-}
+/* Masquer le hamburger quand la lightbox est ouverte */
+.hamburger-menu { transition: opacity 0.15s ease; }
+body.lightbox-open .hamburger-menu { display: none !important; }
 
 /* Bouton de téléchargement/enregistrement */
 .gallery-download-btn {
