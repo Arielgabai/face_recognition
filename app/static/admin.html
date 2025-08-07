@@ -466,6 +466,8 @@
     <script>
         let currentUser = null;
         let token = localStorage.getItem('token');
+        let isLoggingOut = false;
+        let dashboardController = null;
 
         if (token) {
             loadDashboard();
@@ -507,13 +509,28 @@
         }
 
         async function loadDashboard() {
+            // Empêche tout chargement si pas de token ou déconnexion en cours
+            if (!localStorage.getItem('token') || !token || isLoggingOut) {
+                return;
+            }
             try {
+                // Annule toute requête précédente
+                if (dashboardController) {
+                    try { dashboardController.abort(); } catch (e) {}
+                }
+                dashboardController = new AbortController();
+
                 const response = await fetch('/api/me', {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                     },
+                    signal: dashboardController.signal
                 });
 
+                // Vérifie encore l'état après la réponse
+                if (!localStorage.getItem('token') || !token || isLoggingOut) {
+                    return;
+                }
                 if (response.ok) {
                     currentUser = await response.json();
                     
@@ -999,6 +1016,12 @@
         }
 
         function logout() {
+            isLoggingOut = true;
+            // Annuler les requêtes en cours
+            if (dashboardController) {
+                try { dashboardController.abort(); } catch (e) {}
+                dashboardController = null;
+            }
             // Nettoyer complètement le localStorage
             localStorage.removeItem('token');
             localStorage.removeItem('user');
@@ -1008,8 +1031,11 @@
             token = null;
             currentUser = null;
             
-            // Nettoyer les formulaires
-            document.getElementById('loginForm').reset();
+            // Nettoyer les champs du formulaire de connexion
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            if (usernameInput) usernameInput.value = '';
+            if (passwordInput) passwordInput.value = '';
             
             // Masquer le dashboard et afficher le formulaire de connexion
             document.getElementById('dashboard').style.display = 'none';
@@ -1041,6 +1067,8 @@
             showAlert('Déconnexion réussie', 'success');
             
             console.log('Déconnexion effectuée - session nettoyée');
+            // Autoriser une future reconnexion
+            isLoggingOut = false;
         }
 
         // === FONCTIONS D'OPTIMISATION DES PHOTOS ===
