@@ -1660,6 +1660,16 @@
 </head>
 <body>
     <script src="/static/js/gallery.js"></script>
+    <script>
+        // Masquer/afficher le hamburger selon l'état de la lightbox
+        document.addEventListener('click', function(e) {
+            const lb = document.querySelector('.gallery-lightbox');
+            const menu = document.getElementById('hamburgerMenu');
+            if (!lb || !menu) return;
+            const isActive = lb.classList.contains('active');
+            menu.style.display = isActive ? 'none' : '';
+        }, true);
+    </script>
         <!-- Loading Overlay -->
         <div id="loadingOverlay" class="loading-overlay" style="display: none;">
             <div class="loading-modal">

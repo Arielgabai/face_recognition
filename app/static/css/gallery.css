@@ -152,6 +152,12 @@
     box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
 }
 
+/* Masquer le hamburger quand la lightbox est ouverte */
+.gallery-lightbox.active ~ .hamburger-menu,
+body:has(.gallery-lightbox.active) .hamburger-menu {
+    display: none !important;
+}
+
 /* Bouton de téléchargement/enregistrement */
 .gallery-download-btn {
     position: absolute;
