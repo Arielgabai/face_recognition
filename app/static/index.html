@@ -2038,14 +2038,25 @@
                         
                         const useModern = typeof window.ModernGallery !== 'undefined';
                         if (useModern) {
-                            // Utiliser la galerie moderne avec lightbox et téléchargement
-                            const images = photos.map((p, idx) => ({
-                                src: `/api/photo/${p.id}`,
-                                alt: p.original_filename || `Photo ${idx + 1}`
-                            }));
-                            container.innerHTML = '<div id="myModernGallery"></div>';
-                            const g1 = new ModernGallery('#myModernGallery', { lightbox: true, keyboardNavigation: true, lazy: true });
-                            g1.loadImages(images);
+                            try {
+                                // Utiliser la galerie moderne avec lightbox et téléchargement
+                                const images = photos.map((p, idx) => ({
+                                    src: `/api/photo/${p.id}`,
+                                    alt: p.original_filename || `Photo ${idx + 1}`
+                                }));
+                                container.innerHTML = '<div id="myModernGallery"></div>';
+                                const g1 = new ModernGallery('#myModernGallery', { lightbox: true, keyboardNavigation: true, lazy: false });
+                                g1.loadImages(images);
+                            } catch (e) {
+                                console.error('ModernGallery error (my):', e);
+                                container.innerHTML = `
+                                    <div class="masonry">
+                                        ${photos.map(photo => `
+                                            <div class="masonry-item"><img src="/api/photo/${photo.id}" alt="Photo"></div>
+                                        `).join('')}
+                                    </div>
+                                `;
+                            }
                         } else {
                             // Fallback masonry harmonieux
                             container.innerHTML = `
@@ -2128,13 +2139,24 @@
                         
                         const useModern = typeof window.ModernGallery !== 'undefined';
                         if (useModern) {
-                            const images = photos.map((p, idx) => ({
-                                src: `/api/photo/${p.id}`,
-                                alt: p.original_filename || `Photo ${idx + 1}`
-                            }));
-                            container.innerHTML = '<div id="allModernGallery"></div>';
-                            const g2 = new ModernGallery('#allModernGallery', { lightbox: true, keyboardNavigation: true, lazy: true });
-                            g2.loadImages(images);
+                            try {
+                                const images = photos.map((p, idx) => ({
+                                    src: `/api/photo/${p.id}`,
+                                    alt: p.original_filename || `Photo ${idx + 1}`
+                                }));
+                                container.innerHTML = '<div id="allModernGallery"></div>';
+                                const g2 = new ModernGallery('#allModernGallery', { lightbox: true, keyboardNavigation: true, lazy: false });
+                                g2.loadImages(images);
+                            } catch (e) {
+                                console.error('ModernGallery error (all):', e);
+                                container.innerHTML = `
+                                    <div class="masonry">
+                                        ${photos.map(photo => `
+                                            <div class="masonry-item"><img src="/api/photo/${photo.id}" alt="Photo"></div>
+                                        `).join('')}
+                                    </div>
+                                `;
+                            }
                         } else {
                             container.innerHTML = `
                                 <div class="masonry">
@@ -3069,13 +3091,24 @@
             // Afficher via la galerie moderne et forcer un cache-busting
             const useModern = typeof window.ModernGallery !== 'undefined';
             if (useModern) {
-                const images = photos.map((p, idx) => ({
-                    src: `/api/photo/${p.id}?t=${Date.now()}`,
-                    alt: p.original_filename || `Photo ${idx + 1}`
-                }));
-                container.innerHTML = '<div id="myModernGallery"></div>';
-                const g = new ModernGallery('#myModernGallery', { lightbox: true, keyboardNavigation: true, lazy: true });
-                g.loadImages(images);
+                try {
+                    const images = photos.map((p, idx) => ({
+                        src: `/api/photo/${p.id}?t=${Date.now()}`,
+                        alt: p.original_filename || `Photo ${idx + 1}`
+                    }));
+                    container.innerHTML = '<div id="myModernGallery"></div>';
+                    const g = new ModernGallery('#myModernGallery', { lightbox: true, keyboardNavigation: true, lazy: false });
+                    g.loadImages(images);
+                } catch (e) {
+                    console.error('ModernGallery error (update):', e);
+                    container.innerHTML = `
+                        <div class="masonry">
+                            ${photos.map(photo => `
+                                <div class="masonry-item"><img src="/api/photo/${photo.id}?t=${Date.now()}" alt="Photo"></div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
             } else {
                 container.innerHTML = `
                     <div class="masonry">
