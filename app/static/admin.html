@@ -1020,8 +1020,25 @@
             document.getElementById('photographersList').innerHTML = '';
             document.getElementById('eventsList').innerHTML = '';
             
-            // Rediriger vers la page d'accueil pour éviter les problèmes de cache
-            window.location.href = '/';
+            // Nettoyer les autres éléments d'affichage
+            document.getElementById('qrCodeResult').innerHTML = '';
+            document.getElementById('estimationResult').innerHTML = '';
+            document.getElementById('cleanupResult').innerHTML = '';
+            
+            // Réinitialiser les onglets
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Réactiver le premier onglet
+            document.getElementById('photographers').classList.add('active');
+            document.querySelector('.tab').classList.add('active');
+            
+            // Afficher un message de confirmation
+            showAlert('Déconnexion réussie', 'success');
             
             console.log('Déconnexion effectuée - session nettoyée');
         }
