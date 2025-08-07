@@ -364,6 +364,7 @@
                         </div>
                         <button onclick="loadOptimizationStats()" class="success">🔄 Actualiser</button>
                         <button onclick="runMigration()" class="warning" style="margin-left: 10px;">⚙️ Migration BDD</button>
+                        <button onclick="reloadModels()" class="info" style="margin-left: 10px;">🔄 Recharger Modèles</button>
                     </div>
                 </div>
 
@@ -1173,6 +1174,56 @@
             } catch (error) {
                 console.error('Erreur:', error);
                 showAlert('❌ Erreur de connexion lors de la migration', 'error');
+            }
+        }
+
+        async function reloadModels() {
+            if (!confirm('🔄 Recharger les modèles SQLAlchemy ? Cela peut résoudre les erreurs après migration.')) {
+                return;
+            }
+
+            try {
+                showAlert('🔄 Rechargement des modèles en cours...', 'info');
+                
+                const response = await fetch('/api/admin/reload-models', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    let logDisplay = result.log.map(line => `<p>• ${line}</p>`).join('');
+                    
+                    document.getElementById('cleanupResult').innerHTML = `
+                        <h5>${result.success ? '✅' : '⚠️'} ${result.message}</h5>
+                        <p><strong>Colonnes d'optimisation détectées:</strong> ${result.optimization_columns_detected}/6</p>
+                        <p><strong>Prêt pour statistiques:</strong> ${result.ready_for_stats ? 'Oui ✅' : 'Non ❌'}</p>
+                        <div style="margin-top: 15px; max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 5px;">
+                            <h6>📋 Journal du rechargement:</h6>
+                            ${logDisplay}
+                        </div>
+                    `;
+                    
+                    if (result.ready_for_stats) {
+                        showAlert('✅ Modèles rechargés ! Les statistiques devraient maintenant fonctionner.', 'success');
+                        
+                        // Recharger les statistiques après 2 secondes
+                        setTimeout(() => {
+                            loadOptimizationStats();
+                        }, 2000);
+                    } else {
+                        showAlert(`⚠️ Rechargement partiellement réussi. Colonnes manquantes: ${result.missing_columns?.join(', ') || 'Inconnues'}`, 'warning');
+                    }
+                } else {
+                    const error = await response.json();
+                    showAlert(`❌ Erreur de rechargement: ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                showAlert('❌ Erreur de connexion lors du rechargement', 'error');
             }
         }
 

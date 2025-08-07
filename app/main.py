@@ -1788,3 +1788,63 @@ async def migrate_photo_optimization_endpoint(
     except Exception as e:
         migration_log.append(f"❌ Erreur lors de la migration : {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la migration : {str(e)}")
+
+@app.post("/api/admin/reload-models")
+async def reload_models_endpoint(current_user: User = Depends(get_current_user)):
+    """Endpoint pour recharger les modèles SQLAlchemy après migration"""
+    try:
+        from sqlalchemy import inspect
+        from models import Photo, User, Event, Photographer  # Force reload
+        
+        reload_log = []
+        reload_log.append("🔄 Rechargement des modèles SQLAlchemy...")
+        
+        # Forcer la réflexion de la table
+        db = next(get_db())
+        inspector = inspect(db.bind)
+        
+        # Vérifier que les nouvelles colonnes sont détectées
+        photo_columns = [col['name'] for col in inspector.get_columns('photos')]
+        reload_log.append(f"📋 Colonnes détectées dans 'photos': {photo_columns}")
+        
+        # Vérifier si les attributs sont maintenant disponibles
+        optimization_columns = ['original_size', 'compressed_size', 'compression_ratio', 'retention_days', 'expires_at', 'quality_level']
+        
+        detected_optimization_columns = []
+        for col in optimization_columns:
+            if col in photo_columns:
+                detected_optimization_columns.append(col)
+        
+        reload_log.append(f"✅ Colonnes d'optimisation détectées: {detected_optimization_columns}")
+        
+        if len(detected_optimization_columns) == len(optimization_columns):
+            reload_log.append("🎉 Toutes les colonnes d'optimisation sont présentes !")
+            reload_log.append("📊 Les statistiques d'optimisation devraient maintenant fonctionner")
+            
+            return {
+                "success": True,
+                "message": "Modèles rechargés avec succès",
+                "log": reload_log,
+                "optimization_columns_detected": len(detected_optimization_columns),
+                "ready_for_stats": True
+            }
+        else:
+            missing = set(optimization_columns) - set(detected_optimization_columns)
+            reload_log.append(f"⚠️ Colonnes manquantes: {list(missing)}")
+            
+            return {
+                "success": False,
+                "message": "Certaines colonnes d'optimisation sont manquantes",
+                "log": reload_log,
+                "optimization_columns_detected": len(detected_optimization_columns),
+                "missing_columns": list(missing),
+                "ready_for_stats": False
+            }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Erreur lors du rechargement : {str(e)}",
+            "log": [f"❌ Erreur: {str(e)}"],
+            "ready_for_stats": False
+        }
