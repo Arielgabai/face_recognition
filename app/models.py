@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table, LargeBinary
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table, LargeBinary, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -66,6 +66,14 @@ class Photo(Base):
     photographer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     event_id = Column(Integer, ForeignKey("events.id"), nullable=True)
+    
+    # Colonnes d'optimisation des photos
+    original_size = Column(Integer, nullable=True)
+    compressed_size = Column(Integer, nullable=True)
+    compression_ratio = Column(Float, nullable=True)
+    retention_days = Column(Integer, nullable=True, default=30)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    quality_level = Column(String, nullable=True, default="medium")
     
     # Relations
     owner = relationship("User", back_populates="photos", foreign_keys=[user_id])

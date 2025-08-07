@@ -1794,7 +1794,7 @@ async def reload_models_endpoint(current_user: User = Depends(get_current_user))
     """Endpoint pour recharger les modèles SQLAlchemy après migration"""
     try:
         from sqlalchemy import inspect
-        from models import Photo, User, Event, Photographer  # Force reload
+        from models import Photo, User, Event  # Force reload
         
         reload_log = []
         reload_log.append("🔄 Rechargement des modèles SQLAlchemy...")
