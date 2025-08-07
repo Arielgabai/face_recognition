@@ -68,6 +68,11 @@
     transform: translateY(20px);
 }
 
+/* Empêcher l'overlay de masquer définitivement l'image sur mobile si hover absent */
+.gallery-photo-overlay {
+    pointer-events: none;
+}
+
 .gallery-photo-card:hover {
     transform: translateY(-8px);
     box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
@@ -235,17 +240,23 @@
 }
 
 /* États d'chargement */
+/* Loader caché par défaut; visible seulement pendant le chargement */
 .gallery-photo-loading {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
-    background-color: #f5f5f5;
+    background-color: rgba(245, 245, 245, 0.95);
     color: #666;
+    z-index: 2;
+}
+
+.gallery-photo-card.loading .gallery-photo-loading {
+    display: flex;
 }
 
 .gallery-empty-state {
