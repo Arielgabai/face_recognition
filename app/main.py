@@ -102,6 +102,16 @@ def validate_selfie_image(image_bytes: bytes) -> None:
         # Erreur générique de traitement
         raise HTTPException(status_code=400, detail="Erreur lors de la vérification de la selfie. Veuillez réessayer avec une photo plus claire.")
 
+def parse_user_type(user_type_str: str) -> UserType:
+    """Convertit une chaîne quelconque (USER/user/Photographer...) vers UserType de manière sûre."""
+    value = (user_type_str or '').strip().lower()
+    mapping = {
+        'user': UserType.USER,
+        'photographer': UserType.PHOTOGRAPHER,
+        'admin': UserType.ADMIN,
+    }
+    return mapping.get(value, UserType.USER)
+
 def photo_to_dict(photo: Photo) -> dict:
     """Convertit un objet Photo en dictionnaire sans les donn+�es binaires"""
     return {
@@ -240,7 +250,7 @@ async def register(
         username=username,
         email=email,
         hashed_password=hashed_password,
-        user_type=UserType(user_type)
+        user_type=parse_user_type(user_type)
     )
     
     # Sauvegarder la selfie
