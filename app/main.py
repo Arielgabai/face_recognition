@@ -62,6 +62,9 @@ def validate_selfie_image(image_bytes: bytes) -> None:
     - Rejette si le visage détecté est trop petit (qualité insuffisante)
     """
     try:
+        # Forcer conversion en bytes si besoin (UploadFile peut fournir un buffer itérable)
+        if not isinstance(image_bytes, (bytes, bytearray)):
+            image_bytes = bytes(image_bytes)
         face_locations = face_recognizer.detect_faces(image_bytes)
         if not face_locations or len(face_locations) == 0:
             raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer une selfie claire de votre visage.")
