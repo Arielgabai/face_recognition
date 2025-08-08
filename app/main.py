@@ -65,21 +65,36 @@ def validate_selfie_image(image_bytes: bytes) -> None:
         # Forcer conversion en bytes si besoin (UploadFile peut fournir un buffer itérable)
         if not isinstance(image_bytes, (bytes, bytearray)):
             image_bytes = bytes(image_bytes)
+
+        # Détection de visage(s)
         face_locations = face_recognizer.detect_faces(image_bytes)
         if not face_locations or len(face_locations) == 0:
             raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer une selfie claire de votre visage.")
         if len(face_locations) > 1:
             raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Veuillez envoyer une selfie avec un seul visage.")
 
-        # Vérifier la taille minimale du visage (évite les selfies trop lointaines)
+        # Taille visuelle minimale du visage (dépendante de la taille de l'image)
         # face_recognition retourne (top, right, bottom, left)
         top, right, bottom, left = face_locations[0]
         face_width = max(0, right - left)
         face_height = max(0, bottom - top)
         face_area = face_width * face_height
-        # Seuil empirique suffisamment élevé pour filtrer les mini-visages
-        # (1000 était trop faible; on utilise 20k comme base)
-        if face_area < 20000:
+
+        # Obtenir la taille de l'image pour un seuil relatif
+        import io as _io
+        import face_recognition as _fr
+        try:
+            img = _fr.load_image_file(_io.BytesIO(image_bytes))
+            img_h, img_w = (img.shape[0], img.shape[1]) if hasattr(img, 'shape') else (0, 0)
+        except Exception:
+            img_h, img_w = (0, 0)
+
+        min_abs_area = 9000  # seuil absolu raisonnable
+        min_rel_ratio = 0.015  # 1.5% de la surface de l'image
+        min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio) if img_h and img_w else min_abs_area)
+        min_side = 60  # largeur/hauteur minimale
+
+        if face_area < min_face_area or face_width < min_side or face_height < min_side:
             raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
     except HTTPException:
         raise
