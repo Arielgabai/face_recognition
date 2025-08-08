@@ -37,12 +37,26 @@ class FaceRecognizer:
     def detect_faces(self, image_data: bytes) -> List[Tuple[int, int, int, int]]:
         """Détecte les visages dans une image et retourne leurs positions"""
         try:
-            # Convertir les données binaires en image
+            # Convertir les données binaires en image (PIL) et réduire pour limiter la RAM
             image_bytes = io.BytesIO(image_data)
-            image = face_recognition.load_image_file(image_bytes)
-            
-            # Détecter les visages
-            face_locations = face_recognition.face_locations(image)
+            pil_img = Image.open(image_bytes)
+            from PIL import ImageOps as _ImageOps
+            pil_img = _ImageOps.exif_transpose(pil_img)
+            if pil_img.mode not in ("RGB", "L"):
+                pil_img = pil_img.convert("RGB")
+
+            # Downscale agressif pour éviter l'OOM sur Render free (max 1280px)
+            max_dim = 1280
+            w, h = pil_img.size
+            scale = min(1.0, max_dim / float(max(w, h)))
+            if scale < 1.0:
+                pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+
+            # Convertir en numpy array pour face_recognition
+            np_img = np.array(pil_img)
+
+            # Détecter les visages (modèle HOG, plus léger que CNN)
+            face_locations = face_recognition.face_locations(np_img, model="hog", number_of_times_to_upsample=0)
             
             return face_locations
             
