@@ -54,6 +54,36 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Initialiser le recognizer
 face_recognizer = FaceRecognizer()
 
+def validate_selfie_image(image_bytes: bytes) -> None:
+    """Valide qu'une selfie contient exactement un visage exploitable.
+
+    - Rejette si aucun visage n'est détecté
+    - Rejette si plusieurs visages sont détectés
+    - Rejette si le visage détecté est trop petit (qualité insuffisante)
+    """
+    try:
+        face_locations = face_recognizer.detect_faces(image_bytes)
+        if not face_locations or len(face_locations) == 0:
+            raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer une selfie claire de votre visage.")
+        if len(face_locations) > 1:
+            raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Veuillez envoyer une selfie avec un seul visage.")
+
+        # Vérifier la taille minimale du visage (évite les selfies trop lointaines)
+        # face_recognition retourne (top, right, bottom, left)
+        top, right, bottom, left = face_locations[0]
+        face_width = max(0, right - left)
+        face_height = max(0, bottom - top)
+        face_area = face_width * face_height
+        # Seuil empirique suffisamment élevé pour filtrer les mini-visages
+        # (1000 était trop faible; on utilise 20k comme base)
+        if face_area < 20000:
+            raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
+    except HTTPException:
+        raise
+    except Exception:
+        # Erreur générique de traitement
+        raise HTTPException(status_code=400, detail="Erreur lors de la vérification de la selfie. Veuillez réessayer avec une photo plus claire.")
+
 def photo_to_dict(photo: Photo) -> dict:
     """Convertit un objet Photo en dictionnaire sans les donn+�es binaires"""
     return {
@@ -183,42 +213,8 @@ async def register(
                 detail="Le fichier est trop volumineux (maximum 5MB)"
             )
     
-    # V+�rifier la selfie avec la reconnaissance faciale
-    try:
-        # V+�rifier qu'il y a un visage dans l'image
-        face_locations = face_recognizer.detect_faces(file_data)
-        
-        if len(face_locations) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Aucun visage d+�tect+� dans l'image. Veuillez prendre une photo claire de votre visage."
-            )
-        
-        if len(face_locations) > 1:
-            raise HTTPException(
-                status_code=400,
-                detail="Plusieurs visages d+�tect+�s dans l'image. Veuillez prendre une photo avec un seul visage."
-            )
-        
-        # V+�rifier la qualit+� du visage (taille minimale)
-        face_location = face_locations[0]
-        face_size = (face_location[2] - face_location[0]) * (face_location[3] - face_location[1])
-        
-        # Si le visage est trop petit, c'est probablement de mauvaise qualit+�
-        if face_size < 1000:  # Seuil arbitraire, +� ajuster selon vos besoins
-            raise HTTPException(
-                status_code=400,
-                detail="Le visage est trop petit ou flou. Veuillez prendre une photo plus claire et plus proche."
-            )
-            
-    except Exception as e:
-        if "visage" in str(e).lower():
-            raise e
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Erreur lors de la v+�rification de la selfie. Veuillez r+�essayer."
-            )
+    # Vérifier la selfie avec la reconnaissance faciale (qualité stricte)
+    validate_selfie_image(file_data)
     
     # Cr+�er le nouvel utilisateur
     hashed_password = get_password_hash(password)
@@ -316,16 +312,19 @@ async def register_invite_with_selfie(
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
-    # G+�rer la selfie
+    # Gérer la selfie (validation stricte + persistance)
     if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Le fichier doit +�tre une image")
-    import uuid, os, shutil
-    file_extension = os.path.splitext(file.filename)[1]
+        raise HTTPException(status_code=400, detail="Le fichier doit être une image")
+    selfie_bytes = await file.read()
+    validate_selfie_image(selfie_bytes)
+    import uuid, os
+    file_extension = os.path.splitext(file.filename)[1] or ".jpg"
     unique_filename = f"{db_user.id}_{uuid.uuid4()}{file_extension}"
     file_path = os.path.join("static/uploads/selfies", unique_filename)
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(selfie_bytes)
     db_user.selfie_path = file_path
+    db_user.selfie_data = selfie_bytes
     db.commit()
     # Relancer le matching de la selfie avec toutes les photos de l'+�v+�nement
     face_recognizer.match_user_selfie_with_photos_event(db_user, event.id, db)
@@ -424,10 +423,12 @@ async def upload_selfie(
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Le fichier doit +�tre une image")
     
-    # Lire les donn+�es binaires du fichier
+    # Lire les données binaires du fichier
     file_data = await file.read()
-    
-    # Mettre +� jour l'utilisateur avec les donn+�es binaires
+    # Valider la selfie (1 visage, taille minimale)
+    validate_selfie_image(file_data)
+
+    # Mettre à jour l'utilisateur avec les données binaires
     current_user.selfie_data = file_data
     current_user.selfie_path = None  # Plus besoin du chemin de fichier
     db.commit()
