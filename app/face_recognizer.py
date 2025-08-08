@@ -55,8 +55,11 @@ class FaceRecognizer:
             # Convertir en numpy array pour face_recognition
             np_img = np.array(pil_img)
 
-            # Détecter les visages (modèle HOG, plus léger que CNN)
+            # Détecter les visages (modèle HOG, plus léger que CNN). Si aucun visage,
+            # tenter un second passage avec upsample=1 (plus sensible) mais encore léger.
             face_locations = face_recognition.face_locations(np_img, model="hog", number_of_times_to_upsample=0)
+            if not face_locations:
+                face_locations = face_recognition.face_locations(np_img, model="hog", number_of_times_to_upsample=1)
             
             return face_locations
             

@@ -568,37 +568,40 @@
                 loading.style.display = 'none';
                 validation.style.display = 'block';
 
-                // Validation stricte côté serveur via endpoint temporaire (simulateur)
-                const formData = new FormData();
-                formData.append('username', 'probe');
-                formData.append('email', `probe_${Date.now()}@example.com`);
-                formData.append('password', 'Probing1!');
-                formData.append('user_type', 'USER');
-                formData.append('selfie', file);
+                // Validation locale légère (taille fichier + dimensions minimales)
+                const fileSizeMB = file.size / (1024 * 1024);
+                if (fileSizeMB > 5) {
+                    validation.className = 'selfie-validation error';
+                    validationIcon.textContent = '❌';
+                    validationMessage.textContent = 'Le fichier est trop volumineux (max 5MB)';
+                    selfieValidated = false;
+                    return;
+                }
 
-                fetch('/api/register', { method: 'POST', body: formData })
-                  .then(async (resp) => {
-                      const data = await resp.json().catch(() => ({}));
-                      if (!resp.ok) {
-                          validation.className = 'selfie-validation error';
-                          validationIcon.textContent = '❌';
-                          validationMessage.textContent = data.detail || 'Selfie invalide (aucun visage, plusieurs visages ou qualité insuffisante).';
-                          selfieValidated = false;
-                          return;
-                      }
-                      // On ne veut pas créer un compte de test: invalider volontairement
-                      validation.className = 'selfie-validation success';
-                      validationIcon.textContent = '✅';
-                      validationMessage.textContent = 'Selfie validée.';
-                      selfieValidated = true;
-                      registerBtn.disabled = false;
-                  })
-                  .catch(() => {
-                      validation.className = 'selfie-validation error';
-                      validationIcon.textContent = '❌';
-                      validationMessage.textContent = 'Erreur de validation de la selfie';
-                      selfieValidated = false;
-                  });
+                const img = new Image();
+                img.onload = function() {
+                    const minSide = 200; // dimensions minimales raisonnables côté client
+                    if (img.width < minSide || img.height < minSide) {
+                        validation.className = 'selfie-validation warning';
+                        validationIcon.textContent = '⚠️';
+                        validationMessage.textContent = 'Image de faible résolution. Elle pourrait être refusée.';
+                        selfieValidated = true; // on laisse tenter, le serveur tranchera
+                        registerBtn.disabled = false;
+                    } else {
+                        validation.className = 'selfie-validation success';
+                        validationIcon.textContent = '✅';
+                        validationMessage.textContent = 'Selfie prête. Le serveur vérifiera la qualité et la présence du visage.';
+                        selfieValidated = true;
+                        registerBtn.disabled = false;
+                    }
+                };
+                img.onerror = function() {
+                    validation.className = 'selfie-validation error';
+                    validationIcon.textContent = '❌';
+                    validationMessage.textContent = "Impossible de lire l'image";
+                    selfieValidated = false;
+                };
+                img.src = URL.createObjectURL(file);
             }, 2000);
         }
 

@@ -89,10 +89,10 @@ def validate_selfie_image(image_bytes: bytes) -> None:
         except Exception:
             img_h, img_w = (0, 0)
 
-        min_abs_area = 6000  # seuil absolu plus permissif
-        min_rel_ratio = 0.01  # 1% de la surface de l'image
+        min_abs_area = 5000  # seuil absolu encore plus permissif
+        min_rel_ratio = 0.008  # 0.8% de la surface de l'image
         min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio) if img_h and img_w else min_abs_area)
-        min_side = 48  # largeur/hauteur minimale
+        min_side = 44  # largeur/hauteur minimale
 
         if face_area < min_face_area or face_width < min_side or face_height < min_side:
             raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
