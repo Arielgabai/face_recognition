@@ -415,6 +415,21 @@ async def get_my_selfie(current_user: User = Depends(get_current_user)):
         "created_at": current_user.created_at
     }
 
+# === VALIDATION SELFIE (pré-validation côté client) ===
+
+@app.post("/api/validate-selfie")
+async def validate_selfie_endpoint(file: UploadFile = File(...)):
+    """Valide uniquement la selfie (sans créer de compte). Retourne 200 si valide, 400 sinon."""
+    if not file or not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Le fichier doit être une image")
+    # Limite 5MB
+    file_bytes = await file.read()
+    if len(file_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Le fichier est trop volumineux (maximum 5MB)")
+    # Validation stricte
+    validate_selfie_image(file_bytes)
+    return {"valid": True}
+
 @app.delete("/api/my-selfie")
 async def delete_my_selfie(
     current_user: User = Depends(get_current_user),
