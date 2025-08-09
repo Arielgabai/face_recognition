@@ -173,9 +173,11 @@ class AzureFaceRecognizer:
 
         user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
         user_ids = [ue.user_id for ue in user_events]
+        # Inclure utilisateurs avec selfie_path OU selfie_data
+        from sqlalchemy import or_  # import local pour éviter les cycles
         users_with_selfies = db.query(User).filter(
             User.id.in_(user_ids),
-            User.selfie_path.isnot(None)
+            or_(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
         ).all()
 
         person_map: Dict[str, int] = {}
@@ -228,6 +230,7 @@ class AzureFaceRecognizer:
         self.ensure_person_group(event_id, event.name if event else f"event_{event_id}")
 
         person_id = self.get_or_create_person(event_id, user)
+        # Nettoyage basique: Azure ne permet pas de supprimer toutes les faces facilement sans lister, on ajoute simplement la nouvelle
         try:
             if user.selfie_path and os.path.exists(user.selfie_path):
                 self.add_face_to_person_from_path(event_id, person_id, user.selfie_path)

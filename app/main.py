@@ -559,7 +559,13 @@ async def upload_selfie(
     db.commit()
 
     # Relancer le matching de la selfie avec toutes les photos existantes
-    match_count = face_recognizer.match_user_selfie_with_photos(current_user, db)
+    # Si provider Azure, on va matcher au niveau de l'événement de l'utilisateur
+    try:
+        match_count = face_recognizer.match_user_selfie_with_photos(current_user, db)
+    except TypeError:
+        # Fallback si l'implémentation exige un event_id
+        user_event = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).first()
+        match_count = face_recognizer.match_user_selfie_with_photos_event(current_user, user_event.event_id, db) if user_event else 0
 
     return {"message": "Selfie upload+�e avec succ+�s", "matches": match_count}
 
