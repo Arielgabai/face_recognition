@@ -18,6 +18,7 @@ def update_face_recognition_for_event(event_id: int):
     """Met à jour la reconnaissance faciale pour un événement spécifique"""
     db = next(get_db())
     face_recognizer = get_face_recognizer()
+    print(f"[FaceRecognition CLI] Provider actif: {type(face_recognizer).__name__}")
     
     try:
         # Récupérer l'événement
@@ -53,13 +54,19 @@ def update_face_recognition_for_event(event_id: int):
         # Traiter chaque photo
         total_matches = 0
         for photo in photos:
-            if not photo.file_path or not os.path.exists(photo.file_path):
-                print(f"⚠️  Photo {photo.filename} sans fichier physique, ignorée")
+            # Choisir la source: chemin ou données binaires
+            photo_input = None
+            if photo.file_path and os.path.exists(photo.file_path):
+                photo_input = photo.file_path
+            elif getattr(photo, 'photo_data', None):
+                photo_input = photo.photo_data
+            else:
+                print(f"⚠️  Photo {photo.filename} sans fichier ni données, ignorée")
                 continue
             
             try:
                 # Traiter la photo avec reconnaissance faciale pour cet événement
-                matches = face_recognizer.process_photo_for_event(photo.file_path, event_id, db)
+                matches = face_recognizer.process_photo_for_event(photo_input, event_id, db)
                 
                 # Sauvegarder les correspondances
                 for match in matches:
@@ -151,8 +158,17 @@ def optimize_face_recognition():
         # Traiter les photos sans correspondances
         for photo in photos_without_matches:
             if photo.event_id:
+                # Choisir la source: chemin ou données binaires
+                photo_input = None
+                if photo.file_path and os.path.exists(photo.file_path):
+                    photo_input = photo.file_path
+                elif getattr(photo, 'photo_data', None):
+                    photo_input = photo.photo_data
+                else:
+                    print(f"⚠️  Photo {photo.filename} sans fichier ni données, ignorée")
+                    continue
                 try:
-                    matches = face_recognizer.process_photo_for_event(photo.file_path, photo.event_id, db)
+                    matches = face_recognizer.process_photo_for_event(photo_input, photo.event_id, db)
                     for match in matches:
                         face_match = FaceMatch(
                             photo_id=photo.id,

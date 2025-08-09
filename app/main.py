@@ -53,6 +53,17 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialiser le recognizer (local ou Azure selon FACE_RECOGNIZER_PROVIDER)
 face_recognizer = get_face_recognizer()
+print(f"[FaceRecognition] Provider actif: {type(face_recognizer).__name__}")
+
+@app.get("/api/admin/provider")
+async def get_active_provider(current_user: User = Depends(get_current_user)):
+    """Retourne le provider de reconnaissance actif (admin uniquement)."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    return {
+        "provider_class": type(face_recognizer).__name__,
+        "FACE_RECOGNIZER_PROVIDER": os.environ.get("FACE_RECOGNIZER_PROVIDER", "(unset)")
+    }
 
 def validate_selfie_image(image_bytes: bytes) -> None:
     """Valide qu'une selfie contient exactement un visage exploitable.
