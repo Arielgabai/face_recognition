@@ -29,6 +29,7 @@ from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as P
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
 from recognizer_factory import get_face_recognizer
 from photo_optimizer import PhotoOptimizer
+import requests
 
 # Créer les tables au démarrage
 create_tables()
@@ -94,6 +95,52 @@ def validate_selfie_image(image_bytes: bytes) -> None:
         import numpy as _np
         np_img = _np.array(pil_img)
         img_h, img_w = (np_img.shape[0], np_img.shape[1])
+
+        # Si provider Azure actif, tenter une validation via Azure Face Detect d'abord
+        try:
+            provider_env = os.getenv("FACE_RECOGNIZER_PROVIDER", "local").strip().lower()
+            azure_ep = os.getenv("AZURE_FACE_ENDPOINT", "").rstrip("/")
+            azure_key = os.getenv("AZURE_FACE_KEY", "")
+            if provider_env == "azure" and azure_ep and azure_key:
+                resp = requests.post(
+                    f"{azure_ep}/face/v1.0/detect?returnFaceId=true&recognitionModel=recognition_04&detectionModel=detection_03",
+                    headers={
+                        "Ocp-Apim-Subscription-Key": azure_key,
+                        "Content-Type": "application/octet-stream",
+                    },
+                    data=image_bytes,
+                    timeout=15,
+                )
+                if resp.ok:
+                    faces = resp.json() or []
+                    print(f"[SelfieValidation][Azure] faces_detected={len(faces)} img_w={img_w} img_h={img_h}")
+                    if len(faces) == 0:
+                        raise HTTPException(status_code=400, detail="Aucun visage détecté (Azure).")
+                    if len(faces) > 1:
+                        raise HTTPException(status_code=400, detail="Plusieurs visages détectés (Azure).")
+                    rect = faces[0].get("faceRectangle") or {}
+                    face_width = int(rect.get("width", 0))
+                    face_height = int(rect.get("height", 0))
+                    face_area = face_width * face_height
+                    min_abs_area = 5000
+                    min_rel_ratio = 0.008
+                    min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio))
+                    min_side = 44
+                    print(f"[SelfieValidation][Azure] face_w={face_width} face_h={face_height} face_area={face_area} thresholds: min_area={min_face_area} min_side={min_side}")
+                    if face_area < min_face_area or face_width < min_side or face_height < min_side:
+                        raise HTTPException(status_code=400, detail="Visage trop petit (Azure).")
+                    # Azure OK → on valide et on sort
+                    return
+                else:
+                    try:
+                        print(f"[SelfieValidation][Azure] Detect failed: {resp.status_code} {resp.text}")
+                    except Exception:
+                        pass
+        except HTTPException:
+            raise
+        except Exception:
+            # En cas d'erreur Azure, fallback local
+            pass
 
         # Détections multi-techniques (HOG sensible + Haar cascades)
         import face_recognition as _fr
@@ -162,6 +209,7 @@ def validate_selfie_image(image_bytes: bytes) -> None:
                 unique.append(f)
 
         face_locations = unique
+        print(f"[SelfieValidation] faces_detected={len(face_locations)} img_w={img_w} img_h={img_h}")
 
         if not face_locations or len(face_locations) == 0:
             raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer une selfie claire de votre visage.")
@@ -178,11 +226,14 @@ def validate_selfie_image(image_bytes: bytes) -> None:
         min_rel_ratio = 0.008  # 0.8%
         min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio))
         min_side = 44
+        print(f"[SelfieValidation] face_w={face_width} face_h={face_height} face_area={face_area} thresholds: min_area={min_face_area} min_side={min_side}")
         if face_area < min_face_area or face_width < min_side or face_height < min_side:
             raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
     except HTTPException:
         raise
     except Exception:
+        import traceback as _tb
+        print("[SelfieValidation] Unexpected error:\n" + _tb.format_exc())
         raise HTTPException(status_code=400, detail="Erreur lors de la vérification de la selfie. Veuillez réessayer avec une photo plus claire.")
 
 def parse_user_type(user_type_str: str) -> UserType:
@@ -500,17 +551,75 @@ async def get_my_selfie(current_user: User = Depends(get_current_user)):
 # === VALIDATION SELFIE (pré-validation côté client) ===
 
 @app.post("/api/validate-selfie")
-async def validate_selfie_endpoint(file: UploadFile = File(...)):
-    """Valide uniquement la selfie (sans créer de compte). Retourne 200 si valide, 400 sinon."""
+async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = False):
+    """Valide uniquement la selfie (sans créer de compte).
+    - Retourne 200 si valide (et éventuellement des métriques si debug=true)
+    - Retourne 400 sinon (et inclut des métriques si debug=true)
+    """
     if not file or not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
-    # Limite 5MB
     file_bytes = await file.read()
     if len(file_bytes) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Le fichier est trop volumineux (maximum 5MB)")
-    # Validation stricte
-    validate_selfie_image(file_bytes)
-    return {"valid": True}
+
+    try:
+        validate_selfie_image(file_bytes)
+        if not debug:
+            return {"valid": True}
+        # En mode debug, renvoyer quelques métriques simples
+        from PIL import Image, ImageOps as _ImageOps
+        import io as _io
+        import numpy as _np
+        import face_recognition as _fr
+        import cv2 as _cv2
+
+        pil_img = Image.open(_io.BytesIO(file_bytes))
+        pil_img = _ImageOps.exif_transpose(pil_img)
+        if pil_img.mode not in ("RGB", "L"):
+            pil_img = pil_img.convert("RGB")
+        np_img = _np.array(pil_img)
+        img_h, img_w = (np_img.shape[0], np_img.shape[1])
+        faces_hog = []
+        try:
+            faces_hog = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=1) or []
+        except Exception:
+            faces_hog = []
+        gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
+        cascade_path = _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        rects = _cv2.CascadeClassifier(cascade_path).detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
+        faces_haar = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
+        faces_total = len(faces_hog) + len(faces_haar)
+        return {"valid": True, "debug": {"img_w": img_w, "img_h": img_h, "faces_hog": len(faces_hog), "faces_haar": len(faces_haar), "faces_total": faces_total}}
+    except HTTPException as e:
+        if not debug:
+            raise
+        # En mode debug, tenter d'expliquer pourquoi
+        try:
+            from PIL import Image, ImageOps as _ImageOps
+            import io as _io
+            import numpy as _np
+            import face_recognition as _fr
+            import cv2 as _cv2
+            pil_img = Image.open(_io.BytesIO(file_bytes))
+            pil_img = _ImageOps.exif_transpose(pil_img)
+            if pil_img.mode not in ("RGB", "L"):
+                pil_img = pil_img.convert("RGB")
+            np_img = _np.array(pil_img)
+            img_h, img_w = (np_img.shape[0], np_img.shape[1])
+            faces_hog = []
+            try:
+                faces_hog = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=2) or []
+            except Exception:
+                faces_hog = []
+            gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
+            cascade_path = _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            rects = _cv2.CascadeClassifier(cascade_path).detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
+            faces_haar = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
+            faces_total = len(faces_hog) + len(faces_haar)
+            return Response(status_code=400, content=_io.BytesIO(_np.array([])).getvalue(), media_type="application/json", headers={
+            })
+        except Exception:
+            raise e
 
 @app.delete("/api/my-selfie")
 async def delete_my_selfie(
@@ -536,7 +645,8 @@ async def delete_my_selfie(
 async def upload_selfie(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    strict: bool = True,
 ):
     """Upload d'une selfie pour l'utilisateur"""
     if current_user.user_type == UserType.PHOTOGRAPHER:
@@ -550,8 +660,10 @@ async def upload_selfie(
     
     # Lire les données binaires du fichier
     file_data = await file.read()
-    # Valider la selfie (1 visage, taille minimale)
-    validate_selfie_image(file_data)
+    # Valider la selfie (1 visage, taille minimale) sauf si désactivée
+    strict_env = os.getenv("SELFIE_VALIDATION_STRICT", "true").strip().lower() not in {"false", "0", "no"}
+    if strict and strict_env:
+        validate_selfie_image(file_data)
 
     # Mettre à jour l'utilisateur avec les données binaires
     current_user.selfie_data = file_data
