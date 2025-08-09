@@ -12,12 +12,12 @@ import sys
 from sqlalchemy.orm import Session
 from database import get_db, create_tables
 from models import User, Photo, FaceMatch, Event, UserEvent, UserType
-from face_recognizer import FaceRecognizer
+from recognizer_factory import get_face_recognizer
 
 def update_face_recognition_for_event(event_id: int):
     """Met à jour la reconnaissance faciale pour un événement spécifique"""
     db = next(get_db())
-    face_recognizer = FaceRecognizer()
+    face_recognizer = get_face_recognizer()
     
     try:
         # Récupérer l'événement
@@ -86,7 +86,7 @@ def update_face_recognition_for_event(event_id: int):
 def update_face_recognition_for_user(user_id: int):
     """Met à jour la reconnaissance faciale pour un utilisateur spécifique"""
     db = next(get_db())
-    face_recognizer = FaceRecognizer()
+    face_recognizer = get_face_recognizer()
     
     try:
         # Récupérer l'utilisateur
@@ -132,7 +132,7 @@ def update_face_recognition_for_user(user_id: int):
 def optimize_face_recognition():
     """Optimise les performances de reconnaissance faciale"""
     db = next(get_db())
-    face_recognizer = FaceRecognizer()
+    face_recognizer = get_face_recognizer()
     
     try:
         print("🚀 Optimisation de la reconnaissance faciale...")

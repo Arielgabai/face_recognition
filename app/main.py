@@ -27,7 +27,7 @@ from database import get_db, create_tables
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
-from face_recognizer import FaceRecognizer
+from recognizer_factory import get_face_recognizer
 from photo_optimizer import PhotoOptimizer
 
 # Créer les tables au démarrage
@@ -51,8 +51,8 @@ app.add_middleware(
 # Servir les fichiers statiques
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Initialiser le recognizer
-face_recognizer = FaceRecognizer()
+# Initialiser le recognizer (local ou Azure selon FACE_RECOGNIZER_PROVIDER)
+face_recognizer = get_face_recognizer()
 
 def validate_selfie_image(image_bytes: bytes) -> None:
     """Valide qu'une selfie contient exactement un visage exploitable.

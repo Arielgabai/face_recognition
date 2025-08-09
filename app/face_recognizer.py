@@ -92,14 +92,24 @@ class FaceRecognizer:
         return encodings
 
     def process_photo(self, photo_data: bytes, db: Session) -> List[Dict]:
-        """Traite une photo et retourne les correspondances trouvées"""
+        """Traite une photo et retourne les correspondances trouvées.
+
+        Accepte soit des données binaires d'image, soit un chemin de fichier (str).
+        """
         if not photo_data:
             return []
 
         try:
-            # Charger l'image depuis les données binaires
-            image_data = io.BytesIO(photo_data)
-            image = face_recognition.load_image_file(image_data)
+            # Supporter le passage d'un chemin de fichier
+            if isinstance(photo_data, (str, bytes)) and not isinstance(photo_data, (bytearray,)):
+                if isinstance(photo_data, str) and os.path.exists(photo_data):
+                    image = face_recognition.load_image_file(photo_data)
+                else:
+                    image_data = io.BytesIO(photo_data if isinstance(photo_data, (bytes, bytearray)) else bytes(photo_data))
+                    image = face_recognition.load_image_file(image_data)
+            else:
+                image_data = io.BytesIO(photo_data)
+                image = face_recognition.load_image_file(image_data)
             face_locations = face_recognition.face_locations(image)
             face_encodings = face_recognition.face_encodings(image, face_locations)
             
@@ -254,14 +264,20 @@ class FaceRecognizer:
         return photo
 
     def process_photo_for_event(self, photo_data: bytes, event_id: int, db: Session) -> List[Dict]:
-        """Traite une photo et retourne les correspondances trouvées pour un événement spécifique"""
+        """Traite une photo et retourne les correspondances trouvées pour un événement spécifique.
+
+        Accepte soit des données binaires d'image, soit un chemin de fichier (str).
+        """
         if not photo_data:
             return []
 
         try:
-            # Charger l'image depuis les données binaires
-            image_data = io.BytesIO(photo_data)
-            image = face_recognition.load_image_file(image_data)
+            # Supporter le passage d'un chemin de fichier
+            if isinstance(photo_data, str) and os.path.exists(photo_data):
+                image = face_recognition.load_image_file(photo_data)
+            else:
+                image_data = io.BytesIO(photo_data if isinstance(photo_data, (bytes, bytearray)) else bytes(photo_data))
+                image = face_recognition.load_image_file(image_data)
             face_locations = face_recognition.face_locations(image)
             face_encodings = face_recognition.face_encodings(image, face_locations)
             
