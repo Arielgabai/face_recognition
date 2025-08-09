@@ -62,44 +62,116 @@ def validate_selfie_image(image_bytes: bytes) -> None:
     - Rejette si le visage détecté est trop petit (qualité insuffisante)
     """
     try:
-        # Forcer conversion en bytes si besoin (UploadFile peut fournir un buffer itérable)
+        # Forcer conversion bytes
         if not isinstance(image_bytes, (bytes, bytearray)):
             image_bytes = bytes(image_bytes)
 
-        # Détection de visage(s)
-        face_locations = face_recognizer.detect_faces(image_bytes)
+        # Charger via PIL et réduire pour limiter la RAM
+        from PIL import Image, ImageOps
+        import io as _io
+        pil_img = Image.open(_io.BytesIO(image_bytes))
+        pil_img = ImageOps.exif_transpose(pil_img)
+        if pil_img.mode not in ("RGB", "L"):
+            pil_img = pil_img.convert("RGB")
+        max_dim = 1024
+        w, h = pil_img.size
+        scale = min(1.0, max_dim / float(max(w, h)))
+        if scale < 1.0:
+            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+
+        # Vers numpy
+        import numpy as _np
+        np_img = _np.array(pil_img)
+        img_h, img_w = (np_img.shape[0], np_img.shape[1])
+
+        # Détections multi-techniques (HOG sensible + Haar cascades)
+        import face_recognition as _fr
+        faces = []  # (top, right, bottom, left)
+
+        try:
+            faces_hog = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=1)
+        except Exception:
+            faces_hog = []
+        faces.extend(faces_hog or [])
+
+        # Si peu de visages, tenter un upsample supplémentaire
+        if len(faces) <= 1:
+            try:
+                faces_hog2 = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=2)
+            except Exception:
+                faces_hog2 = []
+            faces.extend(faces_hog2 or [])
+
+        # Fallback Haar (frontal + alt2 + profil)
+        try:
+            import cv2 as _cv2
+            gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
+            cascades = [
+                _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml',
+                _cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml',
+                _cv2.data.haarcascades + 'haarcascade_profileface.xml',
+            ]
+            rects_all = []
+            for cpath in cascades:
+                fc = _cv2.CascadeClassifier(cpath)
+                if fc.empty():
+                    continue
+                rects = fc.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
+                rects_all.extend(rects)
+            # Convert to (t, r, b, l)
+            haar_faces = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects_all]
+            faces.extend(haar_faces)
+        except Exception:
+            pass
+
+        # Déduplication par IoU
+        def _iou(a, b):
+            (t1, r1, b1, l1) = a
+            (t2, r2, b2, l2) = b
+            xA = max(l1, l2)
+            yA = max(t1, t2)
+            xB = min(r1, r2)
+            yB = min(b1, b2)
+            interW = max(0, xB - xA)
+            interH = max(0, yB - yA)
+            inter = interW * interH
+            area1 = max(0, (r1 - l1)) * max(0, (b1 - t1))
+            area2 = max(0, (r2 - l2)) * max(0, (b2 - t2))
+            union = area1 + area2 - inter if (area1 + area2 - inter) > 0 else 1
+            return inter / union
+
+        unique = []
+        for f in faces:
+            if (f[1] - f[3]) <= 0 or (f[2] - f[0]) <= 0:
+                continue
+            if not unique:
+                unique.append(f)
+                continue
+            if all(_iou(f, u) < 0.4 for u in unique):
+                unique.append(f)
+
+        face_locations = unique
+
         if not face_locations or len(face_locations) == 0:
             raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer une selfie claire de votre visage.")
         if len(face_locations) > 1:
             raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Veuillez envoyer une selfie avec un seul visage.")
 
-        # Taille visuelle minimale du visage (dépendante de la taille de l'image)
-        # face_recognition retourne (top, right, bottom, left)
+        # Taille minimale
         top, right, bottom, left = face_locations[0]
         face_width = max(0, right - left)
         face_height = max(0, bottom - top)
         face_area = face_width * face_height
 
-        # Obtenir la taille de l'image pour un seuil relatif
-        import io as _io
-        import face_recognition as _fr
-        try:
-            img = _fr.load_image_file(_io.BytesIO(image_bytes))
-            img_h, img_w = (img.shape[0], img.shape[1]) if hasattr(img, 'shape') else (0, 0)
-        except Exception:
-            img_h, img_w = (0, 0)
-
-        min_abs_area = 5000  # seuil absolu encore plus permissif
-        min_rel_ratio = 0.008  # 0.8% de la surface de l'image
-        min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio) if img_h and img_w else min_abs_area)
-        min_side = 44  # largeur/hauteur minimale
-
+        min_abs_area = 5000
+        min_rel_ratio = 0.008  # 0.8%
+        min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio))
+        min_side = 44
         if face_area < min_face_area or face_width < min_side or face_height < min_side:
             raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
     except HTTPException:
         raise
     except Exception:
-        # Erreur générique de traitement
         raise HTTPException(status_code=400, detail="Erreur lors de la vérification de la selfie. Veuillez réessayer avec une photo plus claire.")
 
 def parse_user_type(user_type_str: str) -> UserType:
