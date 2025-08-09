@@ -60,6 +60,18 @@ class FaceRecognizer:
             face_locations = face_recognition.face_locations(np_img, model="hog", number_of_times_to_upsample=0)
             if not face_locations:
                 face_locations = face_recognition.face_locations(np_img, model="hog", number_of_times_to_upsample=1)
+
+            # Fallback OpenCV Haar cascade si rien détecté (environnement contraint)
+            if not face_locations:
+                try:
+                    gray = cv2.cvtColor(np_img, cv2.COLOR_RGB2GRAY)
+                    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                    face_cascade = cv2.CascadeClassifier(cascade_path)
+                    rects = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+                    # Convertir (x, y, w, h) -> (top, right, bottom, left)
+                    face_locations = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
+                except Exception as _e:
+                    pass
             
             return face_locations
             

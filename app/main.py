@@ -205,7 +205,6 @@ async def register(
     username: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
-    user_type: str = Form(...),
     selfie: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
@@ -250,7 +249,7 @@ async def register(
         username=username,
         email=email,
         hashed_password=hashed_password,
-        user_type=parse_user_type(user_type)
+        user_type=UserType.USER
     )
     
     # Sauvegarder la selfie

@@ -420,13 +420,7 @@
                     <input type="password" id="password" class="form-input" required placeholder="Choisissez un mot de passe">
                 </div>
                 
-                <div class="form-group">
-                    <label for="userType">Type d'utilisateur</label>
-                    <select id="userType" class="form-input">
-                        <option value="USER">Utilisateur</option>
-                        <option value="PHOTOGRAPHER">Photographe</option>
-                    </select>
-                </div>
+                <!-- Type d'utilisateur supprimé: tous les comptes créés ici sont des utilisateurs -->
                 
                 <button onclick="nextStep()" class="btn btn-primary">Continuer</button>
             </div>
@@ -484,7 +478,7 @@
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            const userType = document.getElementById('userType').value;
+            const userType = 'USER';
 
             if (!username || !email || !password) {
                 showAlert('Veuillez remplir tous les champs', 'error');
@@ -624,7 +618,7 @@
             formData.append('username', username);
             formData.append('email', email);
             formData.append('password', password);
-                formData.append('user_type', userType.toLowerCase());
+            formData.append('user_type', 'user');
             formData.append('selfie', selfieFile);
 
             // Envoyer la requête d'inscription
