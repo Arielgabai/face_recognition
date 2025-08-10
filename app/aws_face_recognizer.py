@@ -100,8 +100,8 @@ class AwsFaceRecognizer:
             resp = self.client.search_faces_by_image(
                 CollectionId=self._collection_id(event_id),
                 Image={"Bytes": image_bytes},
-                MaxFaces=5,
-                FaceMatchThreshold=80.0,
+                MaxFaces=7,
+                FaceMatchThreshold=70.0,
             )
         except ClientError:
             return []
