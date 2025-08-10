@@ -1,3 +1,4 @@
+import face_recognition_patch
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -64,6 +65,80 @@ async def get_active_provider(current_user: User = Depends(get_current_user)):
     return {
         "provider_class": type(face_recognizer).__name__,
         "FACE_RECOGNIZER_PROVIDER": os.environ.get("FACE_RECOGNIZER_PROVIDER", "(unset)")
+    }
+
+@app.post("/api/admin/eval-recognition")
+async def admin_eval_recognition(
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Évalue la reconnaissance pour un utilisateur sur un événement.
+    Body JSON: {"event_id": int, "user_id": int, "provider": "local"|"azure" (optionnel)}
+    Retourne la liste des photos matchées/non matchées et les scores.
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+
+    event_id = payload.get("event_id")
+    user_id = payload.get("user_id")
+    provider = (payload.get("provider") or "").strip().lower()
+    if not event_id or not user_id:
+        raise HTTPException(status_code=400, detail="event_id et user_id sont requis")
+
+    # Sélection du provider (override optionnel)
+    recognizer = face_recognizer
+    if provider in {"local", "azure"}:
+        try:
+            if provider == "local":
+                from face_recognizer import FaceRecognizer as _LocalR
+                recognizer = _LocalR()
+            else:
+                from azure_face_recognizer import AzureFaceRecognizer as _AzureR
+                recognizer = _AzureR()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Impossible d'initialiser le provider '{provider}': {str(e)}")
+
+    # Charger l'utilisateur et les photos
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    if photos is None:
+        photos = []
+
+    matched = []
+    unmatched = []
+    errors = []
+    for p in photos:
+        photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
+        if not photo_input:
+            unmatched.append({"photo_id": p.id, "filename": p.filename, "reason": "no_file_or_data"})
+            continue
+        try:
+            matches = recognizer.process_photo_for_event(photo_input, event_id, db)
+            hit = next((m for m in matches if m.get("user_id") == user_id), None)
+            if hit:
+                matched.append({
+                    "photo_id": p.id,
+                    "filename": p.filename,
+                    "confidence": hit.get("confidence_score")
+                })
+            else:
+                unmatched.append({"photo_id": p.id, "filename": p.filename})
+        except Exception as e:
+            errors.append({"photo_id": p.id, "filename": p.filename, "error": str(e)})
+
+    return {
+        "provider": type(recognizer).__name__,
+        "event_id": event_id,
+        "user_id": user_id,
+        "total_photos": len(photos),
+        "matched_count": len(matched),
+        "unmatched_count": len(unmatched),
+        "matched": matched,
+        "unmatched": unmatched,
+        "errors": errors,
     }
 
 def validate_selfie_image(image_bytes: bytes) -> None:

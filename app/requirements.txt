@@ -13,6 +13,7 @@ qrcode
 PyJWT==2.8.0
 jinja2==3.1.2
 requests==2.31.0
+boto3==1.34.131
 # Versions spécifiques pour éviter les conflits
 numpy==1.24.3
 opencv-python-headless==4.8.1.78

@@ -7,6 +7,9 @@ def get_face_recognizer():
     if provider == "azure":
         from azure_face_recognizer import AzureFaceRecognizer
         return AzureFaceRecognizer()
+    if provider == "aws":
+        from aws_face_recognizer import AwsFaceRecognizer
+        return AwsFaceRecognizer()
     else:
         # Défaut: implémentation locale gratuite
         from face_recognizer import FaceRecognizer
