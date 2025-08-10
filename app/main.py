@@ -745,14 +745,27 @@ async def upload_selfie(
     current_user.selfie_path = None  # Plus besoin du chemin de fichier
     db.commit()
 
-    # Relancer le matching de la selfie avec toutes les photos existantes
-    # Si provider Azure, on va matcher au niveau de l'événement de l'utilisateur
-    try:
-        match_count = face_recognizer.match_user_selfie_with_photos(current_user, db)
-    except TypeError:
-        # Fallback si l'implémentation exige un event_id
-        user_event = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).first()
-        match_count = face_recognizer.match_user_selfie_with_photos_event(current_user, user_event.event_id, db) if user_event else 0
+    # Supprimer les anciennes correspondances pour cet utilisateur sur tous ses événements
+    user_events = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).all()
+    from sqlalchemy import and_
+    for ue in user_events:
+        photo_ids = [p.id for p in db.query(Photo).filter(Photo.event_id == ue.event_id).all()]
+        if photo_ids:
+            db.query(FaceMatch).filter(
+                and_(FaceMatch.user_id == current_user.id, FaceMatch.photo_id.in_(photo_ids))
+            ).delete(synchronize_session=False)
+    db.commit()
+
+    # Relancer le matching pour chaque événement de l'utilisateur
+    match_count = 0
+    for ue in user_events:
+        try:
+            if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                match_count += face_recognizer.match_user_selfie_with_photos_event(current_user, ue.event_id, db)
+            else:
+                match_count += face_recognizer.match_user_selfie_with_photos(current_user, db)
+        except Exception:
+            pass
 
     return {"message": "Selfie upload+�e avec succ+�s", "matches": match_count}
 
