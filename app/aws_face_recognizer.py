@@ -41,6 +41,17 @@ class AwsFaceRecognizer:
 
     def index_user_selfie(self, event_id: int, user: User):
         coll_id = self._collection_id(event_id)
+        # Supprimer d'abord d'anciennes faces de cet utilisateur pour éviter des résidus de visages obsolètes
+        try:
+            faces = self.client.list_faces(CollectionId=coll_id, MaxResults=1000)
+            for f in faces.get('Faces', []):
+                if f.get('ExternalImageId') == str(user.id):
+                    try:
+                        self.client.delete_faces(CollectionId=coll_id, FaceIds=[f.get('FaceId')])
+                    except ClientError:
+                        pass
+        except ClientError:
+            pass
         image_bytes = None
         if user.selfie_path and os.path.exists(user.selfie_path):
             with open(user.selfie_path, "rb") as f:

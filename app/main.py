@@ -748,12 +748,17 @@ async def upload_selfie(
     # Supprimer les anciennes correspondances pour cet utilisateur sur tous ses événements
     user_events = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).all()
     from sqlalchemy import and_
+    total_deleted = 0
     for ue in user_events:
         photo_ids = [p.id for p in db.query(Photo).filter(Photo.event_id == ue.event_id).all()]
         if photo_ids:
-            db.query(FaceMatch).filter(
+            deleted = db.query(FaceMatch).filter(
                 and_(FaceMatch.user_id == current_user.id, FaceMatch.photo_id.in_(photo_ids))
             ).delete(synchronize_session=False)
+            try:
+                total_deleted += int(deleted or 0)
+            except Exception:
+                pass
     db.commit()
 
     # Relancer le matching pour chaque événement de l'utilisateur
@@ -766,8 +771,8 @@ async def upload_selfie(
                 match_count += face_recognizer.match_user_selfie_with_photos(current_user, db)
         except Exception:
             pass
-
-    return {"message": "Selfie upload+�e avec succ+�s", "matches": match_count}
+    print(f"[SelfieUpdate] deleted_matches={total_deleted} new_matches={match_count} for user_id={current_user.id}")
+    return {"message": "Selfie upload+�e avec succ+�s", "deleted": total_deleted, "matches": match_count}
 
 # === GESTION DES PHOTOS (PHOTOGRAPHES) ===
 

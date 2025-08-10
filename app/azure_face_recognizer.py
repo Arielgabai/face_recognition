@@ -230,7 +230,16 @@ class AzureFaceRecognizer:
         self.ensure_person_group(event_id, event.name if event else f"event_{event_id}")
 
         person_id = self.get_or_create_person(event_id, user)
-        # Nettoyage basique: Azure ne permet pas de supprimer toutes les faces facilement sans lister, on ajoute simplement la nouvelle
+        # Supprimer les faces existantes de cette person pour éviter des résidus obsolètes
+        try:
+            faces_list = self._req("GET", f"/face/v1.0/persongroups/{self._group_id(event_id)}/persons/{person_id}", headers=self.headers_json).json()
+            for pf in faces_list.get("persistedFaceIds", []) or []:
+                try:
+                    self._req("DELETE", f"/face/v1.0/persongroups/{self._group_id(event_id)}/persons/{person_id}/persistedFaces/{pf}", headers=self.headers_json)
+                except AzureFaceError:
+                    pass
+        except AzureFaceError:
+            pass
         try:
             if user.selfie_path and os.path.exists(user.selfie_path):
                 self.add_face_to_person_from_path(event_id, person_id, user.selfie_path)
