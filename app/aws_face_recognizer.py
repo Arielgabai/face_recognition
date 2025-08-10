@@ -9,7 +9,7 @@ from models import User, Photo, FaceMatch, Event, UserEvent
 from photo_optimizer import PhotoOptimizer
 
 
-AWS_REGION = os.environ.get("AWS_REGION", "eu-west-3")  # Paris
+AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")  # Ireland (Rekognition supported, close to FR)
 COLL_PREFIX = os.environ.get("AWS_REKOGNITION_COLLECTION_PREFIX", "event_")
 
 
@@ -23,6 +23,7 @@ class AwsFaceRecognizer:
 
     def __init__(self):
         self.client = boto3.client("rekognition", region_name=AWS_REGION)
+        print(f"[FaceRecognition][AWS] Using region: {AWS_REGION}")
 
     def _collection_id(self, event_id: int) -> str:
         return f"{COLL_PREFIX}{event_id}"
