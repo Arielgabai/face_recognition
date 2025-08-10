@@ -1902,6 +1902,29 @@
     <script>
         let token = localStorage.getItem('token');
         let currentUser = null;
+        let userRole = localStorage.getItem('userRole');
+
+        async function apiFetch(input, init = {}) {
+            init.headers = init.headers || {};
+            if (token) {
+                init.headers['Authorization'] = `Bearer ${token}`;
+            }
+            const res = await fetch(input, init);
+            if (res.status === 401) {
+                try {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('currentUser');
+                    localStorage.removeItem('userRole');
+                } catch {}
+                try {
+                    document.getElementById('loginForm').style.display = 'block';
+                    const dashboard = document.getElementById('dashboard');
+                    if (dashboard) dashboard.classList.remove('show');
+                } catch {}
+                window.location.reload();
+            }
+            return res;
+        }
 
         if (token) {
             loadDashboard();
@@ -1968,6 +1991,7 @@
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             localStorage.removeItem('currentUser');
+            localStorage.removeItem('userRole');
             
             // Réinitialiser les variables
             token = null;
@@ -2014,9 +2038,7 @@
             emptyDiv.style.display = 'none';
             
             try {
-                const response = await fetch('/api/my-photos', {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
+                const response = await apiFetch('/api/my-photos');
                 
                 if (response.ok) {
                     const photos = await response.json();
@@ -2115,9 +2137,7 @@
             emptyDiv.style.display = 'none';
             
             try {
-                const response = await fetch('/api/all-photos', {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
+                const response = await apiFetch('/api/all-photos');
                 
                 if (response.ok) {
                     const photos = await response.json();
@@ -2547,9 +2567,9 @@
                 const formData = new FormData();
                 formData.append('file', selfieFile);
 
-                const response = await fetch('/api/upload-selfie', {
+                const response = await apiFetch('/api/upload-selfie', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
+                    headers: {},
                     body: formData
                 });
 
@@ -2585,9 +2605,9 @@
             }
 
             try {
-                const response = await fetch('/api/my-selfie', {
+                const response = await apiFetch('/api/my-selfie', {
                     method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` },
+                    headers: {},
                 });
 
                 if (response.ok) {
@@ -2654,9 +2674,7 @@
             showGlobalLoading('Chargement du tableau de bord...');
             
             try {
-                const response = await fetch('/api/me', {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
+                const response = await apiFetch('/api/me');
 
                 if (response.ok) {
                     currentUser = await response.json();
