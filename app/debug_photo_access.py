@@ -72,7 +72,7 @@ def debug_photo_access():
         
         users_without_selfie = db.query(User).filter(User.selfie_data.is_(None)).count()
         if users_without_selfie > 0:
-            print(f"   ⚠️  {users_without_selfie} utilisateur(s) sans selfie - ils doivent uploader une selfie")
+            print(f"   ⚠️  {users_without_selfie} utilisateur(s) sans selfie - ils doivent uploader un selfie")
         
         photos_without_data = db.query(Photo).filter(Photo.photo_data.is_(None)).count()
         if photos_without_data > 0:

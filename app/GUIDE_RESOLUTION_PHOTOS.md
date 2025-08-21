@@ -69,22 +69,22 @@ Après la migration, testez l'accès aux photos :
 
 1. **Connectez-vous en tant qu'utilisateur**
 2. **Vérifiez que vous pouvez voir vos photos**
-3. **Vérifiez que vous pouvez uploader une selfie si vous n'en avez pas**
+3. **Vérifiez que vous pouvez uploader un selfie si vous n'en avez pas**
 
-### Étape 4 : Uploader une selfie (si nécessaire)
+### Étape 4 : Uploader un selfie (si nécessaire)
 
 Si vous n'avez pas de selfie :
 
 1. Connectez-vous à l'interface utilisateur
-2. Allez dans la section "Ma Selfie"
+2. Allez dans la section "Mon selfie"
 3. Uploadez une photo de votre visage
-4. Vérifiez que la selfie s'affiche correctement
+4. Vérifiez que le selfie s'affiche correctement
 
 ## 🔧 Dépannage
 
 ### Si vous avez encore des erreurs 404
 
-1. **Vérifiez que l'utilisateur a une selfie** :
+1. **Vérifiez que l'utilisateur a un selfie** :
    ```bash
    python debug_photo_access.py
    ```
@@ -139,6 +139,6 @@ Si vous avez encore des problèmes :
 - [ ] L'application a été redémarrée sur Render
 - [ ] Le diagnostic a été exécuté
 - [ ] La migration a été effectuée (si nécessaire)
-- [ ] L'utilisateur a uploadé une selfie (si nécessaire)
+- [ ] L'utilisateur a uploadé un selfie (si nécessaire)
 - [ ] L'accès aux photos fonctionne
 - [ ] L'accès aux selfies fonctionne 

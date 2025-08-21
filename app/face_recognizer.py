@@ -19,7 +19,7 @@ class FaceRecognizer:
         self.user_encodings = {}  # Cache des encodages des utilisateurs
 
     def load_user_encoding(self, user: User) -> Optional[np.ndarray]:
-        """Charge l'encodage facial d'un utilisateur depuis sa selfie"""
+        """Charge l'encodage facial d'un utilisateur depuis son selfie"""
         if not user.selfie_data:
             return None
         
@@ -80,7 +80,7 @@ class FaceRecognizer:
             return []
 
     def get_all_user_encodings(self, db: Session) -> Dict[int, np.ndarray]:
-        """Récupère tous les encodages des utilisateurs qui ont une selfie"""
+        """Récupère tous les encodages des utilisateurs qui ont un selfie"""
         encodings = {}
         users = db.query(User).filter(User.selfie_data.isnot(None)).all()
         
@@ -284,7 +284,7 @@ class FaceRecognizer:
             if not face_encodings:
                 return []
 
-            # Récupérer les utilisateurs inscrits à cet événement qui ont une selfie
+            # Récupérer les utilisateurs inscrits à cet événement qui ont un selfie
             from models import UserEvent
             user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
             user_ids = [ue.user_id for ue in user_events]
@@ -359,11 +359,11 @@ class FaceRecognizer:
 
     def match_user_selfie_with_photos(self, user: User, db: Session):
         """
-        Après ajout ou modification d'une selfie, parcourt toutes les photos de l'événement de l'utilisateur,
-        compare le visage de la selfie à chaque visage détecté sur chaque photo,
+        Après ajout ou modification d'un selfie, parcourt toutes les photos de l'événement de l'utilisateur,
+        compare le visage du selfie à chaque visage détecté sur chaque photo,
         et ajoute les correspondances dans FaceMatch si un match est trouvé.
         """
-        # Charger l'encodage de la nouvelle selfie
+        # Charger l'encodage du nouveau selfie
         user_encoding = self.load_user_encoding(user)
         if user_encoding is None:
             return 0
@@ -409,8 +409,8 @@ class FaceRecognizer:
 
     def match_user_selfie_with_photos_event(self, user: User, event_id: int, db: Session):
         """
-        Après ajout ou modification d'une selfie, parcourt toutes les photos d'un événement,
-        compare le visage de la selfie à chaque visage détecté sur chaque photo,
+        Après ajout ou modification d'un selfie, parcourt toutes les photos d'un événement,
+        compare le visage du selfie à chaque visage détecté sur chaque photo,
         et ajoute les correspondances dans FaceMatch si un match est trouvé.
         """
         user_encoding = self.load_user_encoding(user)

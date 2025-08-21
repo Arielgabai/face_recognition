@@ -85,7 +85,7 @@ def migrate_selfies_to_database(db: Session):
                 else:
                     print(f"⚠️  Selfie non trouvé: {user.selfie_path}")
             except Exception as e:
-                print(f"❌ Erreur lors de la migration de la selfie de {user.username}: {e}")
+                print(f"❌ Erreur lors de la migration du selfie de {user.username}: {e}")
         
         # Sauvegarder les changements
         db.commit()

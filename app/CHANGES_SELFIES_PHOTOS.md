@@ -9,7 +9,7 @@ L'interface utilisateur ne pouvait pas accéder aux selfies et photos car elle u
 ### 1. Nouveaux endpoints API
 
 #### `/api/selfie/{user_id}` (NOUVEAU)
-- **Fonction** : Servir une selfie depuis la base de données par l'ID utilisateur
+- **Fonction** : Servir un selfie depuis la base de données par l'ID utilisateur
 - **Méthode** : GET
 - **Accès** : Public
 - **Retour** : Données binaires de l'image avec headers appropriés

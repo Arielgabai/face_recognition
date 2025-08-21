@@ -438,7 +438,7 @@
                     </label>
                 </div>
                 
-                <img id="selfiePreview" class="selfie-preview" alt="Aperçu de la selfie" style="display: none;">
+                <img id="selfiePreview" class="selfie-preview" alt="Aperçu du selfie" style="display: none;">
                 
                 <div class="selfie-validation" id="selfieValidation">
                     <span class="validation-icon"></span>
@@ -529,7 +529,7 @@
             document.getElementById('selfieSection').classList.remove('active');
         }
 
-        // Aperçu de la selfie
+        // Aperçu du selfie
         document.getElementById('selfieFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
@@ -540,7 +540,7 @@
                     preview.src = e.target.result;
                     preview.style.display = 'block';
                     
-                    // Valider la selfie
+                    // Valider le selfie
                     validateSelfie(file);
                 };
                 reader.readAsDataURL(file);
@@ -597,7 +597,7 @@
                 }
                 validation.className = 'selfie-validation success';
                 validationIcon.textContent = '✅';
-                validationMessage.textContent = 'Selfie validée. Vous pouvez créer votre compte.';
+                validationMessage.textContent = 'Selfie validé. Vous pouvez créer votre compte.';
                 selfieValidated = true;
                 registerBtn.disabled = false;
               })
@@ -608,7 +608,7 @@
                 validation.style.display = 'block';
                 validation.className = 'selfie-validation error';
                 validationIcon.textContent = '❌';
-                validationMessage.textContent = 'Erreur lors de la validation de la selfie';
+                validationMessage.textContent = 'Erreur lors de la validation du selfie';
                 selfieValidated = false;
                 registerBtn.disabled = true;
               });
@@ -616,7 +616,7 @@
 
         function validateAndRegister() {
             if (!selfieFile || !selfieValidated) {
-                showAlert('Veuillez sélectionner et valider une selfie', 'error');
+                showAlert('Veuillez sélectionner et valider un selfie', 'error');
                 return;
             }
 
@@ -625,7 +625,7 @@
             const password = document.getElementById('password').value;
             // Tous les comptes créés ici sont des utilisateurs (pas de champ userType dans le formulaire)
 
-            // Créer le FormData avec les informations et la selfie
+            // Créer le FormData avec les informations et le selfie
             const formData = new FormData();
             formData.append('username', username);
             formData.append('email', email);

@@ -79,7 +79,7 @@ def main():
     
     print("\n📝 Instructions pour tester manuellement:")
     print("1. Connectez-vous à l'interface utilisateur")
-    print("2. Uploadez une nouvelle selfie")
+    print("2. Uploadez un nouveau selfie")
     print("3. Vérifiez que l'aperçu se met à jour immédiatement")
     print("4. Si l'aperçu ne se met pas à jour, rechargez la page")
 

@@ -54,7 +54,7 @@ const SelfieUpload: React.FC<SelfieUploadProps> = ({ onSuccess }) => {
 
     try {
       await photoService.uploadSelfie(selectedFile);
-      setSuccess('Selfie uploadée avec succès !');
+      setSuccess('Selfie uploadé avec succès !');
       setSelectedFile(null);
       setPreview(null);
       onSuccess();
@@ -143,7 +143,7 @@ const SelfieUpload: React.FC<SelfieUploadProps> = ({ onSuccess }) => {
               Upload en cours...
             </>
           ) : (
-            'Uploader la selfie'
+            'Uploader le selfie'
           )}
         </Button>
       )}

@@ -1849,13 +1849,13 @@
                 </div>
             </div>
             <div class="card">
-                <h4>Ma Selfie</h4>
+                <h4>Mon selfie</h4>
                 <div id="profileSelfie">
-                    <!-- La selfie sera affichée ici -->
+                    <!-- Le selfie sera affiché ici -->
                 </div>
                 <div class="selfie-actions">
-                    <button onclick="showSelfieUploadInProfile()" class="btn btn-success">Modifier ma selfie</button>
-                    <button onclick="deleteSelfieFromProfile()" class="btn btn-danger">Supprimer ma selfie</button>
+                    <button onclick="showSelfieUploadInProfile()" class="btn btn-success">Modifier mon selfie</button>
+                    <button onclick="deleteSelfieFromProfile()" class="btn btn-danger">Supprimer mon selfie</button>
                 </div>
             </div>
             
@@ -2457,14 +2457,14 @@
         function loadProfileSelfie() {
             const profileSelfie = document.getElementById('profileSelfie');
             
-            // Charger la selfie depuis l'API
+            // Charger le selfie depuis l'API
             fetch('/api/my-selfie', {
                 headers: { 'Authorization': `Bearer ${token}` },
             }).then(response => {
                 if (response.ok) {
                     return response.json();
                 } else {
-                    throw new Error('Aucune selfie trouvée');
+                    throw new Error('Aucun selfie trouvé');
                 }
             }).then(selfieData => {
                 if (selfieData.user_id) {
@@ -2475,14 +2475,14 @@
                         <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}&r=${randomId}" 
                              alt="Votre selfie" class="selfie-preview" style="display: block;">
                         <p style="margin-top: 15px; color: #9ca3af; text-align: center;">
-                            Selfie téléchargée le ${new Date(selfieData.created_at).toLocaleDateString()}
+                            Selfie téléchargé le ${new Date(selfieData.created_at).toLocaleDateString()}
                         </p>
                     `;
                 } else {
                     profileSelfie.innerHTML = `
                         <div class="empty-state">
                             <div class="empty-state-icon">📸</div>
-                            <h4>Aucune selfie téléchargée</h4>
+                            <h4>Aucun selfie téléchargé</h4>
                             <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
                         </div>
                     `;
@@ -2491,7 +2491,7 @@
                 profileSelfie.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📸</div>
-                        <h4>Aucune selfie téléchargée</h4>
+                        <h4>Aucun selfie téléchargé</h4>
                         <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
                     </div>
                 `;
@@ -2505,21 +2505,21 @@
             modal.innerHTML = `
                 <div class="modal">
                     <div class="modal-header">
-                        <h3 class="modal-title">Modifier ma selfie</h3>
+                        <h3 class="modal-title">Modifier mon selfie</h3>
                         <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
                     </div>
                     <div class="card">
-                        <h4>Sélectionner une nouvelle selfie</h4>
+                        <h4>Sélectionner un nouveau selfie</h4>
                         <div class="file-input-wrapper">
                             <input type="file" id="profileSelfieFile" accept="image/*">
                             <label for="profileSelfieFile">
-                                📸 Cliquez ici pour sélectionner une nouvelle selfie
+                                📸 Cliquez ici pour sélectionner un nouveau selfie
                             </label>
                         </div>
-                        <img id="profileSelfiePreview" class="selfie-preview" alt="Aperçu de la selfie" style="display: none;">
+                        <img id="profileSelfiePreview" class="selfie-preview" alt="Aperçu du selfie" style="display: none;">
                         <div class="selfie-actions">
                             <button onclick="updateProfileSelfie()" class="btn btn-success" id="updateSelfieBtn">
-                                <span class="btn-text">Mettre à jour la selfie</span>
+                                <span class="btn-text">Mettre à jour le selfie</span>
                                 <div class="loading-spinner" style="display: none;"></div>
                             </button>
                             <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary">Annuler</button>
@@ -2529,7 +2529,7 @@
             `;
             document.body.appendChild(modal);
             
-            // Aperçu de la selfie
+            // Aperçu du selfie
             setTimeout(() => {
                 document.getElementById('profileSelfieFile').addEventListener('change', function(e) {
                     const file = e.target.files[0];
@@ -2550,7 +2550,7 @@
             const selfieFile = document.getElementById('profileSelfieFile').files[0];
             
             if (!selfieFile) {
-                showAlert('Veuillez sélectionner une selfie', 'error');
+                showAlert('Veuillez sélectionner un selfie', 'error');
                 return;
             }
 
@@ -2576,12 +2576,12 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    showAlert('Selfie mise à jour avec succès !', 'success');
+                    showAlert('Selfie mis à jour avec succès !', 'success');
                     // Fermer le modal
                     document.querySelector('.modal-overlay.active').remove();
                     // Attendre un peu pour que le serveur traite la mise à jour
                     setTimeout(() => {
-                        // Recharger la selfie dans le profil avec cache-busting
+                        // Recharger le selfie dans le profil avec cache-busting
                         loadProfileSelfie();
                         // Recharger les photos pour mettre à jour les correspondances
                         loadMyPhotos();
@@ -2611,7 +2611,7 @@
                 });
 
                 if (response.ok) {
-                    showAlert('Selfie supprimée avec succès !', 'success');
+                    showAlert('Selfie supprimé avec succès !', 'success');
                     loadProfileSelfie();
                     loadMyPhotos();
                 } else {

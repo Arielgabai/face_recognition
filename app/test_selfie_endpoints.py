@@ -22,11 +22,11 @@ def test_selfie_endpoints():
         response = requests.get(f"{BASE_URL}/api/selfie/1")
         print(f"   Status: {response.status_code}")
         if response.status_code == 200:
-            print("   ✅ Endpoint fonctionne - selfie trouvée")
+            print("   ✅ Endpoint fonctionne - selfie trouvé")
             print(f"   📊 Taille: {len(response.content)} bytes")
             print(f"   📋 Content-Type: {response.headers.get('content-type')}")
         elif response.status_code == 404:
-            print("   ⚠️  Selfie non trouvée (utilisateur 1 n'a pas de selfie)")
+            print("   ⚠️  Selfie non trouvé (l'utilisateur 1 n'a pas de selfie)")
         else:
             print(f"   ❌ Erreur inattendue: {response.text}")
     except Exception as e:
@@ -40,7 +40,7 @@ def test_selfie_endpoints():
         if response.status_code == 401:
             print("   ✅ Endpoint protégé correctement (401 Unauthorized)")
         elif response.status_code == 404:
-            print("   ⚠️  Utilisateur connecté n'a pas de selfie")
+            print("   ⚠️  L'utilisateur connecté n'a pas de selfie")
         else:
             print(f"   ⚠️  Status inattendu: {response.text}")
     except Exception as e:
@@ -76,9 +76,9 @@ def main():
     
     print("\n📝 Instructions pour résoudre les problèmes de selfies:")
     print("1. Connectez-vous à l'interface utilisateur")
-    print("2. Allez dans la section 'Ma Selfie'")
+    print("2. Allez dans la section 'Mon selfie'")
     print("3. Uploadez une photo de votre visage")
-    print("4. Vérifiez que la selfie s'affiche correctement")
+    print("4. Vérifiez que le selfie s'affiche correctement")
     print("5. Si vous avez des erreurs, vérifiez les logs Render")
 
 if __name__ == "__main__":

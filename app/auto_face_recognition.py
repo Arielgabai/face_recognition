@@ -3,7 +3,7 @@
 Script pour automatiser la reconnaissance faciale.
 Ce script :
 1. Relance la reconnaissance faciale pour toutes les photos d'un événement
-2. Met à jour les correspondances quand une selfie est ajoutée/modifiée
+2. Met à jour les correspondances quand un selfie est ajouté/modifié
 3. Optimise les performances de reconnaissance
 """
 

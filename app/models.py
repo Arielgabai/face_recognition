@@ -41,7 +41,7 @@ class User(Base):
     hashed_password = Column(String)
     user_type = Column(String, default=UserType.USER)
     selfie_path = Column(String, nullable=True)
-    selfie_data = Column(LargeBinary, nullable=True)  # Données binaires de la selfie
+    selfie_data = Column(LargeBinary, nullable=True)  # Données binaires du selfie
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     

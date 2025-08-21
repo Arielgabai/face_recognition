@@ -11,7 +11,7 @@ This happens because the database schema is missing the `selfie_data` column tha
 ## Root Cause
 The `User` model in `models.py` defines a `selfie_data` column:
 ```python
-selfie_data = Column(LargeBinary, nullable=True)  # Données binaires de la selfie
+selfie_data = Column(LargeBinary, nullable=True)  # Données binaires du selfie
 ```
 
 But the actual database table doesn't have this column, causing SQLAlchemy to fail when trying to query it.

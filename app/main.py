@@ -142,7 +142,7 @@ async def admin_eval_recognition(
     }
 
 def validate_selfie_image(image_bytes: bytes) -> None:
-    """Valide qu'une selfie contient exactement un visage exploitable.
+    """Valide qu'un selfie contient exactement un visage exploitable.
 
     - Rejette si aucun visage n'est détecté
     - Rejette si plusieurs visages sont détectés
@@ -287,9 +287,9 @@ def validate_selfie_image(image_bytes: bytes) -> None:
         print(f"[SelfieValidation] faces_detected={len(face_locations)} img_w={img_w} img_h={img_h}")
 
         if not face_locations or len(face_locations) == 0:
-            raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer une selfie claire de votre visage.")
+            raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer un selfie clair de votre visage.")
         if len(face_locations) > 1:
-            raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Veuillez envoyer une selfie avec un seul visage.")
+            raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Veuillez envoyer un selfie avec un seul visage.")
 
         # Taille minimale
         top, right, bottom, left = face_locations[0]
@@ -309,7 +309,7 @@ def validate_selfie_image(image_bytes: bytes) -> None:
     except Exception:
         import traceback as _tb
         print("[SelfieValidation] Unexpected error:\n" + _tb.format_exc())
-        raise HTTPException(status_code=400, detail="Erreur lors de la vérification de la selfie. Veuillez réessayer avec une photo plus claire.")
+        raise HTTPException(status_code=400, detail="Erreur lors de la vérification du selfie. Veuillez réessayer avec une photo plus claire.")
 
 def parse_user_type(user_type_str: str) -> UserType:
     """Convertit une chaîne quelconque (USER/user/Photographer...) vers UserType de manière sûre."""
@@ -449,7 +449,7 @@ async def register(
                 detail="Le fichier est trop volumineux (maximum 5MB)"
             )
     
-    # Vérifier la selfie avec la reconnaissance faciale (qualité stricte)
+    # Vérifier le selfie avec la reconnaissance faciale (qualité stricte)
     validate_selfie_image(file_data)
     
     # Cr+�er le nouvel utilisateur
@@ -461,7 +461,7 @@ async def register(
         user_type=UserType.USER
     )
     
-    # Sauvegarder la selfie
+    # Sauvegarder le selfie
     new_user.selfie_data = file_data
     
     db.add(new_user)
@@ -548,7 +548,7 @@ async def register_invite_with_selfie(
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
-    # Gérer la selfie (validation stricte + persistance)
+    # Gérer le selfie (validation stricte + persistance)
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     selfie_bytes = await file.read()
@@ -562,7 +562,7 @@ async def register_invite_with_selfie(
     db_user.selfie_path = file_path
     db_user.selfie_data = selfie_bytes
     db.commit()
-    # Relancer le matching de la selfie avec toutes les photos de l'+�v+�nement
+    # Relancer le matching du selfie avec toutes les photos de l'événement
     face_recognizer.match_user_selfie_with_photos_event(db_user, event.id, db)
     return db_user
 
@@ -614,9 +614,9 @@ async def get_current_user_info(current_user: User = Depends(get_current_user), 
 
 @app.get("/api/my-selfie")
 async def get_my_selfie(current_user: User = Depends(get_current_user)):
-    """R+�cup+�rer les informations de la selfie de l'utilisateur connect+�"""
+    """Récupérer les informations du selfie de l'utilisateur connecté"""
     if not current_user.selfie_data:
-        raise HTTPException(status_code=404, detail="Aucune selfie trouv+�e")
+        raise HTTPException(status_code=404, detail="Aucun selfie trouvé")
     
     return {
         "user_id": current_user.id,
@@ -627,7 +627,7 @@ async def get_my_selfie(current_user: User = Depends(get_current_user)):
 
 @app.post("/api/validate-selfie")
 async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = False):
-    """Valide uniquement la selfie (sans créer de compte).
+    """Valide uniquement le selfie (sans créer de compte).
     - Retourne 200 si valide (et éventuellement des métriques si debug=true)
     - Retourne 400 sinon (et inclut des métriques si debug=true)
     """
@@ -701,9 +701,9 @@ async def delete_my_selfie(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Supprimer la selfie de l'utilisateur connect+� et les correspondances associ+�es"""
+    """Supprimer le selfie de l'utilisateur connecté et les correspondances associées"""
     if not current_user.selfie_data:
-        raise HTTPException(status_code=404, detail="Aucune selfie +� supprimer")
+        raise HTTPException(status_code=404, detail="Aucun selfie à supprimer")
 
     # Supprimer les donn+�es binaires de la base utilisateur
     current_user.selfie_data = None
@@ -712,7 +712,7 @@ async def delete_my_selfie(
     # Supprimer tous les FaceMatch li+�s +� cet utilisateur
     db.query(FaceMatch).filter(FaceMatch.user_id == current_user.id).delete()
     db.commit()
-    return {"message": "Selfie supprim+�e avec succ+�s"}
+    return {"message": "Selfie supprimé avec succès"}
 
 # === GESTION DES SELFIES ===
 
@@ -723,7 +723,7 @@ async def upload_selfie(
     db: Session = Depends(get_db),
     strict: bool = True,
 ):
-    """Upload d'une selfie pour l'utilisateur"""
+    """Upload d'un selfie pour l'utilisateur"""
     if current_user.user_type == UserType.PHOTOGRAPHER:
         raise HTTPException(
             status_code=403, 
@@ -735,7 +735,7 @@ async def upload_selfie(
     
     # Lire les données binaires du fichier
     file_data = await file.read()
-    # Valider la selfie (1 visage, taille minimale) sauf si désactivée
+    # Valider le selfie (1 visage, taille minimale) sauf si désactivée
     strict_env = os.getenv("SELFIE_VALIDATION_STRICT", "true").strip().lower() not in {"false", "0", "no"}
     if strict and strict_env:
         validate_selfie_image(file_data)
@@ -992,7 +992,7 @@ async def get_selfie_by_user_id(
     user_id: int,
     db: Session = Depends(get_db)
 ):
-    """Servir une selfie depuis la base de donn+�es par l'ID utilisateur"""
+    """Servir un selfie depuis la base de données par l'ID utilisateur"""
     user = db.query(User).filter(User.id == user_id).first()
     
     if not user:

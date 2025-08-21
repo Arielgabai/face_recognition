@@ -83,7 +83,7 @@ def migrate_existing_photos():
                     selfie_failed += 1
                     
             except Exception as e:
-                print(f"   ❌ Erreur lors de la migration de la selfie de {user.username}: {e}")
+                print(f"   ❌ Erreur lors de la migration du selfie de {user.username}: {e}")
                 selfie_failed += 1
         
         # Sauvegarder les changements
@@ -154,7 +154,7 @@ def cleanup_old_files():
                     print(f"   🗑️  Supprimé selfie: {user.selfie_path}")
                     deleted_files += 1
             except Exception as e:
-                print(f"   ❌ Erreur lors de la suppression de la selfie: {e}")
+                print(f"   ❌ Erreur lors de la suppression du selfie: {e}")
         
         print(f"\n✅ {deleted_files} fichiers supprimés")
         
