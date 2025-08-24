@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inscription - Face Recognition App</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Pacifico&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -12,10 +12,25 @@
             box-sizing: border-box;
         }
 
+        :root {
+            --bg-1: #0b0b1a;
+            --bg-2: #16163a;
+            --text: #e6e7ff;
+            --muted: #a7a9d6;
+            --neon-purple: #8a2be2;
+            --neon-green: #39ff14;
+            --surface: rgba(13, 13, 28, 0.7);
+            --surface-border: rgba(138, 43, 226, 0.35);
+            --shadow-purple: 0 0 20px rgba(138, 43, 226, 0.45);
+            --shadow-green: 0 0 20px rgba(57, 255, 20, 0.35);
+        }
+
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #dfc8a6 0%, #9f8874 100%);
-            color: #381819;
+            background: radial-gradient(60% 120% at 20% 10%, rgba(138, 43, 226, 0.15) 0%, rgba(0,0,0,0) 60%),
+                        radial-gradient(70% 120% at 80% 10%, rgba(57, 255, 20, 0.12) 0%, rgba(0,0,0,0) 60%),
+                        linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
+            color: var(--text);
             min-height: 100vh;
             line-height: 1.6;
         }
@@ -36,29 +51,28 @@
         }
 
         .logo {
-            font-family: 'Playfair Display', serif;
-            font-size: 2.5rem;
-            font-weight: 600;
-            background: linear-gradient(45deg, #a4401d, #ba4921);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            font-family: 'Pacifico', cursive;
+            font-size: 2.8rem;
+            font-weight: 400;
+            color: var(--text);
+            text-shadow: 0 0 6px rgba(138, 43, 226, 0.6), 0 0 18px rgba(57, 255, 20, 0.35);
             margin-bottom: 10px;
+            letter-spacing: 0.5px;
         }
 
         .subtitle {
-            color: #381819;
+            color: var(--muted);
             font-size: 1.1rem;
             font-weight: 300;
         }
 
         .register-container {
-            background: rgba(255, 255, 255, 0.9);
+            background: var(--surface);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(164, 64, 29, 0.2);
+            border: 1px solid var(--surface-border);
             border-radius: 20px;
             padding: 40px;
-            box-shadow: 0 8px 32px rgba(56, 24, 25, 0.2);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.45), var(--shadow-purple);
         }
 
         .form-group {
@@ -68,7 +82,7 @@
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            color: #381819;
+            color: var(--muted);
             font-weight: 500;
             font-size: 0.9rem;
         }
@@ -76,23 +90,23 @@
         .form-input {
             width: 100%;
             padding: 15px 20px;
-            background: rgba(255, 255, 255, 0.8);
-            border: 1px solid rgba(164, 64, 29, 0.3);
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 12px;
-            color: #381819;
+            color: var(--text);
             font-size: 1rem;
             transition: all 0.3s ease;
         }
 
         .form-input:focus {
             outline: none;
-            border-color: #a4401d;
-            background: rgba(255, 255, 255, 0.9);
-            box-shadow: 0 0 0 3px rgba(164, 64, 29, 0.2);
+            border-color: var(--neon-purple);
+            background: rgba(255, 255, 255, 0.09);
+            box-shadow: 0 0 0 3px rgba(138, 43, 226, 0.25), 0 0 18px rgba(57, 255, 20, 0.18);
         }
 
         .form-input::placeholder {
-            color: #9f8874;
+            color: #7f82b8;
         }
 
         .btn {
@@ -108,24 +122,26 @@
         }
 
         .btn-primary {
-            background: linear-gradient(45deg, #a4401d, #ba4921);
+            background: linear-gradient(135deg, var(--neon-purple), #6a1fbf 60%);
             color: #ffffff;
             width: 100%;
+            box-shadow: 0 6px 18px rgba(138, 43, 226, 0.35);
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(164, 64, 29, 0.3);
+            box-shadow: 0 10px 28px rgba(138, 43, 226, 0.55), 0 0 16px rgba(57, 255, 20, 0.25);
         }
 
         .btn-secondary {
-            background: rgba(159, 136, 116, 0.2);
-            color: #381819;
-            border: 1px solid rgba(164, 64, 29, 0.3);
+            background: transparent;
+            color: var(--text);
+            border: 1px solid rgba(57, 255, 20, 0.4);
         }
 
         .btn-secondary:hover {
-            background: rgba(159, 136, 116, 0.3);
+            background: rgba(57, 255, 20, 0.06);
+            box-shadow: 0 0 16px rgba(57, 255, 20, 0.25);
         }
 
         .btn:disabled {
@@ -140,6 +156,9 @@
             border-radius: 12px;
             font-weight: 500;
             animation: slideIn 0.3s ease;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: var(--text);
         }
 
         @keyframes slideIn {
@@ -154,21 +173,21 @@
         }
 
         .alert-success {
-            background: rgba(164, 64, 29, 0.1);
-            border: 1px solid rgba(164, 64, 29, 0.3);
-            color: #a4401d;
+            border-color: rgba(57, 255, 20, 0.35);
+            box-shadow: var(--shadow-green);
+            color: #b9ffb0;
         }
 
         .alert-error {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #ef4444;
+            border-color: rgba(255, 99, 99, 0.35);
+            box-shadow: 0 0 20px rgba(255, 99, 99, 0.25);
+            color: #ffb7b7;
         }
 
         .alert-warning {
-            background: rgba(245, 158, 11, 0.1);
-            border: 1px solid rgba(245, 158, 11, 0.3);
-            color: #f59e0b;
+            border-color: rgba(250, 204, 21, 0.35);
+            box-shadow: 0 0 20px rgba(250, 204, 21, 0.2);
+            color: #fde68a;
         }
 
         /* Progress Steps */
@@ -182,53 +201,57 @@
         .step {
             display: flex;
             align-items: center;
-            color: #9f8874;
+            color: #7f82b8;
             font-size: 0.9rem;
         }
 
         .step.active {
-            color: #a4401d;
+            color: var(--text);
+            text-shadow: 0 0 10px rgba(138, 43, 226, 0.5);
         }
 
         .step.completed {
-            color: #a4401d;
+            color: var(--muted);
         }
 
         .step-number {
             width: 30px;
             height: 30px;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.06);
+            border: 2px solid rgba(138, 43, 226, 0.45);
             display: flex;
             align-items: center;
             justify-content: center;
             margin-right: 10px;
             font-weight: 600;
             transition: all 0.3s ease;
+            color: var(--text);
+            box-shadow: var(--shadow-purple);
         }
 
         .step.active .step-number {
-            background: #a4401d;
-            border-color: #a4401d;
+            background: rgba(138, 43, 226, 0.25);
+            border-color: var(--neon-purple);
             color: #ffffff;
         }
 
         .step.completed .step-number {
-            background: #a4401d;
-            border-color: #a4401d;
-            color: #ffffff;
+            background: rgba(255,255,255,0.04);
+            border-color: rgba(138, 43, 226, 0.25);
+            color: #cfcff6;
         }
 
         .step-line {
             width: 40px;
             height: 2px;
-            background: rgba(164, 64, 29, 0.3);
+            background: rgba(138, 43, 226, 0.35);
             margin: 0 10px;
+            box-shadow: var(--shadow-purple);
         }
 
         .step.completed + .step-line {
-            background: #a4401d;
+            background: rgba(138, 43, 226, 0.5);
         }
 
         /* Selfie Upload */
@@ -244,8 +267,8 @@
             max-width: 250px;
             max-height: 250px;
             border-radius: 15px;
-            border: 3px solid rgba(164, 64, 29, 0.3);
-            box-shadow: 0 8px 25px rgba(56, 24, 25, 0.2);
+            border: 2px solid rgba(138, 43, 226, 0.5);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.35), 0 0 18px rgba(138, 43, 226, 0.35);
             margin: 15px auto;
             display: block;
         }
@@ -263,19 +286,20 @@
         .file-input-wrapper label {
             display: block;
             padding: 30px;
-            background: rgba(255, 255, 255, 0.6);
-            border: 2px dashed rgba(164, 64, 29, 0.3);
+            background: rgba(255, 255, 255, 0.03);
+            border: 2px dashed rgba(138, 43, 226, 0.45);
             border-radius: 15px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            color: #381819;
+            color: var(--muted);
         }
 
         .file-input-wrapper label:hover {
-            border-color: #a4401d;
-            background: rgba(164, 64, 29, 0.1);
-            color: #a4401d;
+            border-color: var(--neon-purple);
+            background: rgba(138, 43, 226, 0.08);
+            color: var(--text);
+            box-shadow: var(--shadow-purple);
         }
 
         /* Selfie Validation */
@@ -287,21 +311,21 @@
         }
 
         .selfie-validation.success {
-            background: rgba(164, 64, 29, 0.1);
-            border: 1px solid rgba(164, 64, 29, 0.3);
-            color: #a4401d;
+            background: rgba(57, 255, 20, 0.06);
+            border: 1px solid rgba(57, 255, 20, 0.35);
+            color: #b9ffb0;
         }
 
         .selfie-validation.error {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #ef4444;
+            background: rgba(255, 99, 99, 0.06);
+            border: 1px solid rgba(255, 99, 99, 0.35);
+            color: #ffb7b7;
         }
 
         .selfie-validation.warning {
-            background: rgba(245, 158, 11, 0.1);
-            border: 1px solid rgba(245, 158, 11, 0.3);
-            color: #f59e0b;
+            background: rgba(250, 204, 21, 0.06);
+            border: 1px solid rgba(250, 204, 21, 0.35);
+            color: #fde68a;
         }
 
         .validation-icon {
@@ -317,13 +341,14 @@
         }
 
         .spinner {
-            border: 3px solid rgba(164, 64, 29, 0.2);
-            border-top: 3px solid #a4401d;
+            border: 3px solid rgba(138, 43, 226, 0.25);
+            border-top: 3px solid var(--neon-purple);
             border-radius: 50%;
             width: 40px;
             height: 40px;
             animation: spin 1s linear infinite;
             margin: 0 auto 15px;
+            box-shadow: var(--shadow-purple);
         }
 
         @keyframes spin {
@@ -338,9 +363,10 @@
         }
 
         .back-to-login a {
-            color: #a4401d;
+            color: var(--neon-purple);
             text-decoration: none;
             font-weight: 500;
+            text-shadow: 0 0 10px rgba(138, 43, 226, 0.45);
         }
 
         .back-to-login a:hover {
@@ -352,8 +378,8 @@
             text-align: center;
             margin-top: 40px;
             padding-top: 20px;
-            border-top: 1px solid rgba(164, 64, 29, 0.2);
-            color: #9f8874;
+            border-top: 1px solid rgba(138, 43, 226, 0.25);
+            color: #8d90c9;
             font-size: 0.8rem;
         }
 
@@ -361,10 +387,11 @@
             display: inline-block;
             width: 20px;
             height: 20px;
-            background: linear-gradient(45deg, #a4401d, #ba4921);
+            background: radial-gradient(circle at 30% 30%, var(--neon-purple), #4b1a91);
             border-radius: 50%;
             margin-right: 8px;
             vertical-align: middle;
+            box-shadow: var(--shadow-purple);
         }
 
         @media (max-width: 768px) {

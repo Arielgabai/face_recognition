@@ -8,7 +8,7 @@
 }
 
 .gallery-container {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     max-width: 1400px;
     margin: 0 auto;
     padding: 0 20px;
@@ -21,14 +21,16 @@
 
 .gallery-header h1 {
     font-size: 2.5rem;
-    font-weight: 300;
-    color: #333;
+    font-weight: 400;
+    color: var(--text, #e6e7ff);
     margin-bottom: 10px;
+    font-family: 'Pacifico', cursive;
+    text-shadow: 0 0 6px rgba(138, 43, 226, 0.6), 0 0 18px rgba(57, 255, 20, 0.35);
 }
 
 .gallery-header .subtitle {
     font-size: 1.1rem;
-    color: #666;
+    color: var(--muted, #a7a9d6);
     font-weight: 400;
 }
 
@@ -39,10 +41,11 @@
 .gallery-section-title {
     font-size: 1.8rem;
     font-weight: 400;
-    color: #444;
+    color: var(--text, #e6e7ff);
     margin-bottom: 25px;
     padding-left: 5px;
-    border-left: 4px solid #1976d2;
+    border-left: 4px solid var(--neon-purple, #8a2be2);
+    text-shadow: 0 0 10px rgba(138, 43, 226, 0.35);
 }
 
 /* Grille principale - Responsive et adaptative */
@@ -59,10 +62,11 @@
     position: relative;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 35px rgba(0,0,0,0.35);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
-    background: white;
+    background: #0f1024;
+    border: 1px solid rgba(138, 43, 226, 0.25);
     animation: fadeInUp 0.6s ease forwards;
     opacity: 0;
     transform: translateY(20px);
@@ -75,7 +79,7 @@
 
 .gallery-photo-card:hover {
     transform: translateY(-8px);
-    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45), 0 0 18px rgba(138, 43, 226, 0.35);
 }
 
 .gallery-photo-card img {
@@ -97,7 +101,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(45deg, rgba(25, 118, 210, 0.8), rgba(220, 0, 78, 0.8));
+    background: radial-gradient(60% 100% at 30% 20%, rgba(138, 43, 226, 0.55), rgba(0,0,0,0) 60%),
+                radial-gradient(60% 100% at 70% 80%, rgba(57, 255, 20, 0.4), rgba(0,0,0,0) 60%),
+                linear-gradient(45deg, rgba(13, 13, 28, 0.85), rgba(13, 13, 28, 0.65));
     opacity: 0;
     transition: opacity 0.3s ease;
     display: flex;
@@ -105,7 +111,7 @@
     justify-content: center;
     color: white;
     font-weight: 600;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
 }
 
 .gallery-photo-card:hover .gallery-photo-overlay {
@@ -162,19 +168,21 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     position: absolute;
     bottom: 24px;
     right: 24px;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.08);
     color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(138, 43, 226, 0.35);
     border-radius: 24px;
     padding: 10px 14px;
     font-size: 14px;
     cursor: pointer;
     backdrop-filter: blur(6px);
     transition: all 0.2s ease;
+    box-shadow: 0 0 12px rgba(138, 43, 226, 0.35);
 }
 
 .gallery-download-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(138, 43, 226, 0.18);
+    box-shadow: 0 0 16px rgba(138, 43, 226, 0.55), 0 0 8px rgba(57, 255, 20, 0.25);
 }
 
 /* Contrôles du lightbox */
@@ -255,8 +263,8 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     display: none;
     align-items: center;
     justify-content: center;
-    background-color: rgba(245, 245, 245, 0.95);
-    color: #666;
+    background: rgba(13, 13, 28, 0.9);
+    color: var(--muted, #a7a9d6);
     z-index: 2;
 }
 
@@ -267,7 +275,7 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 .gallery-empty-state {
     text-align: center;
     padding: 60px 20px;
-    color: #666;
+    color: var(--muted, #a7a9d6);
 }
 
 .gallery-empty-state h3 {
