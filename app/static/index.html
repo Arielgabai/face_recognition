@@ -690,8 +690,8 @@
         }
 
         .hamburger-btn {
-            background: linear-gradient(135deg, rgba(212, 115, 74, 0.1), rgba(184, 92, 53, 0.1));
-            border: 1px solid rgba(212, 115, 74, 0.3);
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(138, 43, 226, 0.35);
             border-radius: 12px;
             padding: 12px 16px;
             cursor: pointer;
@@ -704,28 +704,30 @@
             user-select: none;
             -webkit-tap-highlight-color: transparent;
             backdrop-filter: blur(10px);
+            box-shadow: 0 0 12px rgba(138, 43, 226, 0.35);
         }
 
         .hamburger-btn:hover {
-            background: linear-gradient(135deg, rgba(212, 115, 74, 0.2), rgba(184, 92, 53, 0.2));
-            border-color: rgba(212, 115, 74, 0.5);
+            background: rgba(138, 43, 226, 0.12);
+            border-color: rgba(138, 43, 226, 0.55);
             transform: translateY(-1px);
-            box-shadow: 0 4px 15px rgba(212, 115, 74, 0.2);
+            box-shadow: 0 6px 18px rgba(138, 43, 226, 0.45), 0 0 10px rgba(57, 255, 20, 0.25);
         }
         
         .hamburger-menu.active .hamburger-btn {
-            background: linear-gradient(135deg, rgba(212, 115, 74, 0.3), rgba(184, 92, 53, 0.3));
-            border-color: rgba(212, 115, 74, 0.6);
-            box-shadow: 0 6px 20px rgba(212, 115, 74, 0.3);
+            background: rgba(138, 43, 226, 0.18);
+            border-color: rgba(138, 43, 226, 0.65);
+            box-shadow: 0 8px 22px rgba(138, 43, 226, 0.5), 0 0 12px rgba(57, 255, 20, 0.25);
         }
 
         .hamburger-icon {
             width: 24px;
             height: 2px;
-            background: #381819;
+            background: #e6e7ff;
             position: relative;
             transition: all 0.3s ease;
             border-radius: 1px;
+            box-shadow: 0 0 8px rgba(230, 231, 255, 0.6);
         }
 
         .hamburger-icon::before,
@@ -734,9 +736,10 @@
             position: absolute;
             width: 24px;
             height: 2px;
-            background: #381819;
+            background: #e6e7ff;
             transition: all 0.3s ease;
             border-radius: 1px;
+            box-shadow: 0 0 8px rgba(230, 231, 255, 0.6);
         }
 
         .hamburger-icon::before {
@@ -1203,20 +1206,24 @@
             align-items: center;
             margin-bottom: 5px;
             margin-top: 0;
-            background: #9f8874;
+            background:
+                radial-gradient(50% 120% at 15% 50%, rgba(138, 43, 226, 0.15), rgba(0,0,0,0) 60%),
+                radial-gradient(50% 120% at 85% 50%, rgba(57, 255, 20, 0.12), rgba(0,0,0,0) 60%),
+                linear-gradient(135deg, rgba(13,13,28,0.9), rgba(22,22,58,0.9));
             padding: 12px 20px;
             border-radius: 0;
-            border: none;
+            border: 1px solid rgba(138, 43, 226, 0.35);
             width: 100vw;
             margin-left: -20px;
             margin-right: -20px;
             gap: 0;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.45), 0 0 16px rgba(138, 43, 226, 0.25);
         }
 
         .tab {
             background: transparent;
             border: none;
-            color: #dfc8a6;
+            color: var(--muted);
             padding: 8px 16px;
             border-radius: 0;
             cursor: pointer;
@@ -1228,13 +1235,15 @@
         }
 
         .tab:hover {
-            color: #e5e7eb;
+            color: var(--text);
+            text-shadow: 0 0 8px rgba(138, 43, 226, 0.35);
         }
 
         .tab.active {
             background: transparent;
-            color: #a4401d;
-            border-bottom: 2px solid #a4401d;
+            color: var(--text);
+            border-bottom: 2px solid var(--neon-purple);
+            text-shadow: 0 0 10px rgba(138, 43, 226, 0.5);
         }
 
         /* Cards - Design moderne */
