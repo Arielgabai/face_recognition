@@ -130,11 +130,13 @@
             color: #ffffff;
             width: 100%;
             box-shadow: 0 6px 18px rgba(138, 43, 226, 0.35);
+            border: 1px solid rgba(138, 43, 226, 0.45);
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 28px rgba(138, 43, 226, 0.55), 0 0 16px rgba(57, 255, 20, 0.25);
+            filter: brightness(1.08);
         }
 
         .btn-secondary {
@@ -148,23 +150,58 @@
         }
 
         .btn-danger {
-            background: linear-gradient(45deg, #ef4444, #dc2626);
+            background: linear-gradient(135deg, #ff3b3b, #dc2626 60%);
             color: #ffffff;
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
         }
 
         .btn-danger:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.3);
+            box-shadow: 0 10px 28px rgba(239, 68, 68, 0.55), 0 0 16px rgba(239, 68, 68, 0.35);
+            filter: brightness(1.06);
+        }
+
+        /* Mobile-first interactions: replace hover with active feedback */
+        @media (hover: none) {
+            .btn-primary:hover,
+            .btn-success:hover,
+            .btn-danger:hover,
+            .tab:hover,
+            .menu-item:hover {
+                transform: none;
+                box-shadow: none;
+                filter: none;
+            }
+
+            .btn-primary:active,
+            .btn-success:active,
+            .btn-danger:active {
+                transform: scale(0.98);
+                box-shadow: 0 0 16px rgba(138, 43, 226, 0.45);
+            }
+
+            .tab:active {
+                border-bottom-color: var(--neon-purple);
+                color: var(--text);
+            }
+
+            .menu-item:active {
+                background: rgba(138, 43, 226, 0.18);
+            }
         }
 
         .btn-success {
-            background: linear-gradient(45deg, #a4401d, #a4401d);
+            background: linear-gradient(135deg, var(--neon-purple), #6a1fbf 60%);
             color: #ffffff;
+            border: 1px solid rgba(138, 43, 226, 0.45);
+            box-shadow: 0 6px 18px rgba(138, 43, 226, 0.35);
         }
 
         .btn-success:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(212, 115, 74, 0.3);
+            box-shadow: 0 10px 28px rgba(138, 43, 226, 0.55), 0 0 16px rgba(57, 255, 20, 0.25);
+            filter: brightness(1.08);
         }
 
 
@@ -802,9 +839,12 @@
             left: -100%;
             width: 66.666%;
             height: 100vh;
-            background: rgba(62, 39, 35, 0.98);
+            background:
+                radial-gradient(60% 120% at 15% 20%, rgba(138, 43, 226, 0.25), rgba(0,0,0,0) 60%),
+                radial-gradient(60% 120% at 85% 80%, rgba(57, 255, 20, 0.18), rgba(0,0,0,0) 60%),
+                linear-gradient(135deg, rgba(13,13,28,0.96), rgba(22,22,58,0.96));
             backdrop-filter: blur(20px);
-            border-right: 1px solid rgba(212, 115, 74, 0.2);
+            border-right: 1px solid rgba(138, 43, 226, 0.35);
             padding: 0;
             opacity: 0;
             visibility: hidden;
@@ -816,7 +856,7 @@
             flex-direction: column;
             max-height: 100vh;
             scrollbar-width: thin;
-            scrollbar-color: rgba(212, 115, 74, 0.3) transparent;
+            scrollbar-color: rgba(138, 43, 226, 0.35) transparent;
         }
 
         /* Style de la scrollbar pour Webkit */
@@ -829,12 +869,12 @@
         }
 
         .menu-dropdown::-webkit-scrollbar-thumb {
-            background: rgba(212, 115, 74, 0.3);
+            background: rgba(138, 43, 226, 0.35);
             border-radius: 3px;
         }
 
         .menu-dropdown::-webkit-scrollbar-thumb:hover {
-            background: rgba(212, 115, 74, 0.5);
+            background: rgba(138, 43, 226, 0.55);
         }
 
         .hamburger-menu.active .menu-dropdown {
@@ -916,8 +956,8 @@
         /* Section profil utilisateur */
         .menu-profile-section {
             padding: 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            background: linear-gradient(135deg, rgba(212, 115, 74, 0.1), rgba(184, 92, 53, 0.1));
+            border-bottom: 1px solid rgba(138, 43, 226, 0.25);
+            background: linear-gradient(135deg, rgba(138, 43, 226, 0.08), rgba(57, 255, 20, 0.06));
         }
 
         .menu-profile-info {
@@ -941,14 +981,15 @@
         }
 
         .menu-profile-details h4 {
-            color: #ffffff;
+            color: var(--text);
             font-size: 1rem;
             font-weight: 600;
             margin: 0 0 4px 0;
+            text-shadow: 0 0 8px rgba(138, 43, 226, 0.35);
         }
 
         .menu-profile-details p {
-            color: #9ca3af;
+            color: var(--muted);
             font-size: 0.85rem;
             margin: 0;
         }
@@ -970,7 +1011,7 @@
             align-items: center;
             gap: 14px;
             padding: 12px 20px;
-            color: #ffffff;
+            color: var(--text);
             text-decoration: none;
             transition: all 0.3s ease;
             cursor: pointer;
@@ -982,17 +1023,19 @@
         }
 
         .menu-item:hover {
-            background: rgba(255, 255, 255, 0.05);
-            color: #a4401d;
+            background: rgba(138, 43, 226, 0.12);
+            color: var(--text);
+            box-shadow: inset 0 0 12px rgba(138, 43, 226, 0.25);
         }
 
         .menu-item.danger {
-            color: #ef4444;
+            color: #ffb7b7;
         }
 
         .menu-item.danger:hover {
-            background: rgba(239, 68, 68, 0.1);
-            color: #f87171;
+            background: rgba(239, 68, 68, 0.12);
+            color: #ffb7b7;
+            box-shadow: inset 0 0 12px rgba(239, 68, 68, 0.25);
         }
 
         .menu-divider {
@@ -1742,13 +1785,13 @@
                 </button>
                 
                 <div style="text-align: center; margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
-                    <a href="/register" style="color: #a4401d; text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease;" 
-                       onmouseover="this.style.color='#dfc8a6'" onmouseout="this.style.color='#a4401d'">
+                    <a href="/register" style="color: var(--neon-purple); text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease; text-shadow: 0 0 8px rgba(138, 43, 226, 0.45);" 
+                       onmouseover="this.style.color='#b28cff'" onmouseout="this.style.color='var(--neon-purple)'">
                         🔐 Première connexion ? Créer un compte
                     </a>
                     <a href="#" onclick="showPasswordResetModal(); return false;" 
-                       style="color: #a4401d; text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease;"
-                       onmouseover="this.style.color='#dfc8a6'" onmouseout="this.style.color='#a4401d'">
+                       style="color: var(--neon-purple); text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease; text-shadow: 0 0 8px rgba(138, 43, 226, 0.45);"
+                       onmouseover="this.style.color='#b28cff'" onmouseout="this.style.color='var(--neon-purple)'">
                         🔑 Mot de passe oublié ?
                     </a>
                 </div>
@@ -1984,6 +2027,7 @@
         }
 
         async function login() {
+            if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
@@ -2330,6 +2374,7 @@
         }
 
         async function uploadPhotos() {
+            if (navigator.vibrate) { try { navigator.vibrate(10); } catch {} }
             const files = document.getElementById('photoFiles').files;
             if (files.length === 0) {
                 showAlert('Veuillez sélectionner des photos', 'error');
@@ -2590,6 +2635,7 @@
         }
 
         async function updateProfileSelfie() {
+            if (navigator.vibrate) { try { navigator.vibrate(10); } catch {} }
             const selfieFile = document.getElementById('profileSelfieFile').files[0];
             
             if (!selfieFile) {
@@ -2643,6 +2689,7 @@
         }
 
         async function deleteSelfieFromProfile() {
+            if (navigator.vibrate) { try { navigator.vibrate([12, 60, 18]); } catch {} }
             if (!confirm('Êtes-vous sûr de vouloir supprimer votre selfie ?')) {
                 return;
             }
