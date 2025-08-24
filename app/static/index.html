@@ -64,16 +64,16 @@
         }
 
         .logo {
-            font-family: 'Neonderthaw', 'Pacifico', cursive;
+            font-family: 'Pacifico', 'Neonderthaw', cursive;
             font-size: 2.8rem;
             font-weight: 400;
             color: var(--neon-pink);
             text-shadow:
                 0 0 2px #fff,
                 0 0 6px #fff,
-                0 0 12px var(--neon-pink),
-                0 0 24px var(--neon-pink),
-                0 0 48px var(--neon-pink);
+                0 0 14px var(--neon-pink),
+                0 0 28px var(--neon-pink);
+            -webkit-text-stroke: 1px rgba(255,255,255,0.15);
             margin-bottom: 10px;
             letter-spacing: 0.5px;
         }
@@ -706,7 +706,7 @@
         }
 
         .event-title {
-            font-family: 'Neonderthaw', 'Pacifico', cursive;
+            font-family: 'Pacifico', 'Neonderthaw', cursive;
             font-size: 2.4rem;
             font-weight: 400;
             color: var(--neon-pink);
@@ -715,9 +715,9 @@
             text-shadow:
                 0 0 2px #fff,
                 0 0 6px #fff,
-                0 0 12px var(--neon-pink),
-                0 0 24px var(--neon-pink),
-                0 0 48px var(--neon-pink);
+                0 0 14px var(--neon-pink),
+                0 0 28px var(--neon-pink);
+            -webkit-text-stroke: 1px rgba(255,255,255,0.15);
             letter-spacing: 0.5px;
             animation: neonPulse 3.2s ease-in-out infinite alternate;
         }
@@ -830,7 +830,7 @@
             left: 66.666%;
             width: 33.333%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.35);
+            background: rgba(0, 0, 0, 0.45);
             backdrop-filter: blur(8px);
             opacity: 0;
             visibility: hidden;
@@ -849,7 +849,7 @@
             .menu-overlay {
                 left: 75%;
                 width: 25%;
-                background: rgba(0, 0, 0, 0.35);
+                background: rgba(0, 0, 0, 0.45);
                 backdrop-filter: blur(6px);
             }
         }
@@ -861,10 +861,10 @@
             left: -100%;
             width: 66.666%;
             height: 100vh;
-            background: linear-gradient(160deg, rgba(12,12,28,0.96) 0%, rgba(18,18,46,0.96) 60%, rgba(28,12,36,0.96) 100%);
+            background: linear-gradient(160deg, rgba(10,11,24,0.97) 0%, rgba(16,18,40,0.97) 60%, rgba(12,12,28,0.97) 100%);
             backdrop-filter: blur(20px);
-            border-right: 1px solid rgba(138, 43, 226, 0.25);
-            box-shadow: 10px 0 40px rgba(0,0,0,0.5), 0 0 24px rgba(138, 43, 226, 0.25);
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 10px 0 40px rgba(0,0,0,0.6);
             padding: 0;
             opacity: 0;
             visibility: hidden;
@@ -876,7 +876,7 @@
             flex-direction: column;
             max-height: 100vh;
             scrollbar-width: thin;
-            scrollbar-color: rgba(138, 43, 226, 0.35) transparent;
+            scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
         }
 
         /* Style de la scrollbar pour Webkit */
@@ -889,7 +889,7 @@
         }
 
         .menu-dropdown::-webkit-scrollbar-thumb {
-            background: rgba(138, 43, 226, 0.35);
+            background: rgba(255, 255, 255, 0.2);
             border-radius: 3px;
         }
 
@@ -976,8 +976,8 @@
         /* Section profil utilisateur */
         .menu-profile-section {
             padding: 20px;
-            border-bottom: 1px solid rgba(138, 43, 226, 0.25);
-            background: linear-gradient(135deg, rgba(138, 43, 226, 0.08), rgba(57, 255, 20, 0.06));
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
         }
 
         .menu-profile-info {
@@ -1049,12 +1049,13 @@
         }
 
         .menu-item span:first-child {
-            color: var(--neon-pink);
-            text-shadow: 0 0 8px rgba(255, 54, 213, 0.5);
+            color: var(--text);
+            text-shadow: none;
         }
 
         .menu-item:hover span:first-child {
-            color: #ff8aef;
+            color: var(--neon-pink);
+            text-shadow: 0 0 8px rgba(255, 54, 213, 0.45);
         }
 
         .menu-item.danger {
