@@ -808,7 +808,7 @@
             left: 66.666%;
             width: 33.333%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(0, 0, 0, 0.35);
             backdrop-filter: blur(8px);
             opacity: 0;
             visibility: hidden;
@@ -827,7 +827,7 @@
             .menu-overlay {
                 left: 75%;
                 width: 25%;
-                background: rgba(0, 0, 0, 0.2);
+                background: rgba(0, 0, 0, 0.35);
                 backdrop-filter: blur(6px);
             }
         }
@@ -839,12 +839,9 @@
             left: -100%;
             width: 66.666%;
             height: 100vh;
-            background:
-                radial-gradient(60% 120% at 15% 20%, rgba(138, 43, 226, 0.25), rgba(0,0,0,0) 60%),
-                radial-gradient(60% 120% at 85% 80%, rgba(57, 255, 20, 0.18), rgba(0,0,0,0) 60%),
-                linear-gradient(135deg, rgba(13,13,28,0.96), rgba(22,22,58,0.96));
+            background: linear-gradient(135deg, rgba(13,13,28,0.96), rgba(22,22,58,0.96));
             backdrop-filter: blur(20px);
-            border-right: 1px solid rgba(138, 43, 226, 0.35);
+            border-right: 1px solid rgba(138, 43, 226, 0.25);
             padding: 0;
             opacity: 0;
             visibility: hidden;
@@ -1023,9 +1020,9 @@
         }
 
         .menu-item:hover {
-            background: rgba(138, 43, 226, 0.12);
+            background: rgba(255, 255, 255, 0.06);
             color: var(--text);
-            box-shadow: inset 0 0 12px rgba(138, 43, 226, 0.25);
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.15);
         }
 
         .menu-item.danger {
