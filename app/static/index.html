@@ -722,6 +722,18 @@
             animation: neonPulse 3.2s ease-in-out infinite alternate;
         }
 
+        .app-subtitle {
+            font-family: 'Pacifico', cursive;
+            font-size: 1rem;
+            color: var(--neon-pink);
+            margin-top: 6px;
+            opacity: 0.95;
+            text-shadow:
+                0 0 2px #fff,
+                0 0 8px rgba(255, 54, 213, 0.35);
+            -webkit-text-stroke: 0.5px rgba(255,255,255,0.12);
+        }
+
         @keyframes neonPulse {
             0% {
                 text-shadow: 0 0 6px rgba(138, 43, 226, 0.5), 0 0 16px rgba(57, 255, 20, 0.2);
@@ -1436,8 +1448,8 @@
         }
 
         .modal-content {
-            background: rgba(62, 39, 35, 0.95);
-            border: 1px solid rgba(212, 115, 74, 0.2);
+            background: rgba(15, 16, 36, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 16px;
             padding: 0;
             max-width: 500px;
@@ -1452,7 +1464,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 20px 24px;
-            border-bottom: 1px solid rgba(212, 115, 74, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .modal-header h3 {
@@ -1465,7 +1477,7 @@
         .modal-close {
             background: none;
             border: none;
-            color: #a68b7a;
+            color: #a7a9d6;
             font-size: 1.5rem;
             cursor: pointer;
             padding: 4px;
@@ -1488,7 +1500,7 @@
             padding: 20px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 12px;
-            border: 2px dashed rgba(212, 115, 74, 0.3);
+            border: 2px dashed rgba(255, 255, 255, 0.12);
         }
 
         .selfie-display {
@@ -1501,7 +1513,7 @@
             padding: 20px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 12px;
-            border: 2px dashed rgba(164, 64, 29, 0.3);
+            border: 2px dashed rgba(255, 255, 255, 0.12);
             min-height: 250px;
             display: flex;
             align-items: center;
@@ -1884,7 +1896,10 @@
             
             <!-- Bannière avec le nom de l'événement -->
             <div class="event-banner">
-                <h1 class="event-title" id="eventTitle">Tableau de bord</h1>
+                <div style="text-align: center;">
+                    <h1 class="event-title" id="eventTitle">Tableau de bord</h1>
+                    <div class="app-subtitle">FindMe</div>
+                </div>
             </div>
             
                         <div class="tabs">
