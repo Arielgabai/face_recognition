@@ -632,8 +632,11 @@
         /* Bannière de l'événement */
         .event-banner {
             width: 100vw;
-            background: #a4401d;
-            border-bottom: 1px solid rgba(164, 64, 29, 0.5);
+            background:
+                radial-gradient(60% 120% at 15% 40%, rgba(138, 43, 226, 0.25), rgba(0,0,0,0) 60%),
+                radial-gradient(60% 120% at 85% 60%, rgba(57, 255, 20, 0.18), rgba(0,0,0,0) 60%),
+                linear-gradient(135deg, rgba(13,13,28,0.9), rgba(22,22,58,0.9));
+            border-bottom: 1px solid rgba(138, 43, 226, 0.35);
             padding: 40px 0;
             margin: 0;
             margin-left: -20px;
@@ -645,16 +648,32 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.45), 0 0 24px rgba(138, 43, 226, 0.35);
         }
 
         .event-title {
-            font-family: 'Playfair Display', serif;
-            font-size: 2.2rem;
-            font-weight: 600;
-            color: #dfc8a6;
+            font-family: 'Pacifico', cursive;
+            font-size: 2.4rem;
+            font-weight: 400;
+            color: var(--text);
             margin: 0;
             padding: 0 80px; /* Espace pour le hamburger menu */
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            text-shadow: 0 0 8px rgba(138, 43, 226, 0.5), 0 0 18px rgba(57, 255, 20, 0.25);
+            letter-spacing: 0.5px;
+            animation: neonPulse 3.2s ease-in-out infinite alternate;
+        }
+
+        @keyframes neonPulse {
+            0% {
+                text-shadow: 0 0 6px rgba(138, 43, 226, 0.5), 0 0 16px rgba(57, 255, 20, 0.2);
+            }
+            100% {
+                text-shadow: 0 0 12px rgba(138, 43, 226, 0.85), 0 0 28px rgba(57, 255, 20, 0.35);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .event-title { animation: none; }
         }
 
         /* S'assurer que le dashboard est bien caché par défaut */
