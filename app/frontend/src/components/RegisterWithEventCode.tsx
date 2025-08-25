@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -10,7 +10,7 @@ import {
   CircularProgress,
   Link,
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { photoService } from '../services/api';
 
 interface RegisterWithEventCodeProps {
@@ -19,16 +19,27 @@ interface RegisterWithEventCodeProps {
 
 const RegisterWithEventCode: React.FC<RegisterWithEventCodeProps> = ({ eventCode }) => {
   const navigate = useNavigate();
+  const params = useParams<{ eventCode?: string }>();
+  const location = useLocation();
   const [formData, setFormData] = useState({
     username: '',
     email: '',
     password: '',
     confirmPassword: '',
-    eventCode: eventCode || '',
+    eventCode: eventCode || params.eventCode || new URLSearchParams(location.search).get('event_code') || '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  
+  useEffect(() => {
+    const fromPath = params.eventCode || '';
+    const fromQuery = new URLSearchParams(location.search).get('event_code') || '';
+    const resolved = eventCode || fromPath || fromQuery || '';
+    if (resolved && resolved !== formData.eventCode) {
+      setFormData(prev => ({ ...prev, eventCode: resolved }));
+    }
+  }, [eventCode, params.eventCode, location.search]);
 
   const handleInputChange = (field: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
