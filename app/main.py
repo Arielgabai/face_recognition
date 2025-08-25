@@ -1326,7 +1326,7 @@ async def generate_event_qr(event_code: str, current_user: User = Depends(get_cu
     if not event:
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
     
-    # Gn erer l'URL d'inscription vers la page avec code dans le chemin
+    # Gnerer l'URL d'inscription vers la page avec code dans le chemin
     url = f"https://facerecognition-d0r8.onrender.com/register-with-code/{event_code}"
     img = qrcode.make(url)
     buf = BytesIO()
