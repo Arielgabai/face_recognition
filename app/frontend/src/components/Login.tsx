@@ -104,6 +104,10 @@ const Login: React.FC = () => {
               <Link href="/register" variant="body2">
                 {"Pas encore de compte ? S'inscrire"}
               </Link>
+              <br />
+              <Link href="/register-with-code" variant="body2">
+                Première connexion avec un code événement
+              </Link>
             </Box>
           </Box>
         </Paper>
