@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 
 import boto3
 from botocore.exceptions import ClientError
@@ -24,6 +24,8 @@ class AwsFaceRecognizer:
     def __init__(self):
         self.client = boto3.client("rekognition", region_name=AWS_REGION)
         print(f"[FaceRecognition][AWS] Using region: {AWS_REGION}")
+        # Cache simple en mémoire pour éviter de réindexer à chaque photo
+        self._indexed_events: Set[int] = set()
 
     def _collection_id(self, event_id: int) -> str:
         return f"{COLL_PREFIX}{event_id}"
@@ -52,30 +54,14 @@ class AwsFaceRecognizer:
                         pass
         except ClientError:
             pass
-        image_bytes = None
-        if user.selfie_path and os.path.exists(user.selfie_path):
-            with open(user.selfie_path, "rb") as f:
-                image_bytes = f.read()
-        elif user.selfie_data:
-            image_bytes = user.selfie_data
-        if not image_bytes:
+
+    def ensure_event_users_indexed(self, event_id: int, db: Session):
+        """
+        Indexe les selfies des utilisateurs d'un événement une seule fois par processus.
+        Évite les appels IndexFaces répétés lors du traitement de chaque photo.
+        """
+        if event_id in self._indexed_events:
             return
-        try:
-            self.client.index_faces(
-                CollectionId=coll_id,
-                Image={"Bytes": image_bytes},
-                ExternalImageId=str(user.id),
-                DetectionAttributes=[],
-                MaxFaces=1,
-                QualityFilter="AUTO",
-            )
-        except ClientError:
-            pass
-
-    def process_photo_for_event(self, photo_input, event_id: int, db: Session) -> List[Dict]:
-        self.ensure_collection(event_id)
-
-        # Indexer/mettre à jour les selfies des participants
         from sqlalchemy import or_  # local import
         user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
         user_ids = [ue.user_id for ue in user_events]
@@ -85,6 +71,12 @@ class AwsFaceRecognizer:
         ).all()
         for u in users_with_selfies:
             self.index_user_selfie(event_id, u)
+        self._indexed_events.add(event_id)
+
+    def process_photo_for_event(self, photo_input, event_id: int, db: Session) -> List[Dict]:
+        self.ensure_collection(event_id)
+        # Assurer l'indexation des selfies des participants une seule fois
+        self.ensure_event_users_indexed(event_id, db)
 
         # Préparer l'image
         if isinstance(photo_input, str) and os.path.exists(photo_input):
