@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { photoService } from '../services/api';
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -23,6 +24,7 @@ const Register: React.FC = () => {
     password: '',
     confirmPassword: '',
     user_type: 'user' as 'user' | 'photographer',
+    eventCode: '',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -53,15 +55,24 @@ const Register: React.FC = () => {
       return;
     }
 
+    if (!formData.eventCode.trim()) {
+      setError('Le code événement est obligatoire');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      await register({
-        username: formData.username,
-        email: formData.email,
-        password: formData.password,
-        user_type: formData.user_type,
-      });
+      // Inscription utilisateur liée à un événement (obligatoire)
+      await photoService.registerWithEventCode(
+        {
+          username: formData.username,
+          email: formData.email,
+          password: formData.password,
+          user_type: 'user',
+        },
+        formData.eventCode
+      );
       navigate('/login');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Erreur lors de l\'inscription');
@@ -148,7 +159,18 @@ const Register: React.FC = () => {
               value={formData.confirmPassword}
               onChange={handleInputChange('confirmPassword')}
             />
-            <FormControl fullWidth margin="normal">
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              name="eventCode"
+              label="Code événement"
+              id="eventCode"
+              value={formData.eventCode}
+              onChange={handleInputChange('eventCode')}
+              helperText="Obtenu via le QR code ou auprès de l'organisateur"
+            />
+            <FormControl fullWidth margin="normal" disabled>
               <InputLabel id="user-type-label">Type de compte</InputLabel>
               <Select
                 labelId="user-type-label"

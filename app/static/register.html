@@ -440,6 +440,11 @@
                 <h3 style="text-align: center; margin-bottom: 30px; color: #381819;">Créer votre compte</h3>
                 
                 <div class="form-group">
+                    <label for="eventCode">Code événement</label>
+                    <input type="text" id="eventCode" class="form-input" required placeholder="Entrez le code événement">
+                </div>
+
+                <div class="form-group">
                     <label for="username">Nom d'utilisateur</label>
                     <input type="text" id="username" class="form-input" required placeholder="Choisissez un nom d'utilisateur">
                 </div>
@@ -509,14 +514,27 @@
         let validationSeq = 0;
         let currentValidationController = null;
 
+        // Préremplir et verrouiller le code événement depuis l'URL ou injection serveur
+        document.addEventListener('DOMContentLoaded', function() {
+            const injected = '{{EVENT_CODE}}';
+            const fromQuery = new URLSearchParams(window.location.search).get('event_code') || '';
+            const resolved = (injected && injected !== 'undefined' ? injected : '') || fromQuery;
+            if (resolved) {
+                const ec = document.getElementById('eventCode');
+                ec.value = resolved;
+                ec.setAttribute('disabled', 'disabled');
+            }
+        });
+
         function nextStep() {
             // Valider les informations de base
+            const eventCode = document.getElementById('eventCode').value;
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const userType = 'USER';
 
-            if (!username || !email || !password) {
+            if (!eventCode || !username || !email || !password) {
                 showAlert('Veuillez remplir tous les champs', 'error');
                 return;
             }
@@ -657,36 +675,66 @@
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
+            const eventCode = document.getElementById('eventCode').value;
+            if (!eventCode) {
+                showAlert('Le code événement est obligatoire', 'error');
+                return;
+            }
             // Tous les comptes créés ici sont des utilisateurs (pas de champ userType dans le formulaire)
-
-            // Créer le FormData avec les informations et le selfie
-            const formData = new FormData();
-            formData.append('username', username);
-            formData.append('email', email);
-            formData.append('password', password);
-            formData.append('user_type', 'user');
-            formData.append('selfie', selfieFile);
-
-            // Envoyer la requête d'inscription
-            fetch('/api/register', {
+            // 1) Créer l'utilisateur et l'associer à l'événement
+            fetch('/api/register-with-event-code', {
                 method: 'POST',
-                body: formData
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_data: { username, email, password, user_type: 'user' },
+                    event_code: eventCode
+                })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.access_token) {
-                    showAlert('Compte créé avec succès ! Redirection...', 'success');
-                    // Stocker le token et rediriger
-                    localStorage.setItem('token', data.access_token);
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 2000);
-                } else {
-                    showAlert(data.detail || 'Erreur lors de la création du compte', 'error');
+            .then(async (resp) => {
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    throw new Error(data.detail || 'Erreur lors de l\'inscription');
                 }
+                return data;
             })
-            .catch(error => {
-                showAlert('Erreur lors de la création du compte', 'error');
+            // 2) Se connecter pour obtenir un token
+            .then(() => fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            }))
+            .then(async (resp) => {
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok || !data.access_token) {
+                    throw new Error(data.detail || 'Connexion échouée après inscription');
+                }
+                return data.access_token;
+            })
+            // 3) Uploader le selfie avec le token
+            .then((token) => {
+                const form = new FormData();
+                form.append('file', selfieFile);
+                return fetch('/api/upload-selfie', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: form
+                }).then(async (resp) => {
+                    if (!resp.ok) {
+                        const data = await resp.json().catch(() => ({}));
+                        throw new Error(data.detail || 'Erreur lors de l\'upload du selfie');
+                    }
+                    // Sauvegarder le token pour la session
+                    localStorage.setItem('token', token);
+                    return true;
+                });
+            })
+            // 4) Succès total
+            .then(() => {
+                showAlert('Compte créé avec succès ! Redirection...', 'success');
+                setTimeout(() => { window.location.href = '/'; }, 1500);
+            })
+            .catch((err) => {
+                showAlert(err.message || 'Erreur lors de la création du compte', 'error');
             });
         }
 

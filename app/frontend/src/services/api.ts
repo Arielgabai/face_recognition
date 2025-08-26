@@ -91,7 +91,7 @@ export const photoService = {
   getAllEventPhotos: (eventId: number) => api.get(`/user/events/${eventId}/all-photos`),
   joinEvent: (eventCode: string) => api.post('/join-event', { event_code: eventCode }),
   registerWithEventCode: (userData: any, eventCode: string) => 
-    api.post('/register-with-event-code', { ...userData, event_code: eventCode }),
+    api.post('/register-with-event-code', { user_data: userData, event_code: eventCode }),
 };
 
 // Service admin

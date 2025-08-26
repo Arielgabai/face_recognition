@@ -170,7 +170,7 @@ const RegisterWithEventCode: React.FC<RegisterWithEventCodeProps> = ({ eventCode
               onChange={handleInputChange('eventCode')}
               margin="normal"
               required
-              disabled={loading}
+              disabled={loading || Boolean(eventCode || params.eventCode || new URLSearchParams(location.search).get('event_code'))}
               placeholder="Ex: ABC12345"
               helperText="Le code vous a été fourni par l'organisateur de l'événement"
             />
