@@ -24,6 +24,23 @@
             padding: 0 20px;
         }
 
+        .brand-header {
+            width: 100vw;
+            padding: 16px 20px 0 20px;
+            margin-left: -20px;
+            margin-right: -20px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: center;
+        }
+        .brand-title {
+            font-family: 'Pacifico', cursive;
+            font-size: 1.6rem;
+            color: #333;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 10px rgba(25, 118, 210, 0.15);
+        }
+
         .header {
             text-align: center;
             margin-bottom: 40px;
@@ -288,6 +305,9 @@
 </head>
 <body>
     <div class="container">
+        <div class="brand-header">
+            <div class="brand-title">FindMe</div>
+        </div>
         <div class="header">
             <h1>Galerie Photos</h1>
             <p class="subtitle">Utilisateur: {{ user_id }}</p>
