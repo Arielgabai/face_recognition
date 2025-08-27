@@ -2924,6 +2924,15 @@
             
             // Afficher le modal
             modal.style.display = 'flex';
+            // S'assurer que l'état est propre à l'ouverture
+            const errBox = document.getElementById('selfieModalError');
+            if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+            const newSelfieInput = document.getElementById('newSelfieInput');
+            if (newSelfieInput) newSelfieInput.value = '';
+            const newImageBadge = document.getElementById('newImageBadge');
+            if (newImageBadge) newImageBadge.style.display = 'none';
+            const updateBtn = document.getElementById('updateSelfieBtn');
+            if (updateBtn) updateBtn.disabled = true;
             
             // Charger le selfie actuel
             loadCurrentSelfie();
@@ -2935,6 +2944,9 @@
                 modal.style.display = 'none';
                 // Réinitialiser l'état du modal
                 resetSelfieModal();
+                // Nettoyer aussi les messages d'erreur pour qu'ils ne persistent pas au retour
+                const errBox = document.getElementById('selfieModalError');
+                if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
             }
         }
 
@@ -2943,6 +2955,7 @@
             const newImageBadge = document.getElementById('newImageBadge');
             const updateBtn = document.getElementById('updateSelfieBtn');
             const chooseBtn = document.getElementById('choosePhotoBtn');
+            const errBox = document.getElementById('selfieModalError');
 
             if (newSelfieInput) newSelfieInput.value = '';
             if (newImageBadge) newImageBadge.style.display = 'none';
@@ -2955,6 +2968,7 @@
                 }
             }
             if (chooseBtn) chooseBtn.textContent = '📷 Choisir une nouvelle photo';
+            if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
             
             // Recharger le selfie actuel
             loadCurrentSelfie();
