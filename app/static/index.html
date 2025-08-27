@@ -2667,6 +2667,8 @@
             // Aperçu du selfie
             setTimeout(() => {
                 document.getElementById('profileSelfieFile').addEventListener('change', function(e) {
+                    const errBox = document.getElementById('profileSelfieModalError');
+                    if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
                     const file = e.target.files[0];
                     if (file) {
                         const reader = new FileReader();
@@ -2694,6 +2696,9 @@
             const updateBtn = document.getElementById('updateSelfieBtn');
             const btnText = updateBtn.querySelector('.btn-text');
             const spinner = updateBtn.querySelector('.loading-spinner');
+            // Clear previous error in modal before submitting
+            const errBox = document.getElementById('profileSelfieModalError');
+            if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
             
             btnText.style.opacity = '0';
             spinner.style.display = 'inline-block';
@@ -2958,6 +2963,10 @@
         function previewNewSelfie(input) {
             const file = input.files[0];
             if (!file) return;
+
+            // Clear previous error in main selfie modal when a new file is picked
+            const errBox = document.getElementById('selfieModalError');
+            if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
 
             // Validation du fichier
             if (file.size > 5 * 1024 * 1024) {
