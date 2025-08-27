@@ -517,7 +517,8 @@ async def register_invite_with_selfie(
     password: str = Form(...),
     event_code: str = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
 ):
     """Inscription d'un invit+� avec selfie et event_code (QR code)"""
     # V+�rifier si l'utilisateur existe d+�j+�
@@ -562,8 +563,29 @@ async def register_invite_with_selfie(
     db_user.selfie_path = file_path
     db_user.selfie_data = selfie_bytes
     db.commit()
-    # Relancer le matching du selfie avec toutes les photos de l'événement
-    face_recognizer.match_user_selfie_with_photos_event(db_user, event.id, db)
+    
+    # Lancer le matching en tâche de fond (même stratégie que la modif de selfie)
+    def _rematch_event_for_new_user(user_id: int, event_id: int):
+        try:
+            session = next(get_db())
+            user = session.query(User).filter(User.id == user_id).first()
+            if not user:
+                return
+            try:
+                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                    face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
+                else:
+                    face_recognizer.match_user_selfie_with_photos(user, session)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[RegisterInvite][bg] error: {e}")
+
+    if background_tasks is not None:
+        background_tasks.add_task(_rematch_event_for_new_user, db_user.id, event.id)
+    else:
+        _rematch_event_for_new_user(db_user.id, event.id)
+
     return db_user
 
 @app.post("/api/login", response_model=Token)
