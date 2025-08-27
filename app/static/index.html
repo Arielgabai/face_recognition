@@ -2932,7 +2932,14 @@
             const newImageBadge = document.getElementById('newImageBadge');
             if (newImageBadge) newImageBadge.style.display = 'none';
             const updateBtn = document.getElementById('updateSelfieBtn');
-            if (updateBtn) updateBtn.disabled = true;
+            if (updateBtn) {
+                updateBtn.disabled = true;
+                updateBtn.classList.remove('btn-loading');
+                const btnText = updateBtn.querySelector('.btn-text');
+                const spinner = updateBtn.querySelector('.loading-spinner');
+                if (btnText) { btnText.textContent = 'Modifier'; btnText.style.opacity = '1'; btnText.style.color = ''; }
+                if (spinner) { spinner.style.display = 'none'; }
+            }
             
             // Charger le selfie actuel
             loadCurrentSelfie();
@@ -2961,11 +2968,15 @@
             if (newImageBadge) newImageBadge.style.display = 'none';
             if (updateBtn) {
                 updateBtn.disabled = true;
+                updateBtn.classList.remove('btn-loading');
                 const btnText = updateBtn.querySelector('.btn-text');
+                const spinner = updateBtn.querySelector('.loading-spinner');
                 if (btnText) {
-                    btnText.textContent = 'Mettre à jour';
+                    btnText.textContent = 'Modifier';
                     btnText.style.color = '';
+                    btnText.style.opacity = '1';
                 }
+                if (spinner) { spinner.style.display = 'none'; }
             }
             if (chooseBtn) chooseBtn.textContent = '📷 Choisir une nouvelle photo';
             if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
