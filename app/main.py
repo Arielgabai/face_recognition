@@ -1,5 +1,5 @@
 import face_recognition_patch
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Body
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Body, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -722,6 +722,7 @@ async def upload_selfie(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     strict: bool = True,
+    background_tasks: BackgroundTasks = None,
 ):
     """Upload d'un selfie pour l'utilisateur"""
     if current_user.user_type == UserType.PHOTOGRAPHER:
@@ -761,18 +762,35 @@ async def upload_selfie(
                 pass
     db.commit()
 
-    # Relancer le matching pour chaque événement de l'utilisateur
-    match_count = 0
-    for ue in user_events:
+    # Lancer le matching en tâche de fond pour éviter les timeouts côté client
+    def _rematch_all_events(user_id: int):
         try:
-            if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                match_count += face_recognizer.match_user_selfie_with_photos_event(current_user, ue.event_id, db)
-            else:
-                match_count += face_recognizer.match_user_selfie_with_photos(current_user, db)
-        except Exception:
-            pass
-    print(f"[SelfieUpdate] deleted_matches={total_deleted} new_matches={match_count} for user_id={current_user.id}")
-    return {"message": "Selfie upload+�e avec succ+�s", "deleted": total_deleted, "matches": match_count}
+            session = next(get_db())
+            user = session.query(User).filter(User.id == user_id).first()
+            if not user:
+                return
+            events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
+            total = 0
+            for ue in events:
+                try:
+                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                        total += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
+                    else:
+                        total += face_recognizer.match_user_selfie_with_photos(user, session)
+                except Exception:
+                    continue
+            print(f"[SelfieUpdate][bg] user_id={user_id} rematch_total={total}")
+        except Exception as e:
+            print(f"[SelfieUpdate][bg] error: {e}")
+
+    if background_tasks is not None:
+        background_tasks.add_task(_rematch_all_events, current_user.id)
+    else:
+        # Fallback (ne devrait pas arriver), on exécute en direct
+        _rematch_all_events(current_user.id)
+
+    print(f"[SelfieUpdate] scheduled rematch; deleted_matches={total_deleted} user_id={current_user.id}")
+    return {"message": "Selfie uploadée avec succès", "deleted": total_deleted, "scheduled": True}
 
 # === GESTION DES PHOTOS (PHOTOGRAPHES) ===
 
