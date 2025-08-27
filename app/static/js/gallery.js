@@ -24,6 +24,10 @@ class ModernGallery {
         this.images = [];
         this.currentIndex = 0;
         this.lightboxElement = null;
+        this.touchStartX = 0;
+        this.touchStartY = 0;
+        this.touchMoved = false;
+        this.touchActive = false;
         
         this.init();
     }
@@ -218,6 +222,69 @@ class ModernGallery {
                 this.downloadCurrentImage();
             });
         }
+
+        // Gestes tactiles: swipe gauche/droite pour naviguer
+        const onTouchStart = (clientX, clientY) => {
+            this.touchStartX = clientX;
+            this.touchStartY = clientY;
+            this.touchMoved = false;
+            this.touchActive = true;
+        };
+        const onTouchMove = (clientX, clientY, e) => {
+            if (!this.touchActive) return;
+            const dx = clientX - this.touchStartX;
+            const dy = clientY - this.touchStartY;
+            // Si mouvement horizontal dominant, empêcher le scroll
+            if (Math.abs(dx) > Math.abs(dy)) {
+                this.touchMoved = true;
+                if (e && typeof e.preventDefault === 'function') e.preventDefault();
+            }
+        };
+        const onTouchEnd = (clientX) => {
+            if (!this.touchActive) return;
+            const dx = clientX - this.touchStartX;
+            const threshold = 40; // pixels
+            if (Math.abs(dx) >= threshold) {
+                if (dx < 0) {
+                    this.nextImage();
+                } else {
+                    this.previousImage();
+                }
+            }
+            this.touchActive = false;
+        };
+
+        // Support Touch Events
+        this.lightboxElement.addEventListener('touchstart', (e) => {
+            if (!e.touches || e.touches.length === 0) return;
+            const t = e.touches[0];
+            onTouchStart(t.clientX, t.clientY);
+        }, { passive: true });
+        this.lightboxElement.addEventListener('touchmove', (e) => {
+            if (!e.touches || e.touches.length === 0) return;
+            const t = e.touches[0];
+            onTouchMove(t.clientX, t.clientY, e);
+        }, { passive: false });
+        this.lightboxElement.addEventListener('touchend', (e) => {
+            const t = (e.changedTouches && e.changedTouches[0]) || null;
+            if (t) onTouchEnd(t.clientX);
+        });
+
+        // Support Pointer Events (trackpads / souris bouton enfoncé)
+        let pointerDown = false;
+        this.lightboxElement.addEventListener('pointerdown', (e) => {
+            pointerDown = true;
+            onTouchStart(e.clientX, e.clientY);
+        });
+        this.lightboxElement.addEventListener('pointermove', (e) => {
+            if (!pointerDown) return;
+            onTouchMove(e.clientX, e.clientY, e);
+        });
+        this.lightboxElement.addEventListener('pointerup', (e) => {
+            if (!pointerDown) return;
+            pointerDown = false;
+            onTouchEnd(e.clientX);
+        });
     }
     
     openLightbox(index) {
