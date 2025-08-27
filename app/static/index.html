@@ -1,3 +1,19 @@
+        /* Brand header */
+        .brand-header {
+            width: 100vw;
+            padding: 16px 20px 0 20px;
+            margin-left: -20px;
+            margin-right: -20px;
+            display: flex;
+            justify-content: center;
+        }
+        .brand-title {
+            font-family: 'Pacifico', cursive;
+            font-size: 1.6rem;
+            color: #ffffff;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 10px rgba(255, 54, 213, 0.25);
+        }
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -686,10 +702,7 @@
         /* Bannière de l'événement */
         .event-banner {
             width: 100vw;
-            background:
-                radial-gradient(60% 120% at 15% 40%, rgba(138, 43, 226, 0.25), rgba(0,0,0,0) 60%),
-                radial-gradient(60% 120% at 85% 60%, rgba(57, 255, 20, 0.18), rgba(0,0,0,0) 60%),
-                linear-gradient(135deg, rgba(13,13,28,0.9), rgba(22,22,58,0.9));
+            background: linear-gradient(135deg, rgba(13,13,28,0.9), rgba(22,22,58,0.9));
             border-bottom: 1px solid rgba(138, 43, 226, 0.35);
             padding: 40px 0;
             margin: 0;
@@ -712,14 +725,10 @@
             color: var(--neon-pink);
             margin: 0;
             padding: 0 80px; /* Espace pour le hamburger menu */
-            text-shadow:
-                0 0 2px #fff,
-                0 0 6px #fff,
-                0 0 14px var(--neon-pink),
-                0 0 28px var(--neon-pink);
+            text-shadow: 0 0 2px rgba(255,255,255,0.35), 0 0 10px rgba(255, 54, 213, 0.25);
             -webkit-text-stroke: 1px rgba(255,255,255,0.15);
             letter-spacing: 0.5px;
-            animation: neonPulse 3.2s ease-in-out infinite alternate;
+            animation: none;
         }
 
         .app-subtitle {
@@ -1897,10 +1906,12 @@
             </div>
             
             <!-- Bannière avec le nom de l'événement -->
+            <div class="brand-header">
+                <div class="brand-title">FindMe</div>
+            </div>
             <div class="event-banner">
                 <div style="text-align: center;">
-                    <h1 class="event-title" id="eventTitle">Tableau de bord</h1>
-                    <div class="app-subtitle">FindMe</div>
+                    <h1 class="event-title pink" id="eventTitle">Tableau de bord</h1>
                 </div>
             </div>
             
@@ -3159,15 +3170,15 @@
             const formData = new FormData();
             formData.append('file', file);
 
-            const updateBtn = document.getElementById('updateSelfieBtn');
-            const btnText = updateBtn.querySelector('.btn-text');
-            const spinner = updateBtn.querySelector('.loading-spinner');
+            const modalEl = document.getElementById('selfieModal');
+            const updateBtn = modalEl ? modalEl.querySelector('#updateSelfieBtn') : document.getElementById('updateSelfieBtn');
+            const btnText = updateBtn ? updateBtn.querySelector('.btn-text') : null;
+            const spinner = updateBtn ? updateBtn.querySelector('.loading-spinner') : null;
 
             // Afficher l'état de chargement
-            updateBtn.disabled = true;
-            btnText.style.opacity = '0.5';
-            spinner.style.display = 'inline-block';
-            btnText.textContent = 'Mise à jour...';
+            if (updateBtn) updateBtn.disabled = true;
+            if (btnText) { btnText.style.opacity = '0.5'; btnText.textContent = 'Mise à jour...'; }
+            if (spinner) spinner.style.display = 'inline-block';
 
             try {
                 try { if (selfieUpdateController) { selfieUpdateController.abort(); } } catch {}
@@ -3242,12 +3253,14 @@
                 }
                 
                 // Réinitialiser le bouton en cas d'erreur
-                btnText.textContent = 'Mettre à jour';
-                btnText.style.color = '';
-                updateBtn.disabled = false;
+                if (btnText) { btnText.textContent = 'Mettre à jour'; btnText.style.color = ''; }
+                if (updateBtn) updateBtn.disabled = false;
+                // Réinitialiser le bouton en cas d'erreur
+                if (btnText) { btnText.textContent = 'Mettre à jour'; btnText.style.color = ''; }
+                if (updateBtn) updateBtn.disabled = false;
             } finally {
-                btnText.style.opacity = '1';
-                spinner.style.display = 'none';
+                if (btnText) btnText.style.opacity = '1';
+                if (spinner) spinner.style.display = 'none';
                 selfieUpdateController = null;
             }
         }
