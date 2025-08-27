@@ -747,10 +747,10 @@
                     return true;
                 });
             })
-            // 4) Succès total
+            // 4) Succès total: lancer un rafraîchissement des photos après création et upload
             .then(() => {
                 showAlert('Compte créé avec succès ! Redirection...', 'success');
-                setTimeout(() => { window.location.href = '/'; }, 1500);
+                setTimeout(() => { window.location.href = '/'; }, 1200);
             })
             .catch((err) => {
                 showAlert(err.message || 'Erreur lors de la création du compte', 'error');

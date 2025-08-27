@@ -407,6 +407,15 @@ async def register_page(event_code: str = None):
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Page d'inscription</h1><p>Page d'inscription non trouv+�e</p>")
 
+# Page d'inscription accessible via /register-with-code et /register-with-code/{event_code}
+@app.get("/register-with-code", response_class=HTMLResponse)
+async def register_with_code_query(event_code: str = None):
+    return await register_page(event_code=event_code)
+
+@app.get("/register-with-code/{event_code}", response_class=HTMLResponse)
+async def register_with_code_path(event_code: str):
+    return await register_page(event_code=event_code)
+
 # === AUTHENTIFICATION ===
 
 @app.post("/api/register", response_model=Token)
@@ -1624,7 +1633,27 @@ async def register_with_event_code(
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
-    
+
+    # Lancer le matching en t�che de fond pour associer directement les photos
+    def _rematch_event_for_new_user(user_id: int, event_id: int):
+        try:
+            session = next(get_db())
+            user = session.query(User).filter(User.id == user_id).first()
+            if not user:
+                return
+            try:
+                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                    face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
+                else:
+                    face_recognizer.match_user_selfie_with_photos(user, session)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # Ex�cuter imm�diatement (l'appel de selfie suivra) pour pr�-lier si selfie d�j� pr�sent
+    _rematch_event_for_new_user(db_user.id, event.id)
+
     return db_user
 
 @app.post("/api/join-event")
