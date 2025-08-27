@@ -873,7 +873,7 @@
             left: -100%;
             width: 66.666%;
             height: 100vh;
-            background: linear-gradient(160deg, rgba(10,11,24,0.97) 0%, rgba(16,18,40,0.97) 60%, rgba(12,12,28,0.97) 100%);
+            background: #000;
             backdrop-filter: blur(20px);
             border-right: 1px solid rgba(255, 255, 255, 0.08);
             box-shadow: 10px 0 40px rgba(0,0,0,0.6);
@@ -1672,7 +1672,7 @@
                 left: -100%;
                 width: 66.666%;
                 height: 100vh;
-                background: rgba(62, 39, 35, 0.98);
+                background: #000;
                 backdrop-filter: blur(20px);
                 border-right: 1px solid rgba(212, 115, 74, 0.2);
                 padding: 0;
@@ -2691,10 +2691,11 @@
                 return;
             }
 
-            // Show loading state
-            const updateBtn = document.getElementById('updateSelfieBtn');
-            const btnText = updateBtn.querySelector('.btn-text');
-            const spinner = updateBtn.querySelector('.loading-spinner');
+            // Show loading state (scope to active profile modal)
+            const activeModal = document.querySelector('.modal-overlay.active');
+            const updateBtn = activeModal ? activeModal.querySelector('#updateSelfieBtn') : document.getElementById('updateSelfieBtn');
+            const btnText = updateBtn ? updateBtn.querySelector('.btn-text') : null;
+            const spinner = updateBtn ? updateBtn.querySelector('.loading-spinner') : null;
             // Clear previous error in modal before submitting
             const errBox = document.getElementById('profileSelfieModalError');
             if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
@@ -2702,10 +2703,9 @@
             try { if (selfieUpdateController) { selfieUpdateController.abort(); } } catch {}
             selfieUpdateController = new AbortController();
             
-            btnText.style.opacity = '0';
-            spinner.style.display = 'inline-block';
-            updateBtn.classList.add('btn-loading');
-            updateBtn.disabled = true;
+            if (btnText) btnText.style.opacity = '0';
+            if (spinner) spinner.style.display = 'inline-block';
+            if (updateBtn) { updateBtn.classList.add('btn-loading'); updateBtn.disabled = true; }
 
             try {
                 const formData = new FormData();
@@ -2759,11 +2759,10 @@
                 }
             } finally {
                 // Hide loading state
-                btnText.style.opacity = '1';
-                spinner.style.display = 'none';
+                if (btnText) btnText.style.opacity = '1';
+                if (spinner) spinner.style.display = 'none';
                 selfieUpdateController = null;
-                updateBtn.disabled = false;
-                updateBtn.classList.remove('btn-loading');
+                if (updateBtn) { updateBtn.disabled = false; updateBtn.classList.remove('btn-loading'); }
             }
         }
 
