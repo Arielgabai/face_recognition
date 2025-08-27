@@ -873,7 +873,7 @@
             left: -100%;
             width: 66.666%;
             height: 100vh;
-            background: #000;
+            background: rgba(15, 16, 36, 0.95);
             backdrop-filter: blur(20px);
             border-right: 1px solid rgba(255, 255, 255, 0.08);
             box-shadow: 10px 0 40px rgba(0,0,0,0.6);
@@ -918,7 +918,25 @@
         /* Responsive pour mobile */
         @media (max-width: 767px) {
             .menu-dropdown {
-                width: 75%;
+                position: fixed;
+                top: 0;
+                left: -100%;
+                width: 66.666%;
+                height: 100vh;
+                background: rgba(15, 16, 36, 0.95);
+                backdrop-filter: blur(20px);
+                border-right: 1px solid rgba(212, 115, 74, 0.2);
+                padding: 0;
+                opacity: 0;
+                visibility: hidden;
+                transform: translateX(0);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                z-index: 1001;
+                overflow-y: scroll;
+                display: flex;
+                flex-direction: column;
+                max-height: 100vh;
+                scrollbar-width: thin;
             }
         }
 
@@ -1042,16 +1060,12 @@
             display: flex;
             align-items: center;
             gap: 14px;
-            padding: 12px 20px;
-            color: var(--text);
-            text-decoration: none;
-            transition: all 0.3s ease;
+            padding: 18px 24px;
+            color: var(--muted);
+            color: #ffffff;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
             cursor: pointer;
-            min-height: 44px;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-            font-weight: 500;
-            font-size: 0.9rem;
         }
 
         .menu-item:hover {
@@ -1061,7 +1075,7 @@
         }
 
         .menu-item span:first-child {
-            color: var(--text);
+            color: #ffffff;
             text-shadow: none;
         }
 
@@ -1672,9 +1686,10 @@
                 left: -100%;
                 width: 66.666%;
                 height: 100vh;
-                background: #000;
+                background: rgba(15, 16, 36, 0.95);
                 backdrop-filter: blur(20px);
-                border-right: 1px solid rgba(212, 115, 74, 0.2);
+                border-right: 1px solid rgba(255, 255, 255, 0.08);
+                box-shadow: 10px 0 40px rgba(0,0,0,0.6);
                 padding: 0;
                 opacity: 0;
                 visibility: hidden;
@@ -1686,8 +1701,7 @@
                 flex-direction: column;
                 max-height: 100vh;
                 scrollbar-width: thin;
-                scrollbar-color: rgba(212, 115, 74, 0.3) transparent;
-                border-radius: 0;
+                scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
             }
             
             .menu-item {
