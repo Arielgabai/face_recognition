@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Recognition App</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Neonderthaw&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Neonderthaw&family=Great+Vibes&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/gallery.css">
     <style>
         * {
@@ -721,15 +721,20 @@
         }
 
         .event-title {
-            font-family: 'Pacifico', 'Neonderthaw', cursive;
-            font-size: 2.4rem;
+            font-family: 'Great Vibes', 'Pacifico', 'Neonderthaw', cursive;
+            font-size: 2.6rem;
             font-weight: 400;
             color: var(--neon-pink);
             margin: 0;
             padding: 0 80px; /* Espace pour le hamburger menu */
-            text-shadow: 0 0 2px rgba(255,255,255,0.35), 0 0 10px rgba(255, 54, 213, 0.25);
-            -webkit-text-stroke: 1px rgba(255,255,255,0.15);
-            letter-spacing: 0.5px;
+            white-space: nowrap; /* une seule ligne */
+            letter-spacing: 0.02em;
+            /* lueur néon très douce, moins brillante */
+            text-shadow:
+                0 0 0.4px currentColor,
+                0 0 6px rgba(255, 54, 213, 0.28),
+                0 0 12px rgba(255, 54, 213, 0.14);
+            -webkit-text-stroke: 0.5px rgba(255,255,255,0.10);
             animation: none;
         }
 
