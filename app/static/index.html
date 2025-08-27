@@ -2717,6 +2717,7 @@
             btnText.style.opacity = '0';
             spinner.style.display = 'inline-block';
             updateBtn.classList.add('btn-loading');
+            updateBtn.disabled = true;
 
             try {
                 const formData = new FormData();
@@ -2773,6 +2774,7 @@
                 btnText.style.opacity = '1';
                 spinner.style.display = 'none';
                 selfieUpdateController = null;
+                updateBtn.disabled = false;
                 updateBtn.classList.remove('btn-loading');
             }
         }
