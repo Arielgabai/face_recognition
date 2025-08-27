@@ -2643,6 +2643,7 @@
                         <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
                     </div>
                     <div class="card">
+                        <div id="profileSelfieModalError" class="selfie-validation error" style="display:none;"></div>
                         <h4>Sélectionner un nouveau selfie</h4>
                         <div class="file-input-wrapper">
                             <input type="file" id="profileSelfieFile" accept="image/*">
@@ -2708,7 +2709,7 @@
                     body: formData
                 });
 
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
 
                 if (response.ok) {
                     showAlert('Selfie mis à jour avec succès !', 'success');
@@ -2722,10 +2723,27 @@
                         loadMyPhotos();
                     }, 500);
                 } else {
-                    showAlert(data.detail || 'Erreur lors de la mise à jour', 'error');
+                    const errorBox = document.getElementById('profileSelfieModalError');
+                    const message = data.detail || data.message || 'Erreur lors de la mise à jour du selfie';
+                    if (errorBox) {
+                        errorBox.style.display = 'block';
+                        errorBox.textContent = message;
+                    } else {
+                        showAlert(message, 'error');
+                    }
                 }
             } catch (error) {
-                showAlert('Erreur lors de la mise à jour', 'error');
+                const isUnauthorized = String(error).includes('Unauthorized');
+                const errorBox = document.getElementById('profileSelfieModalError');
+                const message = isUnauthorized
+                    ? 'Votre session a expiré. Veuillez vous reconnecter puis réessayer.'
+                    : 'Échec du chargement de la requête (Load failed). Vérifiez votre connexion et réessayez.';
+                if (errorBox) {
+                    errorBox.style.display = 'block';
+                    errorBox.textContent = message;
+                } else {
+                    showAlert(message, 'error');
+                }
             } finally {
                 // Hide loading state
                 btnText.style.opacity = '1';
@@ -2871,6 +2889,7 @@
                             <button class="modal-close" onclick="closeSelfieModal()">&times;</button>
                         </div>
                         <div class="modal-body">
+                            <div id="selfieModalError" class="selfie-validation error" style="display:none;"></div>
                             <div class="selfie-display">
                                 <div class="selfie-image-container" id="selfieContainer">
                                     <img id="displayedSelfie" src="" alt="Selfie" class="selfie-image">
@@ -3129,8 +3148,15 @@
                         }, 1000);
                     }
                 } else {
-                    const errorData = await response.json();
-                    showAlert(errorData.detail || 'Erreur lors de la mise à jour du selfie', 'error');
+                    const errorData = await response.json().catch(() => ({}));
+                    const errorBox = document.getElementById('selfieModalError');
+                    const message = errorData.detail || errorData.message || 'Erreur lors de la mise à jour du selfie';
+                    if (errorBox) {
+                        errorBox.style.display = 'block';
+                        errorBox.textContent = message;
+                    } else {
+                        showAlert(message, 'error');
+                    }
                     
                     // Réinitialiser le bouton en cas d'erreur
                     btnText.textContent = 'Mettre à jour';
@@ -3139,7 +3165,17 @@
                 }
             } catch (error) {
                 console.error('Erreur lors de l\'upload:', error);
-                showAlert('Erreur lors de la mise à jour du selfie', 'error');
+                const isUnauthorized = String(error).includes('Unauthorized');
+                const errorBox = document.getElementById('selfieModalError');
+                const message = isUnauthorized
+                    ? 'Votre session a expiré. Veuillez vous reconnecter puis réessayer.'
+                    : 'Échec du chargement de la requête (Load failed). Vérifiez votre connexion et réessayez.';
+                if (errorBox) {
+                    errorBox.style.display = 'block';
+                    errorBox.textContent = message;
+                } else {
+                    showAlert(message, 'error');
+                }
                 
                 // Réinitialiser le bouton en cas d'erreur
                 btnText.textContent = 'Mettre à jour';
