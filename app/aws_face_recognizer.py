@@ -43,16 +43,58 @@ class AwsFaceRecognizer:
 
     def index_user_selfie(self, event_id: int, user: User):
         coll_id = self._collection_id(event_id)
+
+        # Charger les octets du selfie depuis le chemin ou la base de données
+        image_bytes: Optional[bytes] = None
+        if getattr(user, "selfie_path", None) and os.path.exists(user.selfie_path):
+            try:
+                with open(user.selfie_path, "rb") as f:
+                    image_bytes = f.read()
+            except Exception:
+                image_bytes = None
+        elif getattr(user, "selfie_data", None):
+            try:
+                image_bytes = bytes(user.selfie_data)
+            except Exception:
+                image_bytes = None
+
+        if not image_bytes:
+            # Rien à indexer si aucun selfie n'est disponible
+            return
+
         # Supprimer d'abord d'anciennes faces de cet utilisateur pour éviter des résidus de visages obsolètes
         try:
-            faces = self.client.list_faces(CollectionId=coll_id, MaxResults=1000)
-            for f in faces.get('Faces', []):
-                if f.get('ExternalImageId') == str(user.id):
-                    try:
-                        self.client.delete_faces(CollectionId=coll_id, FaceIds=[f.get('FaceId')])
-                    except ClientError:
-                        pass
+            next_token = None
+            while True:
+                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
+                if next_token:
+                    kwargs["NextToken"] = next_token
+                faces = self.client.list_faces(**kwargs)
+                for f in faces.get('Faces', []):
+                    if f.get('ExternalImageId') == str(user.id):
+                        try:
+                            self.client.delete_faces(CollectionId=coll_id, FaceIds=[f.get('FaceId')])
+                        except ClientError:
+                            pass
+                next_token = faces.get("NextToken")
+                if not next_token:
+                    break
         except ClientError:
+            # On ignore les erreurs de suppression pour ne pas bloquer l'indexation
+            pass
+
+        # Indexer le selfie de l'utilisateur dans la collection de l'événement
+        try:
+            self.client.index_faces(
+                CollectionId=coll_id,
+                Image={"Bytes": image_bytes},
+                ExternalImageId=str(user.id),
+                DetectionAttributes=[],
+                QualityFilter="AUTO",
+                MaxFaces=1,
+            )
+        except ClientError:
+            # Si l'indexation échoue, on laisse la fonction silencieuse pour ne pas interrompre le flux
             pass
 
     def ensure_event_users_indexed(self, event_id: int, db: Session):
