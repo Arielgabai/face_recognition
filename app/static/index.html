@@ -2034,6 +2034,8 @@
         let token = localStorage.getItem('token');
         let currentUser = null;
         let userRole = localStorage.getItem('userRole');
+        let selfieUpdateController = null;
+        let selfieRefreshController = null;
 
         async function apiFetch(input, init = {}) {
             init.headers = init.headers || {};
@@ -2657,7 +2659,7 @@
                                 <span class="btn-text">Mettre à jour le selfie</span>
                                 <div class="loading-spinner" style="display: none;"></div>
                             </button>
-                            <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary">Annuler</button>
+                            <button onclick="closeProfileSelfieModal()" class="btn btn-secondary">Annuler</button>
                         </div>
                     </div>
                 </div>
@@ -2683,6 +2685,15 @@
             }, 100);
         }
 
+        function closeProfileSelfieModal() {
+            const modal = document.querySelector('.modal-overlay.active');
+            try { if (selfieUpdateController) { selfieUpdateController.abort(); } } catch {}
+            selfieUpdateController = null;
+            if (modal) {
+                modal.remove();
+            }
+        }
+
         async function updateProfileSelfie() {
             if (navigator.vibrate) { try { navigator.vibrate(10); } catch {} }
             const selfieFile = document.getElementById('profileSelfieFile').files[0];
@@ -2699,6 +2710,9 @@
             // Clear previous error in modal before submitting
             const errBox = document.getElementById('profileSelfieModalError');
             if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+            // Prepare abort controller for this upload
+            try { if (selfieUpdateController) { selfieUpdateController.abort(); } } catch {}
+            selfieUpdateController = new AbortController();
             
             btnText.style.opacity = '0';
             spinner.style.display = 'inline-block';
@@ -2711,7 +2725,8 @@
                 const response = await apiFetch('/api/upload-selfie', {
                     method: 'POST',
                     headers: {},
-                    body: formData
+                    body: formData,
+                    signal: selfieUpdateController.signal
                 });
 
                 const data = await response.json().catch(() => ({}));
@@ -2719,7 +2734,7 @@
                 if (response.ok) {
                     showAlert('Selfie mis à jour avec succès !', 'success');
                     // Fermer le modal
-                    document.querySelector('.modal-overlay.active').remove();
+                    closeProfileSelfieModal();
                     // Attendre un peu pour que le serveur traite la mise à jour
                     setTimeout(() => {
                         // Recharger le selfie dans le profil avec cache-busting
@@ -2738,6 +2753,10 @@
                     }
                 }
             } catch (error) {
+                if (error && (error.name === 'AbortError' || String(error).includes('AbortError'))) {
+                    // Upload canceled by user; silently stop
+                    return;
+                }
                 const isUnauthorized = String(error).includes('Unauthorized');
                 const errorBox = document.getElementById('profileSelfieModalError');
                 const message = isUnauthorized
@@ -2753,6 +2772,7 @@
                 // Hide loading state
                 btnText.style.opacity = '1';
                 spinner.style.display = 'none';
+                selfieUpdateController = null;
                 updateBtn.classList.remove('btn-loading');
             }
         }
@@ -3147,12 +3167,15 @@
             btnText.textContent = 'Mise à jour...';
 
             try {
+                try { if (selfieUpdateController) { selfieUpdateController.abort(); } } catch {}
+                selfieUpdateController = new AbortController();
                 const response = await fetch('/api/upload-selfie', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`
                     },
-                    body: formData
+                    body: formData,
+                    signal: selfieUpdateController.signal
                 });
 
                 if (response.ok) {
@@ -3199,6 +3222,10 @@
                 }
             } catch (error) {
                 console.error('Erreur lors de l\'upload:', error);
+                if (error && (error.name === 'AbortError' || String(error).includes('AbortError'))) {
+                    // Annulation utilisateur
+                    return;
+                }
                 const isUnauthorized = String(error).includes('Unauthorized');
                 const errorBox = document.getElementById('selfieModalError');
                 const message = isUnauthorized
@@ -3218,6 +3245,7 @@
             } finally {
                 btnText.style.opacity = '1';
                 spinner.style.display = 'none';
+                selfieUpdateController = null;
             }
         }
 
