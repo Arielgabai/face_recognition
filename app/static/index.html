@@ -2052,7 +2052,8 @@
                     const dashboard = document.getElementById('dashboard');
                     if (dashboard) dashboard.classList.remove('show');
                 } catch {}
-                window.location.reload();
+                // Arrêter le flux appelant pour éviter des erreurs null sur le DOM
+                throw new Error('Unauthorized');
             }
             return res;
         }
@@ -2166,8 +2167,8 @@
             const emptyDiv = document.getElementById('myPhotosEmpty');
             
             // Show loading state
-            loadingDiv.style.display = 'flex';
-            emptyDiv.style.display = 'none';
+            if (loadingDiv) loadingDiv.style.display = 'flex';
+            if (emptyDiv) emptyDiv.style.display = 'none';
             
             try {
                 const response = await apiFetch('/api/my-photos');
@@ -2190,7 +2191,7 @@
                         console.log('First photo complète:', photos[0]);
                         console.log('First photo event_name:', photos[0]?.event_name);
                         
-                        if (photos.length > 0 && photos[0].event_name) {
+                        if (eventTitle && photos.length > 0 && photos[0].event_name) {
                             eventTitle.textContent = photos[0].event_name;
                             console.log('Titre mis à jour avec:', photos[0].event_name);
                         } else {
@@ -2265,8 +2266,8 @@
             const emptyDiv = document.getElementById('allPhotosEmpty');
             
             // Show loading state
-            loadingDiv.style.display = 'flex';
-            emptyDiv.style.display = 'none';
+            if (loadingDiv) loadingDiv.style.display = 'flex';
+            if (emptyDiv) emptyDiv.style.display = 'none';
             
             try {
                 const response = await apiFetch('/api/all-photos');
@@ -3201,9 +3202,15 @@
                             }
                         } else {
                             console.error(`Erreur API: ${response.status}`);
+                            if (response.status === 401) {
+                                throw new Error('Unauthorized');
+                            }
                         }
                     } catch (error) {
                         console.error(`Erreur tentative ${attempts + 1}:`, error);
+                        if (String(error).includes('Unauthorized')) {
+                            throw error;
+                        }
                     }
                     
                     attempts++;
