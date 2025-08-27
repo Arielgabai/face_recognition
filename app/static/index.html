@@ -269,7 +269,7 @@
         }
 
         .user-info h3 {
-            color: #a4401d;
+            color: var(--text);
             margin-bottom: 10px;
             font-size: 1.3rem;
         }
@@ -323,9 +323,9 @@
         }
 
         .file-input-wrapper label:hover {
-            border-color: #a4401d;
-            background: rgba(212, 115, 74, 0.05);
-            color: #a4401d;
+            border-color: var(--neon-purple);
+            background: rgba(138, 43, 226, 0.08);
+            color: var(--text);
         }
 
         /* Loading Spinners */
@@ -475,9 +475,9 @@
         }
 
         .alert-success {
-            background: rgba(212, 115, 74, 0.1);
-            border: 1px solid rgba(212, 115, 74, 0.3);
-            color: #a4401d;
+            background: rgba(57, 255, 20, 0.08);
+            border: 1px solid rgba(57, 255, 20, 0.35);
+            color: #b9ffb0;
         }
 
         .alert-error {
@@ -491,6 +491,37 @@
             border: 1px solid rgba(59, 130, 246, 0.3);
             color: #3b82f6;
         }
+
+        /* Toast notifications - global, au-dessus du drawer */
+        .toast-container {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 20000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+        .toast {
+            min-width: 260px;
+            max-width: 90vw;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(13, 13, 28, 0.85);
+            color: var(--text);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35), var(--shadow-purple);
+            transform: translateY(-8px);
+            opacity: 0;
+            transition: all .25s ease;
+            pointer-events: auto;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast-success { border-color: rgba(57,255,20,.35); box-shadow: 0 10px 30px rgba(0,0,0,.35), var(--shadow-green); }
+        .toast-error { border-color: rgba(239,68,68,.4); }
+        .toast-info { border-color: rgba(138,43,226,.45); }
 
         /* Loading */
         .loading {
@@ -635,9 +666,9 @@
         }
 
         .selfie-validation.success {
-            background: rgba(212, 115, 74, 0.1);
-            border: 1px solid rgba(212, 115, 74, 0.3);
-            color: #a4401d;
+            background: rgba(57, 255, 20, 0.08);
+            border: 1px solid rgba(57, 255, 20, 0.35);
+            color: #b9ffb0;
         }
 
         .selfie-validation.error {
@@ -1442,11 +1473,11 @@
 
         /* Upload Area - Design moderne */
         .upload-area {
-            border: 2px dashed rgba(212, 115, 74, 0.4);
+            border: 2px dashed rgba(138, 43, 226, 0.45);
             border-radius: 20px;
             padding: 50px;
             text-align: center;
-            background: rgba(212, 115, 74, 0.02);
+            background: rgba(138, 43, 226, 0.03);
             margin-bottom: 25px;
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             cursor: pointer;
@@ -1461,7 +1492,7 @@
             left: -100%;
             width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(212, 115, 74, 0.1), transparent);
+            background: linear-gradient(90deg, transparent, rgba(138, 43, 226, 0.12), transparent);
             transition: left 0.6s ease;
         }
 
@@ -1470,15 +1501,15 @@
         }
 
         .upload-area:hover {
-            border-color: #a4401d;
-            background: rgba(212, 115, 74, 0.05);
+            border-color: var(--neon-purple);
+            background: rgba(138, 43, 226, 0.05);
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(212, 115, 74, 0.2);
+            box-shadow: 0 8px 25px rgba(138, 43, 226, 0.25);
         }
 
         .upload-area.dragover {
-            border-color: #a4401d;
-            background: rgba(212, 115, 74, 0.1);
+            border-color: var(--neon-purple);
+            background: rgba(138, 43, 226, 0.1);
             transform: scale(1.02);
         }
 
@@ -1581,7 +1612,7 @@
         }
 
         .no-image-placeholder {
-            color: #9f8874;
+            color: var(--muted);
             font-size: 0.9rem;
             font-style: italic;
             text-align: center;
@@ -1591,7 +1622,7 @@
             position: absolute;
             top: 15px;
             right: 15px;
-            background: #a4401d;
+            background: var(--neon-purple);
             color: white;
             padding: 6px 12px;
             border-radius: 6px;
@@ -2107,13 +2138,25 @@
             loadDashboard();
         }
 
+        // Toast global, persistant (au-dessus du drawer)
         function showAlert(message, type = 'success') {
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type}`;
-            alertDiv.textContent = message;
-            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+            let container = document.getElementById('toastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toastContainer';
+                container.className = 'toast-container';
+                document.body.appendChild(container);
+            }
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            // animation in
+            requestAnimationFrame(() => toast.classList.add('show'));
+            // auto-remove after 5s
             setTimeout(() => {
-                alertDiv.remove();
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 250);
             }, 5000);
         }
 
@@ -3224,7 +3267,7 @@
 
                 if (response.ok) {
                     btnText.textContent = 'Mise à jour des photos...';
-                    btnText.style.color = '#a4401d';
+                    btnText.style.color = 'var(--text)';
                     
                     // Rafraîchir les photos sans déconnecter l'utilisateur
                     try {
