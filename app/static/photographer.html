@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interface Photographe - Face Recognition App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button.danger {
+            background-color: #dc3545;
+        }
+        button.danger:hover {
+            background-color: #c82333;
+        }
+        button.success {
+            background-color: #28a745;
+        }
+        button.success:hover {
+            background-color: #218838;
+        }
+        .password-wrapper { position: relative; }
+        .password-wrapper input[type="password"], .password-wrapper input[type="text"] { padding-right: 40px; }
+        .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; font-size: 16px; }
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #666;
+            white-space: nowrap;
+        }
+        .tab.active {
+            color: #007bff;
+            border-bottom: 2px solid #007bff;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .user-info {
+            background-color: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .event-selector {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #dee2e6;
+        }
+        .event-selector h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .event-selector select {
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 10px;
+        }
+        .current-event-info {
+            background-color: #e8f5e8;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border-left: 4px solid #28a745;
+        }
+        .photo-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+        .photo-item {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+            background: white;
+            position: relative;
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .photo-item img {
+            width: auto;
+            height: 180px;
+            max-width: 180px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto;
+        }
+        .photo-info {
+            padding: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .photo-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+        .photo-actions button {
+            padding: 5px 10px;
+            font-size: 12px;
+            margin: 0;
+        }
+        .upload-area {
+            border: 2px dashed #ddd;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background-color: #f8f9fa;
+            margin-bottom: 20px;
+            transition: border-color 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #e3f2fd;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .photo-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📸 Interface Photographe</h1>
+        
+        <div id="loginForm">
+            <h2>Connexion Photographe</h2>
+            <div class="form-group">
+                <label for="username">Nom d'utilisateur:</label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Mot de passe:</label>
+                <input type="password" id="password" required>
+            </div>
+            <button onclick="login()">Se connecter</button>
+        </div>
+
+        <div id="dashboard" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>Tableau de bord Photographe</h2>
+                <button onclick="logout()" class="danger">Déconnexion</button>
+            </div>
+            
+            <div id="userInfo" class="user-info">
+                <!-- Informations utilisateur -->
+            </div>
+            
+            <div id="eventSelector" class="event-selector">
+                <h4>🎯 Sélectionner un événement</h4>
+                <select id="eventSelect" onchange="switchEvent()">
+                    <option value="">Chargement des événements...</option>
+                </select>
+                <div id="currentEventInfo" class="current-event-info" style="display: none;">
+                    <!-- Informations de l'événement sélectionné -->
+                </div>
+            </div>
+            
+            <div class="stats" id="stats">
+                <!-- Statistiques -->
+            </div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('upload-photos')">📤 Ajouter des Photos</button>
+                <button class="tab" onclick="showTab('my-photos')">🖼️ Mes Photos</button>
+                <button class="tab" onclick="showTab('event-info')">📋 Informations Événement</button>
+            </div>
+
+            <div id="upload-photos" class="tab-content active">
+                <h3>Ajouter des Photos</h3>
+                <div class="card">
+                    <p>Uploadez des photos pour l'événement sélectionné :</p>
+                    
+                    <div class="upload-area" id="uploadArea">
+                        <h4>📸 Glissez-déposez vos photos ici</h4>
+                        <p>ou cliquez pour sélectionner des fichiers</p>
+                        <input type="file" id="photoFiles" multiple accept="image/*" style="display: none;">
+                    </div>
+                    
+                    <div id="uploadPreview" style="display: none;">
+                        <h4>Photos sélectionnées :</h4>
+                        <div id="previewGrid" class="photo-grid"></div>
+                        <button onclick="uploadPhotos()" class="success">Télécharger les photos</button>
+                        <button onclick="cancelUpload()" class="danger">Annuler</button>
+                    </div>
+                    
+                    <div class="loading" id="uploadLoading">
+                        <div class="spinner"></div>
+                        <p>Téléchargement en cours...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="my-photos" class="tab-content">
+                <h3>Mes Photos</h3>
+                <div class="card">
+                    <p>Photos que vous avez uploadées pour l'événement sélectionné :</p>
+                    <div id="myPhotosList">Chargement...</div>
+                </div>
+            </div>
+
+            <div id="event-info" class="tab-content">
+                <h3>Informations Événement</h3>
+                <div class="card">
+                    <div id="eventInfo">Chargement...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+        let currentEvent = null;
+        let userEvents = [];
+
+        if (token) {
+            loadDashboard();
+        }
+
+        function showAlert(message, type = 'success') {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        function attachPasswordToggle(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input || input.dataset.toggleAttached === '1') return;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'password-wrapper';
+            input.parentNode.insertBefore(wrapper, input);
+            wrapper.appendChild(input);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'toggle-password';
+            btn.setAttribute('aria-label', 'Afficher le mot de passe');
+            btn.textContent = '👁️';
+            btn.addEventListener('click', () => {
+                const hidden = input.type === 'password';
+                input.type = hidden ? 'text' : 'password';
+                btn.textContent = hidden ? '🙈' : '👁️';
+            });
+            wrapper.appendChild(btn);
+            input.dataset.toggleAttached = '1';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            attachPasswordToggle('password');
+        });
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    token = data.access_token;
+                    localStorage.setItem('token', token);
+                    loadDashboard();
+                } else {
+                    showAlert(data.detail || 'Erreur de connexion', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur de connexion', 'error');
+            }
+        }
+
+        function logout() {
+            // Nettoyer complètement le localStorage
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('currentUser');
+            
+            // Réinitialiser les variables
+            token = null;
+            currentUser = null;
+            currentEvent = null;
+            userEvents = [];
+            
+            // Nettoyer les formulaires
+            document.getElementById('loginForm').reset();
+            
+            // Masquer le dashboard et afficher le formulaire de connexion
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('dashboard').style.display = 'none';
+            
+            // Nettoyer l'affichage
+            document.getElementById('myPhotos').innerHTML = '';
+            document.getElementById('eventInfo').innerHTML = '';
+            
+            // Rediriger vers la page d'accueil pour éviter les problèmes de cache
+            window.location.href = '/';
+            
+            console.log('Déconnexion effectuée - session nettoyée');
+        }
+
+        async function loadDashboard() {
+            try {
+                const response = await fetch('/api/me', {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    currentUser = await response.json();
+                    
+                    // Vérifier que c'est bien un photographe
+                    if (currentUser.user_type !== 'photographer') {
+                        console.log('Type utilisateur détecté:', currentUser.user_type);
+                        showAlert('Accès refusé. Seuls les photographes peuvent accéder à cette interface.', 'error');
+                        logout();
+                        return;
+                    }
+                    
+                    document.getElementById('loginForm').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                    
+                    // Afficher les informations utilisateur
+                    displayUserInfo();
+                    
+                    // Charger les événements du photographe
+                    await loadPhotographerEvents();
+                    
+                    // Configurer l'upload
+                    setupPhotoUpload();
+                } else {
+                    localStorage.removeItem('token');
+                    token = null;
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement du dashboard:', error);
+                localStorage.removeItem('token');
+                token = null;
+            }
+        }
+
+        function displayUserInfo() {
+            const userInfo = document.getElementById('userInfo');
+            userInfo.innerHTML = `
+                <h3>👋 Bonjour ${currentUser.username} !</h3>
+                <p><strong>Email:</strong> ${currentUser.email}</p>
+                <p><strong>Type:</strong> Photographe</p>
+            `;
+        }
+
+        async function loadPhotographerEvents() {
+            try {
+                const response = await fetch('/api/photographer/events', {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    userEvents = await response.json();
+                    populateEventSelector();
+                    
+                    // Sélectionner le premier événement par défaut
+                    if (userEvents.length > 0) {
+                        currentEvent = userEvents[0];
+                        document.getElementById('eventSelect').value = currentEvent.id;
+                        switchEvent();
+                    } else {
+                        showAlert('Aucun événement assigné à ce photographe', 'error');
+                    }
+                } else {
+                    showAlert('Erreur lors du chargement des événements', 'error');
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement des événements:', error);
+                showAlert('Erreur lors du chargement des événements', 'error');
+            }
+        }
+
+        function populateEventSelector() {
+            const eventSelect = document.getElementById('eventSelect');
+            eventSelect.innerHTML = '';
+            
+            if (userEvents.length === 0) {
+                eventSelect.innerHTML = '<option value="">Aucun événement assigné</option>';
+                return;
+            }
+            
+            userEvents.forEach(event => {
+                const option = document.createElement('option');
+                option.value = event.id;
+                option.textContent = `${event.name} (${event.event_code})`;
+                eventSelect.appendChild(option);
+            });
+        }
+
+        function switchEvent() {
+            const eventId = document.getElementById('eventSelect').value;
+            if (!eventId) {
+                currentEvent = null;
+                document.getElementById('currentEventInfo').style.display = 'none';
+                clearEventData();
+                return;
+            }
+            
+            currentEvent = userEvents.find(event => event.id == eventId);
+            if (currentEvent) {
+                displayCurrentEventInfo();
+                loadEventData();
+            }
+        }
+
+        function displayCurrentEventInfo() {
+            const currentEventInfo = document.getElementById('currentEventInfo');
+            currentEventInfo.innerHTML = `
+                <h5>🎯 Événement sélectionné : ${currentEvent.name}</h5>
+                <p><strong>Code :</strong> ${currentEvent.event_code}</p>
+                <p><strong>Date :</strong> ${currentEvent.date ? new Date(currentEvent.date).toLocaleDateString() : 'Non définie'}</p>
+            `;
+            currentEventInfo.style.display = 'block';
+        }
+
+        function clearEventData() {
+            document.getElementById('stats').innerHTML = '';
+            document.getElementById('myPhotosList').innerHTML = '<p style="color: #666;">Aucun événement sélectionné</p>';
+            document.getElementById('eventInfo').innerHTML = '<p style="color: #666;">Aucun événement sélectionné</p>';
+        }
+
+        async function loadEventData() {
+            if (!currentEvent) return;
+            
+            await Promise.all([
+                loadStats(),
+                loadMyPhotos(),
+                loadEventInfo()
+            ]);
+        }
+
+        async function loadStats() {
+            if (!currentEvent) return;
+            
+            try {
+                const [photosResponse] = await Promise.all([
+                    fetch(`/api/photographer/events/${currentEvent.id}/photos`, {
+                        headers: { 'Authorization': `Bearer ${token}` },
+                    })
+                ]);
+
+                const photos = photosResponse.ok ? await photosResponse.json() : [];
+
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${photos.length}</div>
+                        <div class="stat-label">Photos uploadées</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${userEvents.length}</div>
+                        <div class="stat-label">Événements assignés</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${currentEvent.name}</div>
+                        <div class="stat-label">Événement actuel</div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Erreur lors du chargement des stats:', error);
+            }
+        }
+
+        async function loadMyPhotos() {
+            if (!currentEvent) return;
+            
+            try {
+                const response = await fetch(`/api/photographer/events/${currentEvent.id}/photos`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                const container = document.getElementById('myPhotosList');
+                
+                if (response.ok) {
+                    const photos = await response.json();
+                    if (photos.length === 0) {
+                        container.innerHTML = '<p style="color: #666;">Aucune photo uploadée pour cet événement</p>';
+                    } else {
+                        container.innerHTML = `
+                            <div class="photo-grid">
+                                ${photos.map(photo => `
+                                    <div class="photo-item">
+                                        <img src="/api/photo/${photo.id}" alt="Photo">
+                                        <div class="photo-actions">
+                                            <button onclick="deletePhoto(${photo.id})" class="danger">🗑️</button>
+                                        </div>
+                                        <div class="photo-info">
+                                            <p><strong>Nom:</strong> ${photo.original_filename}</p>
+                                            <p><strong>Date:</strong> ${new Date(photo.uploaded_at).toLocaleDateString()}</p>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }
+                } else {
+                    container.innerHTML = '<p style="color: #666;">Erreur lors du chargement des photos</p>';
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement des photos:', error);
+            }
+        }
+
+        async function loadEventInfo() {
+            if (!currentEvent) return;
+            
+            try {
+                const container = document.getElementById('eventInfo');
+                container.innerHTML = `
+                    <h4>${currentEvent.name}</h4>
+                    <p><strong>Code événement:</strong> ${currentEvent.event_code}</p>
+                    <p><strong>Date:</strong> ${currentEvent.date ? new Date(currentEvent.date).toLocaleDateString() : 'Non définie'}</p>
+                    <p><strong>Photographe:</strong> ${currentUser.username}</p>
+                    <p><strong>ID Événement:</strong> ${currentEvent.id}</p>
+                `;
+            } catch (error) {
+                console.error('Erreur lors du chargement des informations:', error);
+                document.getElementById('eventInfo').innerHTML = '<p style="color: #666;">Erreur lors du chargement des informations</p>';
+            }
+        }
+
+        async function deletePhoto(photoId) {
+            if (!confirm('Êtes-vous sûr de vouloir supprimer cette photo ?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/photos/${photoId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    showAlert('Photo supprimée avec succès !', 'success');
+                    loadMyPhotos();
+                    loadStats();
+                } else {
+                    const data = await response.json();
+                    showAlert(data.detail || 'Erreur lors de la suppression', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la suppression', 'error');
+            }
+        }
+
+        function setupPhotoUpload() {
+            const uploadArea = document.getElementById('uploadArea');
+            const photoFiles = document.getElementById('photoFiles');
+
+            // Clic sur la zone d'upload
+            uploadArea.addEventListener('click', () => {
+                photoFiles.click();
+            });
+
+            // Glisser-déposer
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                photoFiles.files = e.dataTransfer.files;
+                handleFileSelection();
+            });
+
+            // Sélection de fichiers
+            photoFiles.addEventListener('change', handleFileSelection);
+        }
+
+        function handleFileSelection() {
+            const files = document.getElementById('photoFiles').files;
+            if (files.length > 0) {
+                if (!currentEvent) {
+                    showAlert('Veuillez sélectionner un événement avant d\'uploader des photos', 'error');
+                    return;
+                }
+                document.getElementById('uploadPreview').style.display = 'block';
+                displayPreview(files);
+            }
+        }
+
+        function displayPreview(files) {
+            const previewGrid = document.getElementById('previewGrid');
+            previewGrid.innerHTML = '';
+
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const div = document.createElement('div');
+                    div.className = 'photo-item';
+                    div.innerHTML = `
+                        <img src="${e.target.result}" alt="Aperçu">
+                        <div class="photo-info">
+                            <p>${file.name}</p>
+                            <p>${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                        </div>
+                    `;
+                    previewGrid.appendChild(div);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function cancelUpload() {
+            document.getElementById('uploadPreview').style.display = 'none';
+            document.getElementById('photoFiles').value = '';
+            document.getElementById('previewGrid').innerHTML = '';
+        }
+
+        async function uploadPhotos() {
+            if (!currentEvent) {
+                showAlert('Veuillez sélectionner un événement avant d\'uploader des photos', 'error');
+                return;
+            }
+
+            const files = document.getElementById('photoFiles').files;
+            if (files.length === 0) {
+                showAlert('Veuillez sélectionner des photos', 'error');
+                return;
+            }
+
+            document.getElementById('uploadLoading').style.display = 'block';
+            document.getElementById('uploadPreview').style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                Array.from(files).forEach(file => {
+                    formData.append('files', file);
+                });
+
+                const response = await fetch(`/api/photographer/events/${currentEvent.id}/upload-photos`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert(`${data.uploaded_photos.length} photos téléchargées avec succès !`, 'success');
+                    cancelUpload();
+                    loadMyPhotos();
+                    loadStats();
+                } else {
+                    showAlert(data.detail || 'Erreur lors du téléchargement', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors du téléchargement', 'error');
+            } finally {
+                document.getElementById('uploadLoading').style.display = 'none';
+            }
+        }
+
+        function showTab(tabName) {
+            // Masquer tous les contenus d'onglets
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Désactiver tous les onglets
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Afficher le contenu de l'onglet sélectionné
+            document.getElementById(tabName).classList.add('active');
+            
+            // Activer l'onglet sélectionné
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html> 

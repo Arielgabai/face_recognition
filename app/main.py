@@ -356,13 +356,31 @@ os.makedirs("static/uploads/photos", exist_ok=True)
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    """Serveer le frontend. Préfère le build React s'il est présent; sinon fallback statique."""
-    react_index = os.path.join("frontend", "build", "index.html")
+    """Servir le frontend HTML selon le type d'utilisateur"""
     try:
-        if os.path.exists(react_index):
-            with open(react_index, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
-        # Fallback: servir l'ancienne page statique
+        # Vrifier si l'utilisateur est connect et son type
+        token = request.headers.get('authorization')
+        if token and token.startswith('Bearer '):
+            try:
+                # Dcoder le token pour obtenir le type d'utilisateur
+                payload = jwt.decode(token.split(' ')[1], SECRET_KEY, algorithms=[ALGORITHM])
+                username = payload.get("sub")
+                if username:
+                    # Rcuprer l'utilisateur depuis la base de donnes
+                    db = next(get_db())
+                    user = db.query(User).filter(User.username == username).first()
+                    if user and user.user_type == UserType.ADMIN:
+                        # Rediriger vers l'interface admin
+                        with open("static/admin.html", "r", encoding="utf-8") as f:
+                            return HTMLResponse(content=f.read())
+                    elif user and user.user_type == UserType.PHOTOGRAPHER:
+                        # Rediriger vers l'interface photographe
+                        with open("static/photographer.html", "r", encoding="utf-8") as f:
+                            return HTMLResponse(content=f.read())
+            except:
+                pass
+        
+        # Interface normale pour les autres utilisateurs
         with open("static/index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
@@ -401,17 +419,15 @@ async def photographer_interface():
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(event_code: str = None):
-    """Page d'inscription - préfère React si disponible."""
-    react_index = os.path.join("frontend", "build", "index.html")
+    """Page d'inscription pour les invits avec code vnement"""
     try:
-        if os.path.exists(react_index):
-            with open(react_index, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
         with open("static/register.html", "r", encoding="utf-8") as f:
-            content = f.read().replace('{{EVENT_CODE}}', event_code or '')
+            content = f.read()
+            # Injecter le code vnement dans le JavaScript
+            content = content.replace('{{EVENT_CODE}}', event_code or '')
             return HTMLResponse(content=content)
     except FileNotFoundError:
-        return HTMLResponse(content="<h1>Page d'inscription</h1><p>Page d'inscription non trouvée</p>")
+        return HTMLResponse(content="<h1>Page d'inscription</h1><p>Page d'inscription non trouve</p>")
 
 # Vérification disponibilité username/email (pour validation côté client)
 @app.post("/api/check-user-availability")
@@ -445,13 +461,8 @@ async def register_with_code_query(event_code: str = None):
 async def register_with_code_path(event_code: str):
     return await register_page(event_code=event_code)
 
-# Routes React SPA (login, dashboard) -> index.html du build React si présent
 @app.get("/login", response_class=HTMLResponse)
 async def spa_login():
-    react_index = os.path.join("frontend", "build", "index.html")
-    if os.path.exists(react_index):
-        with open(react_index, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
     try:
         with open("static/index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
@@ -460,37 +471,11 @@ async def spa_login():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def spa_dashboard():
-    react_index = os.path.join("frontend", "build", "index.html")
-    if os.path.exists(react_index):
-        with open(react_index, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
     try:
         with open("static/index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Face Recognition API</h1><p>Frontend not found</p>")
-
-# Fichiers classiques du build React
-@app.get("/favicon.ico")
-async def favicon():
-    path = os.path.join("frontend", "build", "favicon.ico")
-    if os.path.exists(path):
-        return FileResponse(path)
-    raise HTTPException(status_code=404, detail="Not found")
-
-@app.get("/manifest.json")
-async def manifest_json():
-    path = os.path.join("frontend", "build", "manifest.json")
-    if os.path.exists(path):
-        return FileResponse(path)
-    raise HTTPException(status_code=404, detail="Not found")
-
-@app.get("/asset-manifest.json")
-async def asset_manifest_json():
-    path = os.path.join("frontend", "build", "asset-manifest.json")
-    if os.path.exists(path):
-        return FileResponse(path)
-    raise HTTPException(status_code=404, detail="Not found")
 
 # === AUTHENTIFICATION ===
 
