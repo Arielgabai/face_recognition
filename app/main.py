@@ -375,18 +375,26 @@ async def api_root():
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_interface():
-    """Servir l'interface d'administration"""
+    """Servir l'interface d'administration - React si disponible"""
+    react_index = os.path.join("frontend", "build", "index.html")
+    if os.path.exists(react_index):
+        with open(react_index, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
     try:
-        with open("static/admin.html", "r", encoding="utf-8") as f:
+        with open("static/index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Admin Interface</h1><p>Admin interface not found</p>")
 
 @app.get("/photographer", response_class=HTMLResponse)
 async def photographer_interface():
-    """Servir l'interface photographe"""
+    """Servir l'interface photographe - React si disponible"""
+    react_index = os.path.join("frontend", "build", "index.html")
+    if os.path.exists(react_index):
+        with open(react_index, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
     try:
-        with open("static/photographer.html", "r", encoding="utf-8") as f:
+        with open("static/index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Photographer Interface</h1><p>Photographer interface not found</p>")
