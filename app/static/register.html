@@ -552,23 +552,38 @@
             }
         });
 
-        function nextStep() {
+        async function nextStep() {
             // Valider les informations de base
-            const eventCode = document.getElementById('eventCode').value;
-            const username = document.getElementById('username').value;
-            const email = document.getElementById('email').value;
+            const eventCode = document.getElementById('eventCode').value.trim();
+            const username = document.getElementById('username').value.trim();
+            const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
-            const userType = 'USER';
+            const uErr = document.getElementById('usernameError');
+            const eErr = document.getElementById('emailError');
+            const pErr = document.getElementById('passwordError');
+            const cErr = document.getElementById('eventCodeError');
+            [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
 
-            if (!eventCode || !username || !email || !password) {
-                showAlert('Veuillez remplir tous les champs', 'error');
-                return;
-            }
+            let hasError = false;
+            if (!eventCode) { cErr.textContent='Le code événement est obligatoire'; cErr.style.display='block'; hasError = true; }
+            if (!username) { uErr.textContent='Le nom d\'utilisateur est obligatoire'; uErr.style.display='block'; hasError = true; }
+            if (!email) { eErr.textContent='L\'email est obligatoire'; eErr.style.display='block'; hasError = true; }
+            const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+            if (!strongPw.test(password)) { pErr.textContent='Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial'; pErr.style.display='block'; hasError = true; }
+            if (hasError) return;
 
-            if (password.length < 6) {
-                showAlert('Le mot de passe doit contenir au moins 6 caractères', 'error');
-                return;
-            }
+            // Vérifier la disponibilité username/email côté serveur
+            try {
+                const resp = await fetch('/api/check-user-availability', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email })
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (data.username_taken) { uErr.textContent = 'Nom d\'utilisateur déjà pris'; uErr.style.display='block'; hasError = true; }
+                if (data.email_taken) { eErr.textContent = 'Email déjà utilisé'; eErr.style.display='block'; hasError = true; }
+                if (hasError) return;
+            } catch {}
 
             // Passer à l'étape 2
             currentStep = 2;

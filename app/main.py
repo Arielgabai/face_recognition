@@ -421,6 +421,20 @@ async def register_page(event_code: str = None):
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Page d'inscription</h1><p>Page d'inscription non trouv+�e</p>")
 
+# Vérification disponibilité username/email (pour validation côté client)
+@app.post("/api/check-user-availability")
+async def check_user_availability(
+    username: str = Body(None),
+    email: str = Body(None),
+    db: Session = Depends(get_db)
+):
+    result = {"username_taken": False, "email_taken": False}
+    if username:
+        result["username_taken"] = db.query(User).filter(User.username == username).first() is not None
+    if email:
+        result["email_taken"] = db.query(User).filter(User.email == email).first() is not None
+    return result
+
 # Page d'inscription accessible via /register-with-code et /register-with-code/{event_code}
 @app.get("/register-with-code", response_class=HTMLResponse)
 async def register_with_code_query(event_code: str = None):
