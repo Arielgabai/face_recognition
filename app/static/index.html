@@ -1867,6 +1867,11 @@
                 filter: blur(2px);
             }
         }
+
+        /* Password eye toggle */
+        .password-wrapper { position: relative; }
+        .password-wrapper input[type="password"], .password-wrapper input[type="text"] { padding-right: 40px; }
+        .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; font-size: 16px; color: var(--text); }
     </style>
 </head>
 <body>
@@ -1905,7 +1910,10 @@
             </div>
             <div class="form-group">
                     <label for="password">Mot de passe</label>
-                    <input type="password" id="password" class="form-input" required placeholder="Entrez votre mot de passe">
+                    <div class="password-wrapper">
+                        <input type="password" id="password" class="form-input" required placeholder="Entrez votre mot de passe">
+                        <button type="button" class="toggle-password" aria-label="Afficher le mot de passe" onclick="togglePassword('password', this)">👁️</button>
+                    </div>
             </div>
                 <button onclick="login()" class="btn btn-primary" id="loginBtn">
                     <span class="btn-text">Se connecter</span>
@@ -3608,6 +3616,13 @@
             }
         }
 
+        function togglePassword(id, btn) {
+            const input = document.getElementById(id);
+            if (!input) return;
+            const hidden = input.type === 'password';
+            input.type = hidden ? 'text' : 'password';
+            if (btn) btn.textContent = hidden ? '🙈' : '👁️';
+        }
     </script>
 </body>
 </html> 

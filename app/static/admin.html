@@ -65,6 +65,23 @@
         button.success:hover {
             background-color: #218838;
         }
+        .password-wrapper {
+            position: relative;
+        }
+        .password-wrapper input[type="password"],
+        .password-wrapper input[type="text"] {
+            padding-right: 40px;
+        }
+        .toggle-password {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
         .alert {
             padding: 15px;
             margin-bottom: 20px;
@@ -474,12 +491,41 @@
         }
 
         function showAlert(message, type = 'success') {
-            const alertDiv = document.getElementById('alert');
-            alertDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
-            setTimeout(() => {
-                alertDiv.innerHTML = '';
-            }, 5000);
+            const container = document.getElementById('alert');
+            if (!container) return;
+            const el = document.createElement('div');
+            el.className = `alert alert-${type}`;
+            el.textContent = message;
+            container.prepend(el);
+            setTimeout(() => { try { el.remove(); } catch (e) {} }, 5000);
         }
+
+        function attachPasswordToggle(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input || input.dataset.toggleAttached === '1') return;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'password-wrapper';
+            input.parentNode.insertBefore(wrapper, input);
+            wrapper.appendChild(input);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'toggle-password';
+            btn.setAttribute('aria-label', 'Afficher le mot de passe');
+            btn.textContent = '👁️';
+            btn.addEventListener('click', () => {
+                const hidden = input.type === 'password';
+                input.type = hidden ? 'text' : 'password';
+                btn.textContent = hidden ? '🙈' : '👁️';
+            });
+            wrapper.appendChild(btn);
+            input.dataset.toggleAttached = '1';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            attachPasswordToggle('password');
+            attachPasswordToggle('photographerPassword');
+            attachPasswordToggle('adminPassword');
+        });
 
         async function login() {
             const username = document.getElementById('username').value;

@@ -65,6 +65,9 @@
         button.success:hover {
             background-color: #218838;
         }
+        .password-wrapper { position: relative; }
+        .password-wrapper input[type="password"], .password-wrapper input[type="text"] { padding-right: 40px; }
+        .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; font-size: 16px; }
         .alert {
             padding: 15px;
             margin-bottom: 20px;
@@ -369,6 +372,31 @@
                 alertDiv.remove();
             }, 5000);
         }
+
+        function attachPasswordToggle(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input || input.dataset.toggleAttached === '1') return;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'password-wrapper';
+            input.parentNode.insertBefore(wrapper, input);
+            wrapper.appendChild(input);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'toggle-password';
+            btn.setAttribute('aria-label', 'Afficher le mot de passe');
+            btn.textContent = '👁️';
+            btn.addEventListener('click', () => {
+                const hidden = input.type === 'password';
+                input.type = hidden ? 'text' : 'password';
+                btn.textContent = hidden ? '🙈' : '👁️';
+            });
+            wrapper.appendChild(btn);
+            input.dataset.toggleAttached = '1';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            attachPasswordToggle('password');
+        });
 
         async function login() {
             const username = document.getElementById('username').value;
