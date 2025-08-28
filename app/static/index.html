@@ -1871,7 +1871,8 @@
         /* Password eye toggle */
         .password-wrapper { position: relative; }
         .password-wrapper input[type="password"], .password-wrapper input[type="text"] { padding-right: 40px; }
-        .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; font-size: 16px; color: var(--text); }
+        .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; font-size: 18px; color: var(--muted); opacity: 0.8; }
+        .toggle-password:hover { color: var(--text); opacity: 1; }
     </style>
 </head>
 <body>
@@ -1912,7 +1913,7 @@
                     <label for="password">Mot de passe</label>
                     <div class="password-wrapper">
                         <input type="password" id="password" class="form-input" required placeholder="Entrez votre mot de passe">
-                        <button type="button" class="toggle-password" aria-label="Afficher le mot de passe" onclick="togglePassword('password', this)">👁️</button>
+                        <button type="button" class="toggle-password" aria-label="Afficher le mot de passe" onclick="togglePassword('password', this)">●</button>
                     </div>
             </div>
                 <button onclick="login()" class="btn btn-primary" id="loginBtn">
