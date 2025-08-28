@@ -742,6 +742,19 @@
             if (!username) { uErr.textContent = "Le nom d'utilisateur est obligatoire"; uErr.style.display='block'; hasError = true; }
             if (!email) { eErr.textContent = "L'email est obligatoire"; eErr.style.display='block'; hasError = true; }
             if (hasError) return;
+
+            // Vérifier disponibilité username/email AVANT l'appel API pour afficher plusieurs erreurs simultanément
+            try {
+                const avail = await fetch('/api/check-user-availability', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email })
+                }).then(r => r.json()).catch(() => ({}));
+                let taken = false;
+                if (avail && avail.username_taken) { uErr.textContent = "Nom d'utilisateur déjà pris"; uErr.style.display='block'; taken = true; }
+                if (avail && avail.email_taken) { eErr.textContent = "Email déjà utilisé"; eErr.style.display='block'; taken = true; }
+                if (taken) return;
+            } catch {}
             // Vérifier disponibilité pour afficher toutes les erreurs en même temps
             try {
                 const avail = await fetch('/api/check-user-availability', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email })}).then(r=>r.json()).catch(()=>({}));
