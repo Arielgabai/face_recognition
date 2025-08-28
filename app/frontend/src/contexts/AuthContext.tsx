@@ -50,14 +50,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (credentials: LoginCredentials) => {
     try {
       const response = await authService.login(credentials);
-      const { access_token } = response;
-      
+      const access_token: string = response.data.access_token;
+
       // Récupérer les informations de l'utilisateur
-      const userData = await authService.getCurrentUser();
-      
+      const userResponse = await authService.getCurrentUser();
+      const userData: User = userResponse.data;
+
       setToken(access_token);
       setUser(userData);
-      
+
       localStorage.setItem('token', access_token);
       localStorage.setItem('user', JSON.stringify(userData));
     } catch (error) {
@@ -67,8 +68,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (data: RegisterData) => {
     try {
-      const userData = await authService.register(data);
-      setUser(userData);
+      const response = await authService.register(data);
+      // Certaines implémentations renvoient un Token, d'autres un User. On tente de récupérer l'utilisateur ensuite si besoin.
+      const maybeUser = response.data as any;
+      if (maybeUser && (maybeUser.username || maybeUser.email)) {
+        setUser(maybeUser as User);
+      }
     } catch (error) {
       throw error;
     }

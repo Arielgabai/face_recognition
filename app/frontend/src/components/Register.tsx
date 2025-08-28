@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { photoService } from '../services/api';
+import { photoService, validationService } from '../services/api';
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -27,6 +27,11 @@ const Register: React.FC = () => {
     eventCode: '',
   });
   const [error, setError] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [confirmPasswordError, setConfirmPasswordError] = useState('');
+  const [eventCodeError, setEventCodeError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
   const { register } = useAuth();
@@ -49,18 +54,61 @@ const Register: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('Les mots de passe ne correspondent pas');
-      return;
-    }
-
-    if (!formData.eventCode.trim()) {
-      setError('Le code événement est obligatoire');
-      return;
-    }
+    setUsernameError('');
+    setEmailError('');
+    setPasswordError('');
+    setConfirmPasswordError('');
+    setEventCodeError('');
 
     setIsLoading(true);
+
+    let hasError = false;
+
+    // Validations locales
+    if (!formData.username.trim()) {
+      setUsernameError("Le nom d'utilisateur est obligatoire");
+      hasError = true;
+    }
+    if (!formData.email.trim()) {
+      setEmailError("L'email est obligatoire");
+      hasError = true;
+    }
+    if (!formData.eventCode.trim()) {
+      setEventCodeError('Le code événement est obligatoire');
+      hasError = true;
+    }
+    if (formData.password !== formData.confirmPassword) {
+      setConfirmPasswordError('Les mots de passe ne correspondent pas');
+      hasError = true;
+    }
+    const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+    if (!strongPw.test(formData.password)) {
+      setPasswordError("Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial");
+      hasError = true;
+    }
+
+    // Vérifier disponibilité username/email même si d'autres erreurs existent, pour tout afficher d'un coup
+    try {
+      const availability = await validationService.checkUserAvailability({
+        username: formData.username,
+        email: formData.email,
+      });
+      if (availability?.username_taken) {
+        setUsernameError("Nom d'utilisateur déjà pris");
+        hasError = true;
+      }
+      if (availability?.email_taken) {
+        setEmailError('Email déjà utilisé');
+        hasError = true;
+      }
+    } catch {
+      // Ignore l'erreur réseau ici; l'API d'inscription confirmera au pire
+    }
+
+    if (hasError) {
+      setIsLoading(false);
+      return;
+    }
 
     try {
       // Inscription utilisateur liée à un événement (obligatoire)
@@ -75,7 +123,28 @@ const Register: React.FC = () => {
       );
       navigate('/login');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Erreur lors de l\'inscription');
+      const msg: string = err?.response?.data?.detail || 'Erreur lors de l\'inscription';
+      const lower = msg.toLowerCase();
+      let mapped = false;
+      if (lower.includes('mot de passe') || lower.includes('password')) {
+        setPasswordError(msg);
+        mapped = true;
+      }
+      if (msg.includes("Nom d'utilisateur") || lower.includes('utilisateur')) {
+        setUsernameError(msg);
+        mapped = true;
+      }
+      if (lower.includes('email')) {
+        setEmailError(msg);
+        mapped = true;
+      }
+      if (lower.includes('code')) {
+        setEventCodeError(msg);
+        mapped = true;
+      }
+      if (!mapped) {
+        setError(msg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -123,6 +192,8 @@ const Register: React.FC = () => {
               autoFocus
               value={formData.username}
               onChange={handleInputChange('username')}
+              error={Boolean(usernameError)}
+              helperText={usernameError || undefined}
             />
             <TextField
               margin="normal"
@@ -135,6 +206,8 @@ const Register: React.FC = () => {
               type="email"
               value={formData.email}
               onChange={handleInputChange('email')}
+              error={Boolean(emailError)}
+              helperText={emailError || undefined}
             />
             <TextField
               margin="normal"
@@ -147,6 +220,8 @@ const Register: React.FC = () => {
               autoComplete="new-password"
               value={formData.password}
               onChange={handleInputChange('password')}
+              error={Boolean(passwordError)}
+              helperText={passwordError || undefined}
             />
             <TextField
               margin="normal"
@@ -158,6 +233,8 @@ const Register: React.FC = () => {
               id="confirmPassword"
               value={formData.confirmPassword}
               onChange={handleInputChange('confirmPassword')}
+              error={Boolean(confirmPasswordError)}
+              helperText={confirmPasswordError || undefined}
             />
             <TextField
               margin="normal"
@@ -169,6 +246,9 @@ const Register: React.FC = () => {
               value={formData.eventCode}
               onChange={handleInputChange('eventCode')}
               helperText="Obtenu via le QR code ou auprès de l'organisateur"
+              error={Boolean(eventCodeError)}
+              FormHelperTextProps={{ sx: { color: eventCodeError ? 'error.main' : undefined } }}
+              placeholder="Ex: ABC12345"
             />
             <FormControl fullWidth margin="normal" disabled>
               <InputLabel id="user-type-label">Type de compte</InputLabel>
