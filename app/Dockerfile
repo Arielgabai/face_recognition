@@ -1,3 +1,11 @@
+FROM node:18-alpine AS frontend-build
+
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend ./
+RUN npm run build
+
 FROM python:3.11-slim-bookworm
 
 # Installer uniquement les libs système nécessaires à l'exécution
@@ -46,8 +54,13 @@ RUN pip install -r requirements.txt
 # Copier le code source de l'application
 COPY . .
 
-# Construire le frontend React en production
-RUN cd frontend && npm ci --no-audit --no-fund && npm run build && cd ..
+# Intégrer le build React: servir index depuis frontend/build et assets depuis /static
+RUN mkdir -p frontend/build
+COPY --from=frontend-build /app/frontend/build/index.html /app/frontend/build/index.html
+COPY --from=frontend-build /app/frontend/build/favicon.ico /app/frontend/build/favicon.ico
+COPY --from=frontend-build /app/frontend/build/manifest.json /app/frontend/build/manifest.json
+COPY --from=frontend-build /app/frontend/build/asset-manifest.json /app/frontend/build/asset-manifest.json
+COPY --from=frontend-build /app/frontend/build/static /app/static
 
 # Créer les dossiers nécessaires
 RUN mkdir -p static/uploads/selfies static/uploads/photos
