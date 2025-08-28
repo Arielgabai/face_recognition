@@ -4,7 +4,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Configuration de la base de données
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+# Par défaut, on utilise le même fichier que la prod Render
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./face_recognition.db")
 
 # Si c'est PostgreSQL, ajuster l'URL pour SQLAlchemy
 if DATABASE_URL.startswith("postgres://"):
