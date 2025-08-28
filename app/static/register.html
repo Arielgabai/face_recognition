@@ -691,6 +691,12 @@
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const eventCode = document.getElementById('eventCode').value;
+            // Validation mot de passe côté client
+            const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+            if (!strongPw.test(password)) {
+                showAlert("Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial", 'error');
+                return;
+            }
             if (!eventCode) {
                 showAlert('Le code événement est obligatoire', 'error');
                 return;
@@ -708,6 +714,7 @@
             .then(async (resp) => {
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) {
+                    // Messages précis renvoyés par l'API
                     throw new Error(data.detail || 'Erreur lors de l\'inscription');
                 }
                 return data;

@@ -21,6 +21,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import secrets
 import hashlib
+import re
 
 load_dotenv()
 
@@ -36,6 +37,19 @@ import requests
 create_tables()
 
 app = FastAPI(title="Face Recognition API", version="1.0.0")
+
+# Validation de mot de passe (côté serveur)
+def assert_password_valid(password: str) -> None:
+    if not isinstance(password, str) or len(password) < 8 \
+       or not re.search(r"[A-Z]", password) \
+       or not re.search(r"[0-9]", password) \
+       or not re.search(r"[^A-Za-z0-9]", password):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial"
+            ),
+        )
 
 # Configuration CORS
 app.add_middleware(
@@ -461,6 +475,8 @@ async def register(
     # Vérifier le selfie avec la reconnaissance faciale (qualité stricte)
     validate_selfie_image(file_data)
     
+    # Vérifier la robustesse du mot de passe
+    assert_password_valid(password)
     # Cr+�er le nouvel utilisateur
     hashed_password = get_password_hash(password)
     new_user = User(
@@ -494,14 +510,18 @@ async def register_invite(
         (User.username == user_data.username) | (User.email == user_data.email)
     ).first()
     if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Username ou email d+�j+� utilis+�"
-        )
+        # Message précis selon le conflit
+        if existing_user.username == user_data.username:
+            raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
+        if existing_user.email == user_data.email:
+            raise HTTPException(status_code=400, detail="Email déjà utilisé")
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
     # V+�rifier l'event_code
     event = db.query(Event).filter_by(event_code=event_code).first()
     if not event:
         raise HTTPException(status_code=404, detail="event_code invalide")
+    # Vérifier la robustesse du mot de passe
+    assert_password_valid(user_data.password)
     # Cr+�er le nouvel utilisateur
     hashed_password = get_password_hash(user_data.password)
     db_user = User(
@@ -535,10 +555,13 @@ async def register_invite_with_selfie(
         (User.username == username) | (User.email == email)
     ).first()
     if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Username ou email d+�j+� utilis+�"
-        )
+        if existing_user.username == username:
+            raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
+        if existing_user.email == email:
+            raise HTTPException(status_code=400, detail="Email déjà utilisé")
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
+    # Vérifier la robustesse du mot de passe
+    assert_password_valid(password)
     # V+�rifier l'event_code
     event = db.query(Event).filter_by(event_code=event_code).first()
     if not event:
