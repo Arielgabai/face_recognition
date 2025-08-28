@@ -46,6 +46,9 @@ RUN pip install -r requirements.txt
 # Copier le code source de l'application
 COPY . .
 
+# Construire le frontend React en production
+RUN cd frontend && npm ci --no-audit --no-fund && npm run build && cd ..
+
 # Créer les dossiers nécessaires
 RUN mkdir -p static/uploads/selfies static/uploads/photos
 
