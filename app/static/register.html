@@ -730,16 +730,22 @@
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const eventCode = document.getElementById('eventCode').value;
+            
+            // Réinitialiser les erreurs
+            const uErr = document.getElementById('usernameError');
+            const eErr = document.getElementById('emailError');
+            const pErr = document.getElementById('passwordError');
+            const cErr = document.getElementById('eventCodeError');
+            [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
+
             // Validation mot de passe côté client
             const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
-            if (!strongPw.test(password)) {
-                showAlert("Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial", 'error');
-                return;
-            }
-            if (!eventCode) {
-                showAlert('Le code événement est obligatoire', 'error');
-                return;
-            }
+            let hasError = false;
+            if (!strongPw.test(password)) { pErr.textContent = "Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial"; pErr.style.display = 'block'; hasError = true; }
+            if (!eventCode) { cErr.textContent = 'Le code événement est obligatoire'; cErr.style.display='block'; hasError = true; }
+            if (!username) { uErr.textContent = "Le nom d'utilisateur est obligatoire"; uErr.style.display='block'; hasError = true; }
+            if (!email) { eErr.textContent = "L'email est obligatoire"; eErr.style.display='block'; hasError = true; }
+            if (hasError) return;
             // Réinitialiser les erreurs
             const uErr = document.getElementById('usernameError');
             const eErr = document.getElementById('emailError');
@@ -762,11 +768,12 @@
                 if (!resp.ok) {
                     // Messages précis renvoyés par l'API
                     const msg = (data && data.detail) ? String(data.detail) : 'Erreur lors de l\'inscription';
-                    if (msg.includes('Nom d\'utilisateur')) { uErr.textContent = msg; uErr.style.display='block'; }
-                    else if (msg.includes('Email')) { eErr.textContent = msg; eErr.style.display='block'; }
-                    else if (msg.toLowerCase().includes('mot de passe')) { pErr.textContent = msg; pErr.style.display='block'; }
-                    else if (msg.toLowerCase().includes('code')) { cErr.textContent = msg; cErr.style.display='block'; }
-                    else { showAlert(msg, 'error'); }
+                    let flagged = false;
+                    if (msg.toLowerCase().includes('mot de passe')) { pErr.textContent = msg; pErr.style.display='block'; flagged = true; }
+                    if (msg.includes('Nom d\'utilisateur')) { uErr.textContent = msg; uErr.style.display='block'; flagged = true; }
+                    if (msg.includes('Email')) { eErr.textContent = msg; eErr.style.display='block'; flagged = true; }
+                    if (msg.toLowerCase().includes('code')) { cErr.textContent = msg; cErr.style.display='block'; flagged = true; }
+                    if (!flagged) { showAlert(msg, 'error'); }
                     throw new Error(msg);
                 }
                 return data;
