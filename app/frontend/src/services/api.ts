@@ -94,6 +94,12 @@ export const photoService = {
     api.post('/register-with-event-code', { user_data: userData, event_code: eventCode }),
 };
 
+// Validation / helpers
+export const validationService = {
+  checkUserAvailability: (payload: { username?: string; email?: string }) =>
+    api.post('/check-user-availability', payload).then(r => r.data as { username_taken: boolean; email_taken: boolean }),
+};
+
 // Service admin
 export const adminService = {
   getAllUsers: async (): Promise<User[]> => {

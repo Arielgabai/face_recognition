@@ -60,7 +60,7 @@ interface ModernGalleryProps {
   photos: Photo[];
   title?: string;
   loading?: boolean;
-  error?: string;
+  error?: string | null;
 }
 
 const ModernGallery: React.FC<ModernGalleryProps> = ({ 
@@ -512,14 +512,14 @@ const Dashboard: React.FC = () => {
         {/* Gestion des événements selon le type d'utilisateur */}
         {user?.user_type === 'user' && (
           <Box sx={{ mb: 3 }}>
-            <EventSelector onEventChange={handleEventChange} currentEventId={currentEventId} />
+            <EventSelector onEventChange={handleEventChange} currentEventId={currentEventId ?? undefined} />
             <JoinEvent onEventJoined={handleEventJoined} />
           </Box>
         )}
 
         {user?.user_type === 'photographer' && (
           <Box sx={{ mb: 3 }}>
-            <PhotographerEventManager onEventChange={handleEventChange} currentEventId={currentEventId} />
+            <PhotographerEventManager onEventChange={handleEventChange} currentEventId={currentEventId ?? undefined} />
           </Box>
         )}
 
@@ -559,7 +559,7 @@ const Dashboard: React.FC = () => {
 
         {user?.user_type === 'photographer' && (
           <TabPanel value={tabValue} index={3}>
-            <PhotoUpload onSuccess={loadDashboardData} eventId={currentEventId} />
+            <PhotoUpload onSuccess={loadDashboardData} eventId={currentEventId ?? undefined} />
           </TabPanel>
         )}
 
