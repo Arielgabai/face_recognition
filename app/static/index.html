@@ -39,7 +39,7 @@
         }
         .brand-title { display: none; }
         .brand-logo {
-            height: 80px;
+            height: 50px;
             width: auto;
             filter: drop-shadow(0 0 10px rgba(255, 54, 213, 0.25));
         }
@@ -2195,6 +2195,8 @@
                 if (response.ok) {
                     token = data.access_token;
                     localStorage.setItem('token', token);
+                    // Toujours remonter en haut avant d'afficher le dashboard
+                    try { window.scrollTo({ top: 0, behavior: 'instant' }); } catch { window.scrollTo(0,0); }
                     loadDashboard();
                 } else {
                     showAlert(data.detail || 'Erreur de connexion', 'error');
@@ -2939,6 +2941,8 @@
 
         // Show loading for dashboard load
         async function loadDashboard() {
+            // S'assurer d'arriver tout en haut de la page
+            try { window.scrollTo({ top: 0, behavior: 'instant' }); } catch { window.scrollTo(0,0); }
             showGlobalLoading('Chargement du tableau de bord...');
             
             try {
