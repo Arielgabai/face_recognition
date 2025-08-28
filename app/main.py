@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List
 import os
 import shutil
@@ -449,7 +450,10 @@ async def check_event_code(
     event_code: str = Body(...),
     db: Session = Depends(get_db)
 ):
-    event = db.query(Event).filter_by(event_code=event_code).first()
+    code = (event_code or "").strip()
+    if not code:
+        return {"valid": False}
+    event = db.query(Event).filter(func.lower(Event.event_code) == code.lower()).first()
     return {"valid": bool(event)}
 
 # Page d'inscription accessible via /register-with-code et /register-with-code/{event_code}
@@ -564,7 +568,8 @@ async def register_invite(
             raise HTTPException(status_code=400, detail="Email déjà utilisé")
         raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
     # V+�rifier l'event_code
-    event = db.query(Event).filter_by(event_code=event_code).first()
+    code = (event_code or "").strip()
+    event = db.query(Event).filter(func.lower(Event.event_code) == code.lower()).first()
     if not event:
         raise HTTPException(status_code=404, detail="event_code invalide")
     # Vérifier la robustesse du mot de passe
@@ -610,7 +615,8 @@ async def register_invite_with_selfie(
     # Vérifier la robustesse du mot de passe
     assert_password_valid(password)
     # V+�rifier l'event_code
-    event = db.query(Event).filter_by(event_code=event_code).first()
+    code = (event_code or "").strip()
+    event = db.query(Event).filter(func.lower(Event.event_code) == code.lower()).first()
     if not event:
         raise HTTPException(status_code=404, detail="event_code invalide")
     # Cr+�er le nouvel utilisateur
@@ -1702,7 +1708,8 @@ async def register_with_event_code(
             errors.append(msg)
 
     # Vérifier l'event_code (sans interrompre)
-    event = db.query(Event).filter_by(event_code=event_code).first()
+    code = (event_code or "").strip()
+    event = db.query(Event).filter(func.lower(Event.event_code) == code.lower()).first()
     if not event:
         errors.append("Code événement invalide")
 
