@@ -731,11 +731,7 @@
             const password = document.getElementById('password').value;
             const eventCode = document.getElementById('eventCode').value;
             
-            // Réinitialiser les erreurs
-            const uErr = document.getElementById('usernameError');
-            const eErr = document.getElementById('emailError');
-            const pErr = document.getElementById('passwordError');
-            const cErr = document.getElementById('eventCodeError');
+            // Réinitialiser les erreurs (dernière passe avant l'appel API)
             [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
 
             // Validation mot de passe côté client
