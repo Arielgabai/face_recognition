@@ -57,8 +57,6 @@ COPY . .
 # Intégrer le build React: servir index depuis frontend/build et assets depuis /static
 RUN mkdir -p frontend/build
 COPY --from=frontend-build /app/frontend/build/index.html /app/frontend/build/index.html
-COPY --from=frontend-build /app/frontend/build/favicon.ico /app/frontend/build/favicon.ico
-COPY --from=frontend-build /app/frontend/build/manifest.json /app/frontend/build/manifest.json
 COPY --from=frontend-build /app/frontend/build/asset-manifest.json /app/frontend/build/asset-manifest.json
 COPY --from=frontend-build /app/frontend/build/static /app/static
 
