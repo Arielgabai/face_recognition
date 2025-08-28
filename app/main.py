@@ -1641,26 +1641,44 @@ async def register_with_event_code(
     event_code: str = Body(...),
     db: Session = Depends(get_db)
 ):
-    """Inscription d'un utilisateur avec un code +�v+�nement saisi manuellement"""
-    # Vérifier si l'utilisateur existe déjà (messages précis)
+    """Inscription d'un utilisateur avec un code événement saisi manuellement, avec agrégation des erreurs"""
+    errors: list[str] = []
+
+    # Vérifier disponibilité username/email (agrégé)
     existing_user = db.query(User).filter(
         (User.username == user_data.username) | (User.email == user_data.email)
     ).first()
     if existing_user:
-        if existing_user.username == user_data.username:
-            raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
-        if existing_user.email == user_data.email:
-            raise HTTPException(status_code=400, detail="Email déjà utilisé")
-        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
-    
-    # Vérifier la robustesse du mot de passe
-    assert_password_valid(user_data.password)
-    # V+�rifier l'event_code
+        try:
+            if existing_user.username == user_data.username:
+                errors.append("Nom d'utilisateur déjà pris")
+        except Exception:
+            pass
+        try:
+            if existing_user.email == user_data.email:
+                errors.append("Email déjà utilisé")
+        except Exception:
+            pass
+
+    # Vérifier la robustesse du mot de passe (sans interrompre)
+    try:
+        assert_password_valid(user_data.password)
+    except HTTPException as e:
+        msg = str(e.detail) if hasattr(e, "detail") else "Mot de passe invalide"
+        if msg not in errors:
+            errors.append(msg)
+
+    # Vérifier l'event_code (sans interrompre)
     event = db.query(Event).filter_by(event_code=event_code).first()
     if not event:
-        raise HTTPException(status_code=404, detail="Code +�v+�nement invalide")
-    
-    # Cr+�er le nouvel utilisateur
+        errors.append("Code événement invalide")
+
+    # Si erreurs, les renvoyer toutes ensemble
+    if errors:
+        # 400 pour rester cohérent avec validations agrégées
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+
+    # Créer le nouvel utilisateur
     hashed_password = get_password_hash(user_data.password)
     db_user = User(
         username=user_data.username,
