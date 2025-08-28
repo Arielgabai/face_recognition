@@ -730,6 +730,10 @@
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const eventCode = document.getElementById('eventCode').value;
+            const uErr = document.getElementById('usernameError');
+            const eErr = document.getElementById('emailError');
+            const pErr = document.getElementById('passwordError');
+            const cErr = document.getElementById('eventCodeError');
             
             // Réinitialiser les erreurs (dernière passe avant l'appel API)
             [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
@@ -741,7 +745,7 @@
             if (!eventCode) { cErr.textContent = 'Le code événement est obligatoire'; cErr.style.display='block'; hasError = true; }
             if (!username) { uErr.textContent = "Le nom d'utilisateur est obligatoire"; uErr.style.display='block'; hasError = true; }
             if (!email) { eErr.textContent = "L'email est obligatoire"; eErr.style.display='block'; hasError = true; }
-            if (hasError) return;
+            // Ne pas retourner tout de suite: on veut aussi afficher username/email pris
 
             // Vérifier disponibilité username/email AVANT l'appel API pour afficher plusieurs erreurs simultanément
             try {
@@ -753,23 +757,9 @@
                 let taken = false;
                 if (avail && avail.username_taken) { uErr.textContent = "Nom d'utilisateur déjà pris"; uErr.style.display='block'; taken = true; }
                 if (avail && avail.email_taken) { eErr.textContent = "Email déjà utilisé"; eErr.style.display='block'; taken = true; }
-                if (taken) return;
+                if (taken) hasError = true;
             } catch {}
-            // Vérifier disponibilité pour afficher toutes les erreurs en même temps
-            try {
-                const avail = await fetch('/api/check-user-availability', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email })}).then(r=>r.json()).catch(()=>({}));
-                if (avail && (avail.username_taken || avail.email_taken)) {
-                    if (avail.username_taken) { uErr.textContent = "Nom d'utilisateur déjà pris"; uErr.style.display='block'; }
-                    if (avail.email_taken) { eErr.textContent = "Email déjà utilisé"; eErr.style.display='block'; }
-                    return;
-                }
-            } catch {}
-            // Réinitialiser les erreurs
-            const uErr = document.getElementById('usernameError');
-            const eErr = document.getElementById('emailError');
-            const pErr = document.getElementById('passwordError');
-            const cErr = document.getElementById('eventCodeError');
-            [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
+            if (hasError) return;
 
             // Tous les comptes créés ici sont des utilisateurs (pas de champ userType dans le formulaire)
             // 1) Créer l'utilisateur et l'associer à l'événement
