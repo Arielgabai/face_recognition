@@ -88,6 +88,13 @@
             box-shadow: 0 10px 40px rgba(0,0,0,0.45), var(--shadow-purple);
         }
 
+        .field-error {
+            color: #ff7b7b;
+            font-size: 0.85rem;
+            margin-top: 6px;
+            display: none;
+        }
+
         .form-group {
             margin-bottom: 25px;
         }
@@ -457,21 +464,25 @@
                 <div class="form-group">
                     <label for="eventCode">Code événement</label>
                     <input type="text" id="eventCode" class="form-input" required placeholder="Entrez le code événement">
+                    <div id="eventCodeError" class="field-error"></div>
                 </div>
 
                 <div class="form-group">
                     <label for="username">Nom d'utilisateur</label>
                     <input type="text" id="username" class="form-input" required placeholder="Choisissez un nom d'utilisateur">
+                    <div id="usernameError" class="field-error"></div>
                 </div>
                 
                 <div class="form-group">
                     <label for="email">Email</label>
                     <input type="email" id="email" class="form-input" required placeholder="Votre adresse email">
+                    <div id="emailError" class="field-error"></div>
                 </div>
                 
                 <div class="form-group">
                     <label for="password">Mot de passe</label>
                     <input type="password" id="password" class="form-input" required placeholder="Choisissez un mot de passe">
+                    <div id="passwordError" class="field-error"></div>
                 </div>
                 
                 <!-- Type d'utilisateur supprimé: tous les comptes créés ici sont des utilisateurs -->
@@ -701,6 +712,13 @@
                 showAlert('Le code événement est obligatoire', 'error');
                 return;
             }
+            // Réinitialiser les erreurs
+            const uErr = document.getElementById('usernameError');
+            const eErr = document.getElementById('emailError');
+            const pErr = document.getElementById('passwordError');
+            const cErr = document.getElementById('eventCodeError');
+            [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
+
             // Tous les comptes créés ici sont des utilisateurs (pas de champ userType dans le formulaire)
             // 1) Créer l'utilisateur et l'associer à l'événement
             fetch('/api/register-with-event-code', {
@@ -715,7 +733,13 @@
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) {
                     // Messages précis renvoyés par l'API
-                    throw new Error(data.detail || 'Erreur lors de l\'inscription');
+                    const msg = (data && data.detail) ? String(data.detail) : 'Erreur lors de l\'inscription';
+                    if (msg.includes('Nom d\'utilisateur')) { uErr.textContent = msg; uErr.style.display='block'; }
+                    else if (msg.includes('Email')) { eErr.textContent = msg; eErr.style.display='block'; }
+                    else if (msg.toLowerCase().includes('mot de passe')) { pErr.textContent = msg; pErr.style.display='block'; }
+                    else if (msg.toLowerCase().includes('code')) { cErr.textContent = msg; cErr.style.display='block'; }
+                    else { showAlert(msg, 'error'); }
+                    throw new Error(msg);
                 }
                 return data;
             })

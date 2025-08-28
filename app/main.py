@@ -1628,13 +1628,19 @@ async def register_with_event_code(
     db: Session = Depends(get_db)
 ):
     """Inscription d'un utilisateur avec un code +�v+�nement saisi manuellement"""
-    # V+�rifier si l'utilisateur existe d+�j+�
+    # Vérifier si l'utilisateur existe déjà (messages précis)
     existing_user = db.query(User).filter(
         (User.username == user_data.username) | (User.email == user_data.email)
     ).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username ou email d+�j+� utilis+�")
+        if existing_user.username == user_data.username:
+            raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
+        if existing_user.email == user_data.email:
+            raise HTTPException(status_code=400, detail="Email déjà utilisé")
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
     
+    # Vérifier la robustesse du mot de passe
+    assert_password_valid(user_data.password)
     # V+�rifier l'event_code
     event = db.query(Event).filter_by(event_code=event_code).first()
     if not event:
