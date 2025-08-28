@@ -37,12 +37,11 @@
             display: flex;
             justify-content: center;
         }
-        .brand-title {
-            font-family: 'Pacifico', cursive;
-            font-size: 1.6rem;
-            color: #ffffff;
-            letter-spacing: 1px;
-            text-shadow: 0 2px 10px rgba(255, 54, 213, 0.25);
+        .brand-title { display: none; }
+        .brand-logo {
+            height: 36px;
+            width: auto;
+            filter: drop-shadow(0 0 10px rgba(255, 54, 213, 0.25));
         }
 
         /* Neon script effect */
@@ -1893,7 +1892,7 @@
     <div class="container">
         <div id="loginForm">
             <div class="brand-header">
-                <div class="brand-title">FindMe</div>
+                <img src="/static/img/findme-logo.png" alt="FindMe" class="brand-logo" />
             </div>
             <div class="login-container">
                 <h2 style="text-align: center; margin-bottom: 30px; color: #ffffff; font-size: 1.5rem;">Connexion</h2>
