@@ -583,6 +583,16 @@
             if (!email) { eErr.textContent='L\'email est obligatoire'; eErr.style.display='block'; hasError = true; }
             const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
             if (!strongPw.test(password)) { pErr.textContent='Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial'; pErr.style.display='block'; hasError = true; }
+            // Vérifier la validité du code événement côté serveur avant de continuer
+            try {
+                const resp = await fetch('/api/check-event-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event_code: eventCode })
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!data.valid) { cErr.textContent='Code événement invalide'; cErr.style.display='block'; hasError = true; }
+            } catch {}
             if (hasError) return;
 
             // Vérifier la disponibilité username/email côté serveur

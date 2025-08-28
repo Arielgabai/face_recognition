@@ -435,6 +435,15 @@ async def check_user_availability(
         result["email_taken"] = db.query(User).filter(User.email == email).first() is not None
     return result
 
+# Vérification validité code événement
+@app.post("/api/check-event-code")
+async def check_event_code(
+    event_code: str = Body(...),
+    db: Session = Depends(get_db)
+):
+    event = db.query(Event).filter_by(event_code=event_code).first()
+    return {"valid": bool(event)}
+
 # Page d'inscription accessible via /register-with-code et /register-with-code/{event_code}
 @app.get("/register-with-code", response_class=HTMLResponse)
 async def register_with_code_query(event_code: str = None):

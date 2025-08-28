@@ -87,6 +87,15 @@ const Register: React.FC = () => {
       hasError = true;
     }
 
+    // Vérifier validité du code événement
+    try {
+      const { valid } = await validationService.checkEventCode(formData.eventCode);
+      if (!valid) {
+        setEventCodeError('Code événement invalide');
+        hasError = true;
+      }
+    } catch {}
+
     // Vérifier disponibilité username/email même si d'autres erreurs existent, pour tout afficher d'un coup
     try {
       const availability = await validationService.checkUserAvailability({

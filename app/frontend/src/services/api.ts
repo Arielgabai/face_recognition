@@ -98,6 +98,8 @@ export const photoService = {
 export const validationService = {
   checkUserAvailability: (payload: { username?: string; email?: string }) =>
     api.post('/check-user-availability', payload).then(r => r.data as { username_taken: boolean; email_taken: boolean }),
+  checkEventCode: (eventCode: string) =>
+    api.post('/check-event-code', { event_code: eventCode }).then(r => r.data as { valid: boolean }),
 };
 
 // Service admin
