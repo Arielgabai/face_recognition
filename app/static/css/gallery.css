@@ -94,7 +94,7 @@
 
 .gallery-photo-card img {
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
     transition: transform 0.3s ease;
     object-fit: cover;
@@ -359,6 +359,7 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         flex: none !important;
         height: 100% !important;
         min-height: auto;
+        display: block;
     }
     
     .gallery-row.mobile-google-style .gallery-photo-card img {
@@ -408,7 +409,8 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     }
     
     .gallery-row.mobile-google-style .gallery-photo-card {
-        height: auto !important;
+        height: 100% !important;
+        display: block;
     }
     
     .gallery-row.mobile-google-style .gallery-photo-card img {
