@@ -2000,7 +2000,7 @@
             </div>
             
                         <div class="tabs">
-                <button class="tab" onclick="showTab('my-photos')" id="myPhotosTab">Pour vous (0)</button>
+                <button class="tab" onclick="showTab('my-photos')" id="myPhotosTab">Vos Photos (0)</button>
                 <button class="tab active" onclick="showTab('all-photos')" id="allPhotosTab">Général (0)</button>
                 <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤</button>
             </div>
@@ -2314,7 +2314,7 @@
                         // Mettre à jour le nombre de photos dans l'onglet
                         const myPhotosTab = document.getElementById('myPhotosTab');
                         if (myPhotosTab) {
-                            myPhotosTab.textContent = `Pour vous (${photos.length})`;
+                            myPhotosTab.textContent = `Vos Photos (${photos.length})`;
                         }
                         
                         const useModern = typeof window.ModernGallery !== 'undefined';
@@ -3464,7 +3464,7 @@
             // Mettre à jour le nombre de photos dans l'onglet
             const myPhotosTab = document.getElementById('myPhotosTab');
             if (myPhotosTab) {
-                myPhotosTab.textContent = `Pour vous (${photos.length})`;
+                myPhotosTab.textContent = `Vos Photos (${photos.length})`;
             }
             
             // Mettre à jour le titre de l'événement si disponible

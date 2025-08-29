@@ -426,6 +426,37 @@
             box-shadow: var(--shadow-purple);
         }
 
+        /* Global submit overlay */
+        .submit-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .submit-box {
+            background: var(--surface);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 24px 28px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.45), var(--shadow-purple);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .submit-spinner {
+            border: 3px solid rgba(138, 43, 226, 0.25);
+            border-top: 3px solid var(--neon-purple);
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            animation: spin 1s linear infinite;
+            box-shadow: var(--shadow-purple);
+        }
+        .submit-text { color: var(--text); font-weight: 500; }
+
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -544,6 +575,14 @@
         </div>
 
 
+    </div>
+
+    <!-- Global submit overlay -->
+    <div id="submitOverlay" class="submit-overlay" aria-hidden="true">
+        <div class="submit-box">
+            <div class="submit-spinner"></div>
+            <div class="submit-text" id="submitOverlayText">Création du compte en cours...</div>
+        </div>
     </div>
 
     <script>
@@ -779,6 +818,13 @@
             } catch {}
             if (hasError) return;
 
+            // Activer l'overlay et griser l'UI
+            const overlay = document.getElementById('submitOverlay');
+            const overlayText = document.getElementById('submitOverlayText');
+            try { overlayText.textContent = 'Création du compte en cours...'; } catch {}
+            overlay.style.display = 'flex';
+            document.body.style.pointerEvents = 'none';
+
             // Tous les comptes créés ici sont des utilisateurs (pas de champ userType dans le formulaire)
             // 1) Créer l'utilisateur et l'associer à l'événement
             fetch('/api/register-with-event-code', {
@@ -819,6 +865,7 @@
             })
             // 3) Uploader le selfie avec le token
             .then((token) => {
+                try { overlayText.textContent = 'Envoi du selfie...'; } catch {}
                 const form = new FormData();
                 form.append('file', selfieFile);
                 return fetch('/api/upload-selfie', {
@@ -835,13 +882,46 @@
                     return true;
                 });
             })
+            // 3.5) Lancer le polling pour charger "Vos Photos" immédiatement
+            .then(async () => {
+                try { overlayText.textContent = 'Préparation de vos photos...'; } catch {}
+                const token = localStorage.getItem('token');
+                let attempts = 0;
+                const maxAttempts = 12; // ~24s
+                let lastCount = -1;
+                while (attempts < maxAttempts) {
+                    try {
+                        const resp = await fetch('/api/my-photos', {
+                            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                        });
+                        if (resp.ok) {
+                            const photos = await resp.json();
+                            if (Array.isArray(photos)) {
+                                if (photos.length !== lastCount) {
+                                    lastCount = photos.length;
+                                    if (photos.length > 0 || attempts > 5) {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } catch {}
+                    attempts++;
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+                return true;
+            })
             // 4) Succès total: lancer un rafraîchissement des photos après création et upload
             .then(() => {
-                showAlert('Compte créé avec succès ! Redirection...', 'success');
-                setTimeout(() => { window.location.href = '/'; }, 1200);
+                try { overlayText.textContent = 'Compte créé avec succès !'; } catch {}
+                setTimeout(() => { window.location.href = '/'; }, 800);
             })
             .catch((err) => {
                 showAlert(err.message || 'Erreur lors de la création du compte', 'error');
+            })
+            .finally(() => {
+                document.body.style.pointerEvents = '';
+                overlay.style.display = 'none';
             });
         }
 
