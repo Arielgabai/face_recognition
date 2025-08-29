@@ -129,6 +129,19 @@
             color: #7f82b8;
         }
 
+        /* Griser les champs en lecture seule (ex: code événement via QR) */
+        .form-input[readonly] {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: #cfcff6;
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        .form-input[readonly]:focus {
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: none;
+        }
+
         .btn {
             padding: 15px 30px;
             border: none;
