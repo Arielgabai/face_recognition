@@ -121,62 +121,111 @@ class ModernGallery {
         const containerWidth = this.container.clientWidth || window.innerWidth - 20;
         const gap = window.innerWidth <= 480 ? 4 : 5;
         
-        let currentRow = [];
-        let currentRowWidth = 0;
+        // Préparer les données des images avec aspect ratios
+        const imageData = this.images.map((image, index) => ({
+            image,
+            index,
+            aspectRatio: this.estimateAspectRatio(image),
+            width: 0, // Sera calculé
+            height: targetHeight
+        }));
         
-        this.images.forEach((image, index) => {
-            // Estimer l'aspect ratio (ou utiliser 1.5 par défaut)
-            const aspectRatio = this.estimateAspectRatio(image);
-            const imageWidth = targetHeight * aspectRatio;
-            
-            const imageData = { image, index, aspectRatio, width: imageWidth };
-            
-            // Calculer la largeur si on ajoute cette image
-            const gapsInRow = currentRow.length;
-            const projectedWidth = currentRowWidth + imageWidth + (gapsInRow > 0 ? gap : 0);
-            
-            // Si ça dépasse ET qu'on a déjà des images, finaliser la ligne
-            if (projectedWidth > containerWidth && currentRow.length > 0) {
-                this.createMobileRow(galleryGrid, currentRow, containerWidth, targetHeight, gap);
-                currentRow = [imageData];
-                currentRowWidth = imageWidth;
-            } else {
-                currentRow.push(imageData);
-                currentRowWidth = projectedWidth;
-            }
-            
-            // Forcer une nouvelle ligne si on a 3 images (max sur mobile)
-            if (currentRow.length >= 3) {
-                this.createMobileRow(galleryGrid, currentRow, containerWidth, targetHeight, gap);
-                currentRow = [];
-                currentRowWidth = 0;
-            }
+        // Utiliser l'algorithme de partitioning linéaire de Google Photos
+        const rows = this.linearPartition(imageData, containerWidth, targetHeight, gap);
+        
+        // Créer les lignes optimisées
+        rows.forEach(row => {
+            this.createOptimizedMobileRow(galleryGrid, row, containerWidth, targetHeight, gap);
         });
-        
-        // Ajouter la dernière ligne
-        if (currentRow.length > 0) {
-            this.createMobileRow(galleryGrid, currentRow, containerWidth, targetHeight, gap);
-        }
     }
     
-    createMobileRow(galleryGrid, rowData, containerWidth, targetHeight, gap) {
+    /**
+     * Algorithme de partitioning linéaire inspiré de Google Photos
+     * Optimise la répartition des photos pour minimiser les différences de hauteur
+     */
+    linearPartition(images, containerWidth, targetHeight, gap) {
+        if (images.length === 0) return [];
+        
+        const maxPhotosPerRow = window.innerWidth <= 480 ? 2 : 3;
+        const rows = [];
+        let currentIndex = 0;
+        
+        while (currentIndex < images.length) {
+            const remainingImages = images.length - currentIndex;
+            const photosInThisRow = Math.min(maxPhotosPerRow, remainingImages);
+            
+            // Essayer différentes combinaisons pour trouver la meilleure
+            let bestCombination = null;
+            let bestScore = Infinity;
+            
+            for (let count = 1; count <= photosInThisRow; count++) {
+                const rowImages = images.slice(currentIndex, currentIndex + count);
+                const score = this.calculateRowScore(rowImages, containerWidth, targetHeight, gap);
+                
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestCombination = { images: rowImages, count };
+                }
+            }
+            
+            if (bestCombination) {
+                rows.push(bestCombination.images);
+                currentIndex += bestCombination.count;
+            } else {
+                // Fallback: prendre une seule image
+                rows.push([images[currentIndex]]);
+                currentIndex++;
+            }
+        }
+        
+        return rows;
+    }
+    
+    /**
+     * Calcule un score pour évaluer la qualité d'une ligne
+     * Plus le score est bas, meilleure est la ligne
+     */
+    calculateRowScore(rowImages, containerWidth, targetHeight, gap) {
+        const totalGaps = (rowImages.length - 1) * gap;
+        const availableWidth = containerWidth - totalGaps;
+        const totalAspectRatio = rowImages.reduce((sum, img) => sum + img.aspectRatio, 0);
+        
+        // Hauteur nécessaire pour remplir la largeur
+        const requiredHeight = availableWidth / totalAspectRatio;
+        
+        // Score basé sur la différence avec la hauteur cible
+        const heightDifference = Math.abs(requiredHeight - targetHeight);
+        
+        // Pénalité pour les lignes avec trop peu d'images (sauf dernière ligne)
+        const sparsityPenalty = rowImages.length === 1 ? 50 : 0;
+        
+        return heightDifference + sparsityPenalty;
+    }
+    
+    /**
+     * Crée une ligne optimisée avec les vraies dimensions calculées
+     */
+    createOptimizedMobileRow(galleryGrid, rowData, containerWidth, targetHeight, gap) {
         const rowElement = document.createElement('div');
         rowElement.className = 'gallery-row mobile-google-style';
-        rowElement.style.height = `${targetHeight}px`;
         
-        // Calculer le ratio total et ajuster pour remplir la largeur
+        // Calculer les dimensions réelles
         const totalGaps = (rowData.length - 1) * gap;
         const availableWidth = containerWidth - totalGaps;
         const totalAspectRatio = rowData.reduce((sum, item) => sum + item.aspectRatio, 0);
-        const scale = availableWidth / (totalAspectRatio * targetHeight);
+        
+        // Hauteur optimale pour cette ligne
+        const optimalHeight = Math.min(targetHeight * 1.2, Math.max(targetHeight * 0.8, availableWidth / totalAspectRatio));
+        
+        rowElement.style.height = `${optimalHeight}px`;
         
         rowData.forEach(item => {
             const card = this.createImageCard(item.image, item.index);
-            const adjustedWidth = item.aspectRatio * targetHeight * scale;
+            const width = item.aspectRatio * optimalHeight;
             
-            card.style.width = `${adjustedWidth}px`;
+            card.style.width = `${width}px`;
             card.style.flex = 'none';
-            card.style.height = `${targetHeight}px`;
+            card.style.height = `${optimalHeight}px`;
             
             rowElement.appendChild(card);
         });
@@ -287,27 +336,51 @@ class ModernGallery {
     }
     
     /**
-     * Estime l'aspect ratio d'une image (utilisé comme fallback)
+     * Estime l'aspect ratio d'une image de manière plus intelligente
      * @param {Object} image - Objet image
      * @returns {number} Aspect ratio estimé
      */
     estimateAspectRatio(image) {
-        // Si déjà calculé, l'utiliser
-        if (image.aspectRatio) return image.aspectRatio;
+        // Si déjà calculé et valide, l'utiliser
+        if (image.aspectRatio && image.aspectRatio > 0) return image.aspectRatio;
         
         // Essayer de détecter depuis l'URL ou le nom de fichier
         const src = image.src || '';
         
-        // Quelques heuristiques basiques
-        if (src.includes('square') || src.includes('1x1')) return 1.0;
-        if (src.includes('portrait') || src.includes('9x16')) return 0.75;
-        if (src.includes('landscape') || src.includes('16x9')) return 1.78;
-        if (src.includes('wide') || src.includes('panorama')) return 2.5;
+        // Heuristiques améliorées
+        if (src.includes('square') || src.includes('1x1') || src.includes('sq_')) return 1.0;
+        if (src.includes('portrait') || src.includes('vert') || src.includes('9x16')) return 0.75;
+        if (src.includes('landscape') || src.includes('horiz') || src.includes('16x9')) return 1.78;
+        if (src.includes('wide') || src.includes('panorama') || src.includes('pano')) return 2.5;
+        if (src.includes('tall') || src.includes('long')) return 0.6;
         
-        // Variation aléatoire pour un rendu plus naturel
-        const variations = [1.2, 1.33, 1.5, 1.78, 0.75, 1.0];
-        const randomIndex = Math.abs(src.length) % variations.length;
-        return variations[randomIndex];
+        // Variations plus réalistes basées sur des ratios photo courants
+        const commonRatios = [
+            1.0,   // Carré (Instagram)
+            1.33,  // 4:3 (photo classique)
+            1.5,   // 3:2 (reflex)
+            1.78,  // 16:9 (smartphone moderne)
+            0.8,   // 4:5 (portrait)
+            0.75,  // 3:4 (portrait classique)
+            0.67   // 2:3 (portrait reflex)
+        ];
+        
+        // Utiliser une distribution plus naturelle basée sur l'index
+        const hash = this.simpleHash(src);
+        return commonRatios[hash % commonRatios.length];
+    }
+    
+    /**
+     * Hash simple pour avoir une répartition cohérente
+     */
+    simpleHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convertir en 32bit integer
+        }
+        return Math.abs(hash);
     }
     
     createImageCard(image, index) {
