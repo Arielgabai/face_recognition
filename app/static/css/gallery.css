@@ -60,7 +60,7 @@
     display: flex;
     gap: 8px;
     width: 100%;
-    height: 200px;
+    height: auto;
     margin-bottom: 8px;
     align-items: stretch;
 }
@@ -77,8 +77,8 @@
     opacity: 0;
     transform: translateY(20px);
     flex: 1 1 auto;
-    height: 200px;
-    min-height: 200px;
+    height: auto;
+    min-height: auto;
     display: block;
 }
 
@@ -94,7 +94,7 @@
 
 .gallery-photo-card img {
     width: 100%;
-    height: 100%;
+    height: auto;
     display: block;
     transition: transform 0.3s ease;
     object-fit: cover;
@@ -324,12 +324,12 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     
     .gallery-row {
         gap: 6px;
-        height: 180px;
+        height: auto;
     }
     
     .gallery-photo-card {
-        height: 180px;
-        min-height: 180px;
+        height: auto;
+        min-height: auto;
     }
 }
 
@@ -340,12 +340,12 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     
     .gallery-row {
         gap: 5px;
-        height: 150px;
+        height: auto;
     }
     
     .gallery-photo-card {
-        height: 150px;
-        min-height: 150px;
+        height: auto;
+        min-height: auto;
     }
     
     /* Style Google Photos pour mobile */
@@ -393,22 +393,22 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     
     .gallery-row {
         gap: 4px;
-        height: 120px;
+        height: auto;
     }
     
     .gallery-photo-card {
-        height: 120px;
-        min-height: 120px;
+        height: auto;
+        min-height: auto;
     }
     
     /* Style Google Photos pour petit mobile */
     .gallery-row.mobile-google-style {
         gap: 4px;
-        height: 120px !important;
+        height: auto !important;
     }
     
     .gallery-row.mobile-google-style .gallery-photo-card {
-        height: 120px !important;
+        height: auto !important;
     }
     
     .gallery-row.mobile-google-style .gallery-photo-card img {

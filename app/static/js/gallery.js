@@ -231,7 +231,8 @@ class ModernGallery {
         // Utiliser la hauteur calculée (pas de limite min/max pour forcer la largeur complète)
         const finalHeight = calculatedHeight;
         
-        rowElement.style.height = `${finalHeight}px`;
+        // Ne pas imposer de hauteur fixe, laisser les images déterminer la hauteur
+        rowElement.style.height = 'auto';
         
         // Calculer les largeurs exactes pour chaque image
         rowData.forEach((item, index) => {
@@ -240,7 +241,7 @@ class ModernGallery {
             
             card.style.width = `${exactWidth}px`;
             card.style.flex = 'none';
-            card.style.height = `${finalHeight}px`;
+            card.style.height = 'auto';
             
             rowElement.appendChild(card);
         });
