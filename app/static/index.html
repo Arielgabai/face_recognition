@@ -1996,6 +1996,9 @@
             <div class="event-banner">
                 <div style="text-align: center;">
                     <h1 class="event-title pink" id="eventTitle">Tableau de bord</h1>
+                    <div id="countdown" style="margin-top:8px; color:#fde68a; font-weight:600; display:none;">
+                        Temps restant: <span id="countdownTimer">--:--:--</span>
+                    </div>
                 </div>
             </div>
             
@@ -2994,6 +2997,9 @@
                     // Charger les données - "Toutes les photos" par défaut
                     await loadAllPhotos();
                     await loadMyPhotos();
+
+                    // Initialiser le compte à rebours d'expiration
+                    try { initExpirationCountdown(); } catch (e) { console.warn('Countdown init error', e); }
                     
                     // Afficher l'onglet upload pour les photographes
                     if (currentUser.user_type === 'PHOTOGRAPHER') {
@@ -3010,6 +3016,44 @@
                 token = null;
             } finally {
                 hideGlobalLoading();
+            }
+        }
+
+        async function initExpirationCountdown() {
+            const container = document.getElementById('countdown');
+            const timerEl = document.getElementById('countdownTimer');
+            if (!container || !timerEl) return;
+            try {
+                const resp = await fetch('/api/user/event-expiration', { headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
+                if (!resp.ok) { container.style.display = 'none'; return; }
+                const data = await resp.json();
+                if (!data || !data.expires_at || typeof data.seconds_remaining !== 'number') {
+                    container.style.display = 'none';
+                    return;
+                }
+                let remaining = Math.max(0, parseInt(data.seconds_remaining, 10) || 0);
+                if (remaining <= 0) { container.style.display = 'none'; return; }
+                container.style.display = 'block';
+                const format = (s) => {
+                    const d = Math.floor(s / 86400);
+                    const h = Math.floor((s % 86400) / 3600);
+                    const m = Math.floor((s % 3600) / 60);
+                    const sec = s % 60;
+                    if (d > 0) return `${d}j ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+                    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+                };
+                timerEl.textContent = format(remaining);
+                let intervalId = setInterval(() => {
+                    remaining -= 1;
+                    if (remaining <= 0) {
+                        clearInterval(intervalId);
+                        container.textContent = 'Les photos peuvent être supprimées à tout moment.';
+                        return;
+                    }
+                    timerEl.textContent = format(remaining);
+                }, 1000);
+            } catch (e) {
+                container.style.display = 'none';
             }
         }
 

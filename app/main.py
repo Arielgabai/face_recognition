@@ -1781,6 +1781,66 @@ async def get_all_event_photos(
 
 # === ROUTES POUR LES CODES +�V+�NEMENT MANUELS ===
 
+@app.get("/api/user/event-expiration")
+async def get_user_event_expiration(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retourne la date d'expiration la plus tardive parmi les photos de l'événement principal de l'utilisateur.
+
+    Réponse: {
+      "event_id": int,
+      "expires_at": str | None (ISO),
+      "seconds_remaining": int | None,
+      "photos_count": int
+    }
+    """
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+
+    # Trouver l'événement principal de l'utilisateur
+    user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
+    if not user_event:
+        raise HTTPException(status_code=404, detail="Aucun événement associé à cet utilisateur")
+
+    event_id = user_event.event_id
+    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    if not photos:
+        return {"event_id": event_id, "expires_at": None, "seconds_remaining": None, "photos_count": 0}
+
+    # Prendre la date d'expiration la plus tardive (fenêtre maximale de disponibilité)
+    max_exp = None
+    count = 0
+    for p in photos:
+        count += 1
+        try:
+            if p.expires_at is not None:
+                if (max_exp is None) or (p.expires_at > max_exp):
+                    max_exp = p.expires_at
+        except Exception:
+            continue
+
+    if not max_exp:
+        return {"event_id": event_id, "expires_at": None, "seconds_remaining": None, "photos_count": count}
+
+    # Calcul du temps restant en secondes
+    from datetime import datetime as _dt
+    now = _dt.utcnow()
+    try:
+        # Si timezone-aware, convertir en UTC naïf pour calcul simple
+        if getattr(max_exp, 'tzinfo', None) is not None:
+            now = _dt.now(max_exp.tzinfo)
+    except Exception:
+        pass
+    remaining = int(max(0, (max_exp - now).total_seconds()))
+
+    return {
+        "event_id": event_id,
+        "expires_at": max_exp.isoformat(),
+        "seconds_remaining": remaining,
+        "photos_count": count
+    }
+
 @app.post("/api/register-with-event-code")
 async def register_with_event_code(
     user_data: UserCreate = Body(...),
