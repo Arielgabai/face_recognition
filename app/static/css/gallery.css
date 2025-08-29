@@ -350,6 +350,18 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         height: 150px;
         min-height: 150px;
     }
+    
+    /* Style Google Photos pour mobile */
+    .gallery-row.mobile-google-style {
+        justify-content: flex-start;
+        align-items: stretch;
+    }
+    
+    .gallery-row.mobile-google-style .gallery-photo-card {
+        flex: none !important;
+        height: 100% !important;
+        min-height: auto;
+    }
 
     .gallery-header h1 {
         font-size: 2rem;
@@ -385,6 +397,16 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     .gallery-photo-card {
         height: 120px;
         min-height: 120px;
+    }
+    
+    /* Style Google Photos pour petit mobile */
+    .gallery-row.mobile-google-style {
+        gap: 4px;
+        height: 120px !important;
+    }
+    
+    .gallery-row.mobile-google-style .gallery-photo-card {
+        height: 120px !important;
     }
 
     .gallery-container {

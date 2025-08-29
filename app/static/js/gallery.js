@@ -78,7 +78,27 @@ class ModernGallery {
         galleryGrid.className = 'modern-gallery';
         galleryGrid.innerHTML = '';
         
-        // Version simplifiée : groupes de 3-4 photos par ligne
+        // Détection mobile pour appliquer le style Google Photos
+        const isMobile = window.innerWidth <= 768;
+        
+        if (isMobile) {
+            // Style Google Photos pour mobile : 2-3 photos avec ratios variables
+            this.renderMobileGooglePhotosStyle(galleryGrid);
+        } else {
+            // Style desktop simple : groupes fixes
+            this.renderDesktopStyle(galleryGrid);
+        }
+        
+        // Remplace le contenu existant
+        this.container.innerHTML = '';
+        this.container.appendChild(galleryGrid);
+        
+        if (this.options.animations) {
+            this.animateCards();
+        }
+    }
+    
+    renderDesktopStyle(galleryGrid) {
         const imagesPerRow = this.getImagesPerRow();
         
         for (let i = 0; i < this.images.length; i += imagesPerRow) {
@@ -94,14 +114,74 @@ class ModernGallery {
             
             galleryGrid.appendChild(rowElement);
         }
+    }
+    
+    renderMobileGooglePhotosStyle(galleryGrid) {
+        const targetHeight = window.innerWidth <= 480 ? 120 : 150;
+        const containerWidth = this.container.clientWidth || window.innerWidth - 20;
+        const gap = window.innerWidth <= 480 ? 4 : 5;
         
-        // Remplace le contenu existant
-        this.container.innerHTML = '';
-        this.container.appendChild(galleryGrid);
+        let currentRow = [];
+        let currentRowWidth = 0;
         
-        if (this.options.animations) {
-            this.animateCards();
+        this.images.forEach((image, index) => {
+            // Estimer l'aspect ratio (ou utiliser 1.5 par défaut)
+            const aspectRatio = this.estimateAspectRatio(image);
+            const imageWidth = targetHeight * aspectRatio;
+            
+            const imageData = { image, index, aspectRatio, width: imageWidth };
+            
+            // Calculer la largeur si on ajoute cette image
+            const gapsInRow = currentRow.length;
+            const projectedWidth = currentRowWidth + imageWidth + (gapsInRow > 0 ? gap : 0);
+            
+            // Si ça dépasse ET qu'on a déjà des images, finaliser la ligne
+            if (projectedWidth > containerWidth && currentRow.length > 0) {
+                this.createMobileRow(galleryGrid, currentRow, containerWidth, targetHeight, gap);
+                currentRow = [imageData];
+                currentRowWidth = imageWidth;
+            } else {
+                currentRow.push(imageData);
+                currentRowWidth = projectedWidth;
+            }
+            
+            // Forcer une nouvelle ligne si on a 3 images (max sur mobile)
+            if (currentRow.length >= 3) {
+                this.createMobileRow(galleryGrid, currentRow, containerWidth, targetHeight, gap);
+                currentRow = [];
+                currentRowWidth = 0;
+            }
+        });
+        
+        // Ajouter la dernière ligne
+        if (currentRow.length > 0) {
+            this.createMobileRow(galleryGrid, currentRow, containerWidth, targetHeight, gap);
         }
+    }
+    
+    createMobileRow(galleryGrid, rowData, containerWidth, targetHeight, gap) {
+        const rowElement = document.createElement('div');
+        rowElement.className = 'gallery-row mobile-google-style';
+        rowElement.style.height = `${targetHeight}px`;
+        
+        // Calculer le ratio total et ajuster pour remplir la largeur
+        const totalGaps = (rowData.length - 1) * gap;
+        const availableWidth = containerWidth - totalGaps;
+        const totalAspectRatio = rowData.reduce((sum, item) => sum + item.aspectRatio, 0);
+        const scale = availableWidth / (totalAspectRatio * targetHeight);
+        
+        rowData.forEach(item => {
+            const card = this.createImageCard(item.image, item.index);
+            const adjustedWidth = item.aspectRatio * targetHeight * scale;
+            
+            card.style.width = `${adjustedWidth}px`;
+            card.style.flex = 'none';
+            card.style.height = `${targetHeight}px`;
+            
+            rowElement.appendChild(card);
+        });
+        
+        galleryGrid.appendChild(rowElement);
     }
     
     renderNewImages(newImages) {
