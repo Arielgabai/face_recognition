@@ -39,6 +39,26 @@ create_tables()
 
 app = FastAPI(title="Face Recognition API", version="1.0.0")
 
+# Helper pour trouver un événement par code (tolérant: trim, insensible à la casse, ignore les espaces internes)
+def find_event_by_code(db: Session, code: str) -> Event:
+    if code is None:
+        return None
+    raw = str(code).strip()
+    if not raw:
+        return None
+    # 1) Essai exact insensible à la casse
+    event = db.query(Event).filter(func.lower(Event.event_code) == raw.lower()).first()
+    if event:
+        return event
+    # 2) Fallback: comparer en normalisant (retirer espaces) côté Python
+    normalized = re.sub(r"\s+", "", raw).lower()
+    for (event_code,) in db.query(Event.event_code).all():
+        if not event_code:
+            continue
+        if re.sub(r"\s+", "", str(event_code)).lower() == normalized:
+            return db.query(Event).filter(Event.event_code == event_code).first()
+    return None
+
 # Validation de mot de passe (côté serveur)
 def assert_password_valid(password: str) -> None:
     if not isinstance(password, str) or len(password) < 8 \
@@ -450,10 +470,7 @@ async def check_event_code(
     event_code: str = Body(...),
     db: Session = Depends(get_db)
 ):
-    code = (event_code or "").strip()
-    if not code:
-        return {"valid": False}
-    event = db.query(Event).filter(func.lower(Event.event_code) == code.lower()).first()
+    event = find_event_by_code(db, event_code)
     return {"valid": bool(event)}
 
 # Page d'inscription accessible via /register-with-code et /register-with-code/{event_code}
@@ -568,8 +585,7 @@ async def register_invite(
             raise HTTPException(status_code=400, detail="Email déjà utilisé")
         raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
     # V+�rifier l'event_code
-    code = (event_code or "").strip()
-    event = db.query(Event).filter(func.lower(Event.event_code) == code.lower()).first()
+    event = find_event_by_code(db, event_code)
     if not event:
         raise HTTPException(status_code=404, detail="event_code invalide")
     # Vérifier la robustesse du mot de passe
@@ -615,8 +631,7 @@ async def register_invite_with_selfie(
     # Vérifier la robustesse du mot de passe
     assert_password_valid(password)
     # V+�rifier l'event_code
-    code = (event_code or "").strip()
-    event = db.query(Event).filter(func.lower(Event.event_code) == code.lower()).first()
+    event = find_event_by_code(db, event_code)
     if not event:
         raise HTTPException(status_code=404, detail="event_code invalide")
     # Cr+�er le nouvel utilisateur
@@ -1708,8 +1723,7 @@ async def register_with_event_code(
             errors.append(msg)
 
     # Vérifier l'event_code (sans interrompre)
-    code = (event_code or "").strip()
-    event = db.query(Event).filter(func.lower(Event.event_code) == code.lower()).first()
+    event = find_event_by_code(db, event_code)
     if not event:
         errors.append("Code événement invalide")
 
