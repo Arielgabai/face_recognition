@@ -124,11 +124,6 @@ class ModernGallery {
                 this.detectAndApplyRatio(img, card);
             }
             
-            // Détecter les très petites images
-            if (img.naturalWidth < 300 || img.naturalHeight < 300) {
-                img.setAttribute('data-small', 'true');
-            }
-            
             card.classList.remove('loading');
         };
         
@@ -175,30 +170,18 @@ class ModernGallery {
         const aspectRatio = img.naturalWidth / img.naturalHeight;
         
         // Retirer les classes existantes
-        card.classList.remove('portrait', 'landscape', 'large', 'square', 'wide-landscape', 'tall-portrait');
+        card.classList.remove('wide-landscape', 'tall-portrait');
         
-        // Appliquer les classes selon le ratio avec plus de précision
-        if (aspectRatio >= 0.9 && aspectRatio <= 1.1) {
-            // Image carrée
-            card.classList.add('square');
-        } else if (aspectRatio < 0.6) {
+        // Appliquer seulement les classes pour les cas extrêmes
+        if (aspectRatio > 2.5) {
+            // Paysage très large (panoramique)
+            card.classList.add('wide-landscape');
+        } else if (aspectRatio < 0.5) {
             // Portrait très étroit
             card.classList.add('tall-portrait');
-        } else if (aspectRatio < 0.8) {
-            // Portrait
-            card.classList.add('portrait');
-        } else if (aspectRatio > 2.0) {
-            // Paysage très large
-            card.classList.add('wide-landscape');
-        } else if (aspectRatio > 1.3) {
-            // Paysage
-            card.classList.add('landscape');
         }
         
-        // Images exceptionnellement grandes
-        if (img.naturalWidth > 1500 && img.naturalHeight > 1000) {
-            card.classList.add('large');
-        }
+        // Laisser les autres images s'afficher naturellement
     }
     
     createLightbox() {
