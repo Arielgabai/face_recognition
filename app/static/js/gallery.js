@@ -78,9 +78,22 @@ class ModernGallery {
         galleryGrid.className = 'modern-gallery';
         galleryGrid.innerHTML = '';
         
-        this.images.forEach((image, index) => {
-            const card = this.createImageCard(image, index);
-            galleryGrid.appendChild(card);
+        // Créer les lignes justifiées
+        const rows = this.createJustifiedRows(this.images);
+        
+        rows.forEach((row, rowIndex) => {
+            const rowElement = document.createElement('div');
+            rowElement.className = 'gallery-row';
+            rowElement.style.height = `${this.getTargetRowHeight()}px`;
+            
+            row.forEach((image) => {
+                const card = this.createImageCard(image.data, image.globalIndex);
+                card.style.flexGrow = image.aspectRatio;
+                card.style.flexBasis = '0';
+                rowElement.appendChild(card);
+            });
+            
+            galleryGrid.appendChild(rowElement);
         });
         
         // Remplace le contenu existant
@@ -93,17 +106,117 @@ class ModernGallery {
     }
     
     renderNewImages(newImages) {
-        const galleryGrid = this.container.querySelector('.modern-gallery');
-        const startIndex = this.images.length - newImages.length;
+        // Pour le layout justified, on recrée toute la galerie
+        this.renderGallery();
+    }
+    
+    /**
+     * Crée des lignes justifiées avec hauteurs identiques
+     * @param {Array} images - Liste des images
+     * @returns {Array} Lignes d'images avec dimensions calculées
+     */
+    createJustifiedRows(images) {
+        const containerWidth = this.container.clientWidth || 800;
+        const targetHeight = this.getTargetRowHeight();
+        const gap = 8;
         
-        newImages.forEach((image, index) => {
-            const card = this.createImageCard(image, startIndex + index);
-            galleryGrid.appendChild(card);
+        const rows = [];
+        let currentRow = [];
+        let currentRowWidth = 0;
+        
+        images.forEach((image, globalIndex) => {
+            // Estimer l'aspect ratio de l'image (par défaut 1.5 si non fourni)
+            const aspectRatio = image.aspectRatio || this.estimateAspectRatio(image) || 1.5;
+            const imageWidth = targetHeight * aspectRatio;
+            
+            const imageData = {
+                data: image,
+                aspectRatio: aspectRatio,
+                globalIndex: globalIndex,
+                width: imageWidth
+            };
+            
+            // Vérifier si ajouter cette image dépasse la largeur
+            const gapsInRow = currentRow.length > 0 ? currentRow.length : 0;
+            const projectedWidth = currentRowWidth + imageWidth + (gapsInRow > 0 ? gap : 0);
+            
+            if (projectedWidth > containerWidth && currentRow.length > 0) {
+                // Finaliser la ligne actuelle
+                this.adjustRowToFitWidth(currentRow, containerWidth, gap);
+                rows.push(currentRow);
+                
+                // Commencer une nouvelle ligne
+                currentRow = [imageData];
+                currentRowWidth = imageWidth;
+            } else {
+                // Ajouter à la ligne actuelle
+                currentRow.push(imageData);
+                currentRowWidth = projectedWidth;
+            }
         });
         
-        if (this.options.animations) {
-            this.animateNewCards(galleryGrid.children.length - newImages.length);
+        // Ajouter la dernière ligne si elle n'est pas vide
+        if (currentRow.length > 0) {
+            this.adjustRowToFitWidth(currentRow, containerWidth, gap);
+            rows.push(currentRow);
         }
+        
+        return rows;
+    }
+    
+    /**
+     * Ajuste une ligne pour qu'elle remplisse exactement la largeur
+     * @param {Array} row - Images de la ligne
+     * @param {number} targetWidth - Largeur cible
+     * @param {number} gap - Espacement entre images
+     */
+    adjustRowToFitWidth(row, targetWidth, gap) {
+        const totalGaps = (row.length - 1) * gap;
+        const availableWidth = targetWidth - totalGaps;
+        const totalAspectRatio = row.reduce((sum, img) => sum + img.aspectRatio, 0);
+        
+        // Recalculer les ratios pour que la somme des largeurs = availableWidth
+        const scale = availableWidth / (totalAspectRatio * this.getTargetRowHeight());
+        
+        row.forEach(image => {
+            image.aspectRatio = image.aspectRatio * scale;
+        });
+    }
+    
+    /**
+     * Calcule la hauteur cible des lignes selon la taille d'écran
+     * @returns {number} Hauteur en pixels
+     */
+    getTargetRowHeight() {
+        const width = window.innerWidth;
+        if (width < 480) return 120;
+        if (width < 768) return 150;
+        if (width < 1024) return 180;
+        return 200;
+    }
+    
+    /**
+     * Estime l'aspect ratio d'une image (utilisé comme fallback)
+     * @param {Object} image - Objet image
+     * @returns {number} Aspect ratio estimé
+     */
+    estimateAspectRatio(image) {
+        // Si déjà calculé, l'utiliser
+        if (image.aspectRatio) return image.aspectRatio;
+        
+        // Essayer de détecter depuis l'URL ou le nom de fichier
+        const src = image.src || '';
+        
+        // Quelques heuristiques basiques
+        if (src.includes('square') || src.includes('1x1')) return 1.0;
+        if (src.includes('portrait') || src.includes('9x16')) return 0.75;
+        if (src.includes('landscape') || src.includes('16x9')) return 1.78;
+        if (src.includes('wide') || src.includes('panorama')) return 2.5;
+        
+        // Variation aléatoire pour un rendu plus naturel
+        const variations = [1.2, 1.33, 1.5, 1.78, 0.75, 1.0];
+        const randomIndex = Math.abs(src.length) % variations.length;
+        return variations[randomIndex];
     }
     
     createImageCard(image, index) {
@@ -120,11 +233,22 @@ class ModernGallery {
         
         // Gestion du chargement d'image
         img.onload = () => {
+            // Calculer et stocker l'aspect ratio réel
+            const aspectRatio = img.naturalWidth / img.naturalHeight;
+            image.aspectRatio = aspectRatio;
+            
             if (this.options.autoDetectRatio) {
                 this.detectAndApplyRatio(img, card);
             }
             
             card.classList.remove('loading');
+            
+            // Re-render la galerie avec les nouvelles dimensions si c'est la première fois
+            if (!card.dataset.rendered) {
+                card.dataset.rendered = 'true';
+                // On pourrait re-render ici, mais cela peut causer des boucles
+                // Pour l'instant on garde le ratio estimé
+            }
         };
         
         img.onerror = () => {
