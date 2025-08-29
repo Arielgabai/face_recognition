@@ -791,6 +791,49 @@
             animation: none;
         }
 
+        /* Countdown (discret, dans le style "volets" arrondis) */
+        .countdown-label {
+            color: #cfcff6;
+            opacity: 0.9;
+            font-size: 0.95rem;
+            margin-top: 8px;
+        }
+        .countdown-row {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .cd-box {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-width: 46px;
+            padding: 8px 10px 6px 10px;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.92);
+            color: #111;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.25), inset 0 -2px 0 rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.06);
+        }
+        .cd-num {
+            font-weight: 700;
+            font-size: 1.2rem;
+            letter-spacing: 0.02em;
+        }
+        .cd-unit {
+            margin-top: 3px;
+            font-size: 0.65rem;
+            letter-spacing: 0.08em;
+            color: #444;
+        }
+        .cd-sep {
+            color: #cfcff6;
+            opacity: 0.7;
+            padding: 0 2px 6px 2px;
+        }
+
         .app-subtitle {
             font-family: 'Pacifico', cursive;
             font-size: 1rem;
@@ -1996,11 +2039,17 @@
             <div class="event-banner">
                 <div style="text-align: center;">
                     <h1 class="event-title pink" id="eventTitle">Tableau de bord</h1>
-                    <div id="countdown" style="display:none; margin-top:10px;">
-                        <span style="display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid rgba(255,255,255,0.15); border-radius:10px; background:rgba(255,255,255,0.06); color:#cfcff6; font-size:0.95rem;">
-                            ⏳ <span style="opacity:0.9;">Temps restant pour télécharger vos photos:</span>
-                            <strong id="countdownTimer" style="color:#fde68a; text-shadow:0 0 8px rgba(250, 204, 21, 0.25)">--:--:--</strong>
-                        </span>
+                    <div id="countdown" style="display:none;">
+                        <div class="countdown-label">⏳ Temps restant pour télécharger vos photos</div>
+                        <div class="countdown-row">
+                            <div class="cd-box"><div class="cd-num" id="cd-days">00</div><div class="cd-unit">JRS</div></div>
+                            <div class="cd-sep">:</div>
+                            <div class="cd-box"><div class="cd-num" id="cd-hours">00</div><div class="cd-unit">HRS</div></div>
+                            <div class="cd-sep">:</div>
+                            <div class="cd-box"><div class="cd-num" id="cd-mins">00</div><div class="cd-unit">MIN</div></div>
+                            <div class="cd-sep">:</div>
+                            <div class="cd-box"><div class="cd-num" id="cd-secs">00</div><div class="cd-unit">SEC</div></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3024,7 +3073,10 @@
 
         async function initExpirationCountdown() {
             const container = document.getElementById('countdown');
-            const timerEl = document.getElementById('countdownTimer');
+            const dEl = document.getElementById('cd-days');
+            const hEl = document.getElementById('cd-hours');
+            const mEl = document.getElementById('cd-mins');
+            const sEl = document.getElementById('cd-secs');
             if (!container || !timerEl) return;
             try {
                 const resp = await fetch('/api/user/event-expiration', { headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
@@ -3037,23 +3089,25 @@
                 let remaining = Math.max(0, parseInt(data.seconds_remaining, 10) || 0);
                 if (remaining <= 0) { container.style.display = 'none'; return; }
                 container.style.display = 'block';
-                const format = (s) => {
+                const render = (s) => {
                     const d = Math.floor(s / 86400);
                     const h = Math.floor((s % 86400) / 3600);
                     const m = Math.floor((s % 3600) / 60);
                     const sec = s % 60;
-                    if (d > 0) return `${d}j ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-                    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+                    dEl.textContent = String(d).padStart(2,'0');
+                    hEl.textContent = String(h).padStart(2,'0');
+                    mEl.textContent = String(m).padStart(2,'0');
+                    sEl.textContent = String(sec).padStart(2,'0');
                 };
-                timerEl.textContent = format(remaining);
+                render(remaining);
                 let intervalId = setInterval(() => {
                     remaining -= 1;
                     if (remaining <= 0) {
                         clearInterval(intervalId);
-                        container.textContent = 'Les photos peuvent être supprimées à tout moment.';
+                        container.style.display = 'none';
                         return;
                     }
-                    timerEl.textContent = format(remaining);
+                    render(remaining);
                 }, 1000);
             } catch (e) {
                 container.style.display = 'none';
