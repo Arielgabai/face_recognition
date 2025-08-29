@@ -60,7 +60,9 @@
     display: flex;
     gap: 8px;
     width: 100%;
-    height: auto;
+    height: 200px;
+    margin-bottom: 8px;
+    align-items: stretch;
 }
 
 /* Photos dans layout justified */
@@ -76,10 +78,10 @@
     animation: fadeInUp 0.6s ease forwards;
     opacity: 0;
     transform: translateY(20px);
-    flex-grow: 1;
-    height: 100%;
-    display: flex;
-    align-items: center;
+    flex: 1 1 auto;
+    height: 200px;
+    min-height: 200px;
+    display: block;
 }
 
 /* Empêcher l'overlay de masquer définitivement l'image sur mobile si hover absent */
@@ -325,6 +327,12 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     
     .gallery-row {
         gap: 6px;
+        height: 180px;
+    }
+    
+    .gallery-photo-card {
+        height: 180px;
+        min-height: 180px;
     }
 }
 
@@ -335,6 +343,12 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     
     .gallery-row {
         gap: 5px;
+        height: 150px;
+    }
+    
+    .gallery-photo-card {
+        height: 150px;
+        min-height: 150px;
     }
 
     .gallery-header h1 {
@@ -365,6 +379,12 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     
     .gallery-row {
         gap: 4px;
+        height: 120px;
+    }
+    
+    .gallery-photo-card {
+        height: 120px;
+        min-height: 120px;
     }
 
     .gallery-container {

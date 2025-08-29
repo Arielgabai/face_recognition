@@ -78,23 +78,22 @@ class ModernGallery {
         galleryGrid.className = 'modern-gallery';
         galleryGrid.innerHTML = '';
         
-        // Créer les lignes justifiées
-        const rows = this.createJustifiedRows(this.images);
+        // Version simplifiée : groupes de 3-4 photos par ligne
+        const imagesPerRow = this.getImagesPerRow();
         
-        rows.forEach((row, rowIndex) => {
+        for (let i = 0; i < this.images.length; i += imagesPerRow) {
+            const rowImages = this.images.slice(i, i + imagesPerRow);
             const rowElement = document.createElement('div');
             rowElement.className = 'gallery-row';
-            rowElement.style.height = `${this.getTargetRowHeight()}px`;
             
-            row.forEach((image) => {
-                const card = this.createImageCard(image.data, image.globalIndex);
-                card.style.flexGrow = image.aspectRatio;
-                card.style.flexBasis = '0';
+            rowImages.forEach((image, index) => {
+                const card = this.createImageCard(image, i + index);
+                card.style.flex = '1 1 0';
                 rowElement.appendChild(card);
             });
             
             galleryGrid.appendChild(rowElement);
-        });
+        }
         
         // Remplace le contenu existant
         this.container.innerHTML = '';
@@ -111,11 +110,23 @@ class ModernGallery {
     }
     
     /**
-     * Crée des lignes justifiées avec hauteurs identiques
+     * Détermine le nombre d'images par ligne selon la taille d'écran
+     * @returns {number} Nombre d'images par ligne
+     */
+    getImagesPerRow() {
+        const width = window.innerWidth;
+        if (width < 480) return 1;
+        if (width < 768) return 2;
+        if (width < 1024) return 3;
+        return 4;
+    }
+    
+    /**
+     * Crée des lignes justifiées avec hauteurs identiques (VERSION COMPLEXE - DÉSACTIVÉE)
      * @param {Array} images - Liste des images
      * @returns {Array} Lignes d'images avec dimensions calculées
      */
-    createJustifiedRows(images) {
+    createJustifiedRowsOLD(images) {
         const containerWidth = this.container.clientWidth || 800;
         const targetHeight = this.getTargetRowHeight();
         const gap = 8;
