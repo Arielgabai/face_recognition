@@ -24,7 +24,7 @@ class PhotoOptimizer:
     
     # Configuration par défaut
     DEFAULT_QUALITY = 85
-    DEFAULT_RETENTION_DAYS = 365
+    DEFAULT_RETENTION_DAYS = 30
     MAX_WIDTH = 1920
     MAX_HEIGHT = 1080
     
@@ -156,7 +156,7 @@ class PhotoOptimizer:
         Détermine la durée de rétention selon le type de photo.
         """
         retention_mapping = {
-            'uploaded': 365,    # 1 an pour les photos uploadées
+            'uploaded': 30,     # 1 mois pour les photos uploadées
             'selfie': 180,      # 6 mois pour les selfies
             'processed': 90,    # 3 mois pour les photos traitées
             'temporary': 7      # 1 semaine pour les temporaires
