@@ -467,7 +467,7 @@ async def check_user_availability(
 # Vérification validité code événement
 @app.post("/api/check-event-code")
 async def check_event_code(
-    event_code: str = Body(...),
+    event_code: str = Body(..., embed=True),
     db: Session = Depends(get_db)
 ):
     event = find_event_by_code(db, event_code)
