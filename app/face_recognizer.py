@@ -12,6 +12,7 @@ import uuid
 import io
 from PIL import Image
 from photo_optimizer import PhotoOptimizer
+from datetime import datetime, timedelta, timezone
 
 class FaceRecognizer:
     def __init__(self, tolerance=0.7):
@@ -195,22 +196,6 @@ class FaceRecognizer:
         db.commit()
         db.refresh(photo)
         
-        # NOUVEAU: Si associée à un événement, réinitialiser la date d'expiration 
-        # de TOUTES les photos de cet événement pour qu'elles expirent en même temps
-        if event_id:
-            from datetime import datetime, timedelta
-            new_expiration = datetime.utcnow() + timedelta(days=30)
-            
-            # Mettre à jour toutes les photos de l'événement
-            db.query(Photo).filter(
-                Photo.event_id == event_id,
-                Photo.expires_at.isnot(None)
-            ).update({
-                Photo.expires_at: new_expiration
-            })
-            db.commit()
-            print(f"🔄 Toutes les photos de l'événement {event_id} ont été réinitialisées à expirer le {new_expiration}")
-        
         # Traiter la reconnaissance faciale avec les données optimisées
         matches = self.process_photo(optimization_result['compressed_data'], db)
         
@@ -223,6 +208,21 @@ class FaceRecognizer:
             )
             db.add(face_match)
         
+        # NOUVEAU: Si associée à un événement, réinitialiser la date d'expiration 
+        # de TOUTES les photos de cet événement pour qu'elles expirent en même temps
+        if event_id:
+            new_expiration = datetime.now(timezone.utc) + timedelta(days=30)
+            
+            # Mettre à jour toutes les photos de l'événement
+            db.query(Photo).filter(
+                Photo.event_id == event_id,
+                Photo.expires_at.isnot(None)
+            ).update({
+                Photo.expires_at: new_expiration
+            }, synchronize_session=False)
+            print(f"🔄 Toutes les photos de l'événement {event_id} ont été réinitialisées à expirer le {new_expiration}")
+        
+        # Un seul commit final
         db.commit()
         return photo
 
@@ -264,21 +264,6 @@ class FaceRecognizer:
         db.commit()
         db.refresh(photo)
         
-        # NOUVEAU: Réinitialiser la date d'expiration de TOUTES les photos de cet événement
-        # pour qu'elles expirent toutes en même temps (1 mois à partir de maintenant)
-        from datetime import datetime, timedelta
-        new_expiration = datetime.utcnow() + timedelta(days=30)
-        
-        # Mettre à jour toutes les photos de l'événement
-        db.query(Photo).filter(
-            Photo.event_id == event_id,
-            Photo.expires_at.isnot(None)
-        ).update({
-            Photo.expires_at: new_expiration
-        })
-        db.commit()
-        print(f"🔄 Toutes les photos de l'événement {event_id} ont été réinitialisées à expirer le {new_expiration}")
-        
         # Traiter la reconnaissance faciale pour cet événement spécifique avec les données optimisées
         matches = self.process_photo_for_event(optimization_result['compressed_data'], event_id, db)
         
@@ -291,7 +276,21 @@ class FaceRecognizer:
             )
             db.add(face_match)
         
+        # NOUVEAU: Réinitialiser la date d'expiration de TOUTES les photos de cet événement
+        # pour qu'elles expirent toutes en même temps (1 mois à partir de maintenant)
+        new_expiration = datetime.utcnow() + timedelta(days=30)
+        
+        # Mettre à jour toutes les photos de l'événement
+        db.query(Photo).filter(
+            Photo.event_id == event_id,
+            Photo.expires_at.isnot(None)
+        ).update({
+            Photo.expires_at: new_expiration
+        }, synchronize_session=False)
+        
+        # Un seul commit final pour toutes les opérations
         db.commit()
+        print(f"🔄 Toutes les photos de l'événement {event_id} ont été réinitialisées à expirer le {new_expiration}")
         return photo
 
     def process_photo_for_event(self, photo_data: bytes, event_id: int, db: Session) -> List[Dict]:
