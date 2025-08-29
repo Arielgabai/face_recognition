@@ -420,7 +420,7 @@ async def admin_interface():
         with open(react_index, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     try:
-        with open("static/index.html", "r", encoding="utf-8") as f:
+        with open("static/admin.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Admin Interface</h1><p>Admin interface not found</p>")
@@ -433,7 +433,7 @@ async def photographer_interface():
         with open(react_index, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     try:
-        with open("static/index.html", "r", encoding="utf-8") as f:
+        with open("static/photographer.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Photographer Interface</h1><p>Photographer interface not found</p>")
