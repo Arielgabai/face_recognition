@@ -754,6 +754,16 @@
             if (!username) { uErr.textContent = "Le nom d'utilisateur est obligatoire"; uErr.style.display='block'; hasError = true; }
             if (!email) { eErr.textContent = "L'email est obligatoire"; eErr.style.display='block'; hasError = true; }
             // Ne pas retourner tout de suite: on veut aussi afficher username/email pris
+            // Vérifier la validité du code événement côté serveur (comme pour username/email)
+            try {
+                const resp = await fetch('/api/check-event-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event_code: eventCode })
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!data.valid) { cErr.textContent='Code événement invalide'; cErr.style.display='block'; hasError = true; }
+            } catch {}
 
             // Vérifier disponibilité username/email AVANT l'appel API pour afficher plusieurs erreurs simultanément
             try {
