@@ -123,6 +123,12 @@ class ModernGallery {
             if (this.options.autoDetectRatio) {
                 this.detectAndApplyRatio(img, card);
             }
+            
+            // Détecter les très petites images
+            if (img.naturalWidth < 300 || img.naturalHeight < 300) {
+                img.setAttribute('data-small', 'true');
+            }
+            
             card.classList.remove('loading');
         };
         
@@ -169,12 +175,23 @@ class ModernGallery {
         const aspectRatio = img.naturalWidth / img.naturalHeight;
         
         // Retirer les classes existantes
-        card.classList.remove('portrait', 'landscape', 'large');
+        card.classList.remove('portrait', 'landscape', 'large', 'square', 'wide-landscape', 'tall-portrait');
         
-        // Appliquer les classes selon le ratio
-        if (aspectRatio < 0.7) {
+        // Appliquer les classes selon le ratio avec plus de précision
+        if (aspectRatio >= 0.9 && aspectRatio <= 1.1) {
+            // Image carrée
+            card.classList.add('square');
+        } else if (aspectRatio < 0.6) {
+            // Portrait très étroit
+            card.classList.add('tall-portrait');
+        } else if (aspectRatio < 0.8) {
+            // Portrait
             card.classList.add('portrait');
-        } else if (aspectRatio > 1.8) {
+        } else if (aspectRatio > 2.0) {
+            // Paysage très large
+            card.classList.add('wide-landscape');
+        } else if (aspectRatio > 1.3) {
+            // Paysage
             card.classList.add('landscape');
         }
         

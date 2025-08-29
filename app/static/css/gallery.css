@@ -51,9 +51,9 @@
 /* Grille principale - Responsive et adaptative */
 .modern-gallery {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 16px;
-    grid-auto-rows: minmax(200px, auto);
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    grid-auto-rows: minmax(200px, 300px);
     grid-auto-flow: row dense;
 }
 
@@ -85,9 +85,20 @@
 .gallery-photo-card img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    object-position: center;
     display: block;
     transition: transform 0.3s ease;
+    background: #0a0a1a;
+    border-radius: 8px;
+}
+
+/* Amélioration pour les très petites images */
+.gallery-photo-card img[data-small="true"] {
+    object-fit: cover;
+    max-height: 90%;
+    max-width: 90%;
+    margin: auto;
 }
 
 .gallery-photo-card:hover img {
@@ -130,6 +141,21 @@
 .gallery-photo-card.large {
     grid-column-end: span 2;
     grid-row-end: span 2;
+}
+
+/* Adaptations spéciales pour un meilleur affichage */
+.gallery-photo-card.square {
+    aspect-ratio: 1 / 1;
+}
+
+.gallery-photo-card.wide-landscape {
+    grid-column-end: span 2;
+    aspect-ratio: 16 / 9;
+}
+
+.gallery-photo-card.tall-portrait {
+    grid-row-end: span 2;
+    aspect-ratio: 3 / 4;
 }
 
 /* Lightbox/Modal moderne */
@@ -311,18 +337,21 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 /* Responsive Design */
 @media (max-width: 1024px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 14px;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+        grid-auto-rows: minmax(180px, 280px);
     }
 }
 
 @media (max-width: 768px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
         gap: 12px;
+        grid-auto-rows: minmax(160px, 240px);
     }
 
-    .gallery-photo-card.landscape {
+    .gallery-photo-card.landscape,
+    .gallery-photo-card.wide-landscape {
         grid-column-end: span 1;
     }
 
@@ -354,16 +383,22 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
 @media (max-width: 480px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 8px;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 10px;
+        grid-auto-rows: minmax(140px, 200px);
     }
 
     .gallery-container {
         padding: 0 10px;
     }
 
-    .gallery-photo-card.portrait {
+    .gallery-photo-card.portrait,
+    .gallery-photo-card.tall-portrait {
         grid-row-end: span 1;
+    }
+    
+    .gallery-photo-card.square {
+        aspect-ratio: 1 / 1;
     }
 
     .gallery-lightbox-prev {
