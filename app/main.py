@@ -1371,6 +1371,69 @@ async def admin_get_events(
     events = db.query(Event).all()
     return events
 
+@app.get("/api/admin/events/{event_id}/users")
+async def admin_get_event_users(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Lister les utilisateurs associés à un événement (admin uniquement)."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+
+    # Vérifier l'événement
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    # Récupérer les users liés via UserEvent
+    user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+    user_ids = [ue.user_id for ue in user_events]
+    users = []
+    if user_ids:
+        users = db.query(User).filter(User.id.in_(user_ids)).all()
+
+    # Retourner des champs utiles seulement
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "user_type": u.user_type,
+            "created_at": u.created_at,
+        }
+        for u in users
+    ]
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Supprimer un utilisateur (admin uniquement). Supprime aussi ses correspondances et éventuelle photo/selfie."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent supprimer des utilisateurs")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+    try:
+        # Supprimer les associations UserEvent
+        db.query(UserEvent).filter(UserEvent.user_id == user_id).delete()
+
+        # Supprimer les FaceMatch de cet utilisateur
+        db.query(FaceMatch).filter(FaceMatch.user_id == user_id).delete()
+
+        # Supprimer l'utilisateur
+        db.delete(user)
+        db.commit()
+        return {"message": "Utilisateur supprimé avec succès"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression: {str(e)}")
+
 @app.post("/api/admin/create-event")
 async def admin_create_event(
     name: str = Body(...),
@@ -1428,6 +1491,35 @@ async def register_admin(
     db.commit()
     db.refresh(db_user)
     return {"message": "Admin cr+�+�", "user_id": db_user.id}
+
+@app.post("/api/admin/create-admin")
+async def admin_create_admin(
+    username: str = Body(...),
+    email: str = Body(...),
+    password: str = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Créer un nouvel administrateur (réservé aux admins)."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent créer un admin")
+
+    # Vérifier unicité username/email
+    existing_user = db.query(User).filter((User.username == username) | (User.email == email)).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
+
+    hashed_password = get_password_hash(password)
+    db_user = User(
+        username=username,
+        email=email,
+        hashed_password=hashed_password,
+        user_type=UserType.ADMIN
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return {"message": "Admin créé avec succès", "user_id": db_user.id}
 
 @app.post("/api/admin/create-photographer")
 async def create_photographer(

@@ -273,7 +273,7 @@
                 <button class="tab active" onclick="showTab('photographers')">📸 Photographes</button>
                 <button class="tab" onclick="showTab('events')">🎉 Événements</button>
                 <button class="tab" onclick="showTab('qr-codes')">📱 QR Codes</button>
-                <button class="tab" onclick="showTab('optimization')">🗜️ Optimisation Photos</button>
+                <button class="tab" onclick="showTab('users')">👥 Utilisateurs</button>
                 <button class="tab" onclick="showTab('create-admin')">👤 Créer Admin</button>
             </div>
 
@@ -354,99 +354,19 @@
                 </div>
             </div>
 
-            <div id="optimization" class="tab-content">
-                <h3>🗜️ Optimisation des Photos</h3>
-                
-                <!-- Statistiques d'optimisation -->
+            <div id="users" class="tab-content">
+                <h3>👥 Utilisateurs par Événement</h3>
                 <div class="card">
-                    <h4>📊 Statistiques d'Optimisation</h4>
-                    <div id="optimizationStats">
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0;">
-                            <div class="stat-card">
-                                <div class="stat-number" id="totalPhotos">-</div>
-                                <div class="stat-label">Photos traitées</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-number" id="totalSpaceSaved">-</div>
-                                <div class="stat-label">Espace économisé (MB)</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-number" id="avgCompression">-</div>
-                                <div class="stat-label">Compression moyenne (%)</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-number" id="expiredPhotos">-</div>
-                                <div class="stat-label">Photos expirées</div>
-                            </div>
-                        </div>
-                        <button onclick="loadOptimizationStats()" class="success">🔄 Actualiser</button>
-                        <button onclick="runMigration()" class="warning" style="margin-left: 10px;">⚙️ Migration BDD</button>
-                        <button onclick="reloadModels()" class="info" style="margin-left: 10px;">🔄 Recharger Modèles</button>
+                    <h4>Sélectionner un événement</h4>
+                    <div class="form-group">
+                        <label for="usersEventSelect">Événement:</label>
+                        <select id="usersEventSelect"></select>
                     </div>
+                    <button onclick="loadUsersForSelectedEvent()" class="success">Charger les utilisateurs</button>
                 </div>
-
-                <!-- Estimateur de compression -->
                 <div class="card">
-                    <h4>🧮 Estimateur de Compression</h4>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="fileSize">Taille du fichier (MB):</label>
-                            <input type="number" id="fileSize" step="0.1" min="0.1" placeholder="ex: 5.2">
-                        </div>
-                        <div class="form-group">
-                            <label for="qualityProfile">Profil de qualité:</label>
-                            <select id="qualityProfile">
-                                <option value="low">🔴 Low (60% qualité)</option>
-                                <option value="medium">🟡 Medium (75% qualité)</option>
-                                <option value="high" selected>🟢 High (85% qualité)</option>
-                                <option value="ultra">🔵 Ultra (95% qualité)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <button onclick="estimateCompression()">📏 Estimer</button>
-                    <div id="estimationResult" style="margin-top: 15px;"></div>
-                </div>
-
-                <!-- Gestion des profils -->
-                <div class="card">
-                    <h4>⚙️ Profils de Qualité</h4>
-                    <div id="qualityProfiles">
-                        <div class="profiles-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-                            <div class="profile-card">
-                                <h5>🔴 Low Quality</h5>
-                                <p>Qualité: 60% • Max: 1280x720</p>
-                                <p>Idéal pour: Aperçus, miniatures</p>
-                            </div>
-                            <div class="profile-card">
-                                <h5>🟡 Medium Quality</h5>
-                                <p>Qualité: 75% • Max: 1600x900</p>
-                                <p>Idéal pour: Web, partage social</p>
-                            </div>
-                            <div class="profile-card">
-                                <h5>🟢 High Quality</h5>
-                                <p>Qualité: 85% • Max: 1920x1080</p>
-                                <p>Idéal pour: Production standard</p>
-                            </div>
-                            <div class="profile-card">
-                                <h5>🔵 Ultra Quality</h5>
-                                <p>Qualité: 95% • Max: 2560x1440</p>
-                                <p>Idéal pour: Archivage, impression</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Nettoyage des photos expirées -->
-                <div class="card">
-                    <h4>🗑️ Nettoyage des Photos</h4>
-                    <p style="color: #666;">
-                        Supprime automatiquement les photos dont la durée de rétention a expiré.
-                    </p>
-                    <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
-                        <strong>⚠️ Attention:</strong> Cette action est irréversible. Les photos supprimées ne peuvent pas être récupérées.
-                    </div>
-                    <button onclick="cleanupExpiredPhotos()" class="danger">🗑️ Nettoyer les photos expirées</button>
-                    <div id="cleanupResult" style="margin-top: 15px;"></div>
+                    <h4>Liste des utilisateurs</h4>
+                    <div id="usersList">Sélectionnez un événement pour voir les utilisateurs.</div>
                 </div>
             </div>
 
@@ -731,14 +651,69 @@
 
         function updateEventSelects(events) {
             const qrEventSelect = document.getElementById('qrEventCode');
-            qrEventSelect.innerHTML = '<option value="">Sélectionner un événement</option>';
+            if (qrEventSelect) {
+                qrEventSelect.innerHTML = '<option value="">Sélectionner un événement</option>';
+            }
+            const usersEventSelect = document.getElementById('usersEventSelect');
+            if (usersEventSelect) {
+                usersEventSelect.innerHTML = '<option value="">Sélectionner un événement</option>';
+            }
             
             events.forEach(event => {
                 const option = document.createElement('option');
                 option.value = event.event_code;
                 option.textContent = `${event.name} (${event.event_code})`;
-                qrEventSelect.appendChild(option);
+                if (qrEventSelect) qrEventSelect.appendChild(option.cloneNode(true));
+                if (usersEventSelect) usersEventSelect.appendChild(option);
             });
+        }
+
+        async function loadUsersForSelectedEvent() {
+            const usersEventSelect = document.getElementById('usersEventSelect');
+            const usersList = document.getElementById('usersList');
+            if (!usersEventSelect || !usersList) return;
+            const eventCode = usersEventSelect.value;
+            if (!eventCode) { usersList.textContent = 'Veuillez sélectionner un événement.'; return; }
+            try {
+                // Trouver l'ID de l'événement à partir du code via la liste actuelle
+                const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                const events = eventsResp.ok ? await eventsResp.json() : [];
+                const ev = events.find(e => e.event_code === eventCode);
+                if (!ev) { usersList.textContent = 'Événement introuvable.'; return; }
+                const resp = await fetch(`/api/admin/events/${ev.id}/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { usersList.textContent = 'Erreur lors du chargement des utilisateurs.'; return; }
+                const users = await resp.json();
+                if (!users || users.length === 0) { usersList.textContent = 'Aucun utilisateur pour cet événement.'; return; }
+                usersList.innerHTML = `
+                    <div class="grid">
+                        ${users.map(u => `
+                            <div class="card">
+                                <h4>${u.username}</h4>
+                                <p><strong>Email:</strong> ${u.email}</p>
+                                <p><strong>Type:</strong> ${u.user_type}</p>
+                                <div class="card-actions">
+                                    <button class="danger" onclick="deleteUser(${u.id}, '${u.username}')">Supprimer</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (e) {
+                usersList.textContent = 'Erreur lors du chargement des utilisateurs.';
+            }
+        }
+
+        async function deleteUser(userId, username) {
+            if (!confirm(`Supprimer l'utilisateur "${username}" ? Cette action est irréversible.`)) return;
+            try {
+                const resp = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) { showAlert(data.detail || 'Erreur lors de la suppression', 'error'); return; }
+                showAlert('Utilisateur supprimé avec succès', 'success');
+                loadUsersForSelectedEvent();
+            } catch (e) {
+                showAlert('Erreur lors de la suppression', 'error');
+            }
         }
 
         async function createNewEvent() {
@@ -839,10 +814,11 @@
             }
 
             try {
-                const response = await fetch('/api/admin/register-admin', {
+                const response = await fetch('/api/admin/create-admin', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
                     },
                     body: JSON.stringify({ username, email, password }),
                 });
