@@ -1808,19 +1808,17 @@ async def get_user_event_expiration(
     if not photos:
         return {"event_id": event_id, "expires_at": None, "seconds_remaining": None, "photos_count": 0}
 
-    # Prendre la date d'expiration la plus tardive (fenêtre maximale de disponibilité)
-    max_exp = None
-    count = 0
-    for p in photos:
-        count += 1
-        try:
-            if p.expires_at is not None:
-                if (max_exp is None) or (p.expires_at > max_exp):
-                    max_exp = p.expires_at
-        except Exception:
-            continue
+    # NOUVEAU: Avec le système unifié, toutes les photos ont la même date d'expiration
+    # Prendre la première photo avec une date d'expiration (elles sont toutes identiques maintenant)
+    event_expiration = None
+    count = len(photos)
+    
+    for photo in photos:
+        if photo.expires_at is not None:
+            event_expiration = photo.expires_at
+            break
 
-    if not max_exp:
+    if not event_expiration:
         return {"event_id": event_id, "expires_at": None, "seconds_remaining": None, "photos_count": count}
 
     # Calcul du temps restant en secondes
@@ -1828,17 +1826,59 @@ async def get_user_event_expiration(
     now = _dt.utcnow()
     try:
         # Si timezone-aware, convertir en UTC naïf pour calcul simple
-        if getattr(max_exp, 'tzinfo', None) is not None:
-            now = _dt.now(max_exp.tzinfo)
+        if getattr(event_expiration, 'tzinfo', None) is not None:
+            now = _dt.now(event_expiration.tzinfo)
     except Exception:
         pass
-    remaining = int(max(0, (max_exp - now).total_seconds()))
+    remaining = int(max(0, (event_expiration - now).total_seconds()))
 
     return {
         "event_id": event_id,
-        "expires_at": max_exp.isoformat(),
+        "expires_at": event_expiration.isoformat(),
         "seconds_remaining": remaining,
         "photos_count": count
+    }
+
+@app.post("/api/admin/events/{event_id}/reset-expiration")
+async def reset_event_expiration(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Réinitialise la date d'expiration de toutes les photos d'un événement à 1 mois
+    (Endpoint admin pour tests ou maintenance)
+    """
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent réinitialiser les expirations")
+    
+    # Vérifier que l'événement appartient au photographe
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.photographer_id == current_user.id
+    ).first()
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    
+    # Réinitialiser toutes les photos de l'événement
+    from datetime import datetime, timedelta
+    new_expiration = datetime.utcnow() + timedelta(days=30)
+    
+    updated_count = db.query(Photo).filter(
+        Photo.event_id == event_id,
+        Photo.expires_at.isnot(None)
+    ).update({
+        Photo.expires_at: new_expiration
+    })
+    
+    db.commit()
+    
+    return {
+        "message": f"Expiration réinitialisée pour {updated_count} photos",
+        "event_id": event_id,
+        "new_expiration": new_expiration.isoformat(),
+        "photos_updated": updated_count
     }
 
 @app.post("/api/register-with-event-code")
