@@ -352,6 +352,7 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     .gallery-row.mobile-google-style {
         justify-content: flex-start;
         align-items: stretch;
+        width: 100%;
     }
     
     .gallery-row.mobile-google-style .gallery-photo-card {
@@ -361,8 +362,7 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     }
     
     .gallery-row.mobile-google-style .gallery-photo-card img {
-        object-fit: contain;
-        background: #f8f9fa;
+        object-fit: cover;
     }
 
     .gallery-header h1 {
@@ -412,8 +412,7 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     }
     
     .gallery-row.mobile-google-style .gallery-photo-card img {
-        object-fit: contain;
-        background: #f8f9fa;
+        object-fit: cover;
     }
 
     .gallery-container {

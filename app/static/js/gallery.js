@@ -196,36 +196,51 @@ class ModernGallery {
         // Score basé sur la différence avec la hauteur cible
         const heightDifference = Math.abs(requiredHeight - targetHeight);
         
-        // Pénalité pour les lignes avec trop peu d'images (sauf dernière ligne)
-        const sparsityPenalty = rowImages.length === 1 ? 50 : 0;
+        // Pénalité forte pour hauteurs trop extrêmes (éviter les coupures importantes)
+        let extremeHeightPenalty = 0;
+        if (requiredHeight > targetHeight * 1.5) {
+            extremeHeightPenalty = 100; // Très pénalisant si trop haut
+        } else if (requiredHeight < targetHeight * 0.6) {
+            extremeHeightPenalty = 80; // Pénalisant si trop bas
+        }
         
-        return heightDifference + sparsityPenalty;
+        // Pénalité pour les lignes avec trop peu d'images
+        const sparsityPenalty = rowImages.length === 1 ? 30 : 0;
+        
+        // Bonus pour les lignes avec 2-3 images (optimal sur mobile)
+        const optimalSizeBonus = (rowImages.length >= 2 && rowImages.length <= 3) ? -10 : 0;
+        
+        return heightDifference + extremeHeightPenalty + sparsityPenalty + optimalSizeBonus;
     }
     
     /**
-     * Crée une ligne optimisée avec les vraies dimensions calculées
+     * Crée une ligne optimisée qui prend exactement toute la largeur
      */
     createOptimizedMobileRow(galleryGrid, rowData, containerWidth, targetHeight, gap) {
         const rowElement = document.createElement('div');
         rowElement.className = 'gallery-row mobile-google-style';
         
-        // Calculer les dimensions réelles
+        // Calculer les dimensions pour remplir exactement la largeur
         const totalGaps = (rowData.length - 1) * gap;
         const availableWidth = containerWidth - totalGaps;
         const totalAspectRatio = rowData.reduce((sum, item) => sum + item.aspectRatio, 0);
         
-        // Hauteur optimale pour cette ligne
-        const optimalHeight = Math.min(targetHeight * 1.2, Math.max(targetHeight * 0.8, availableWidth / totalAspectRatio));
+        // Hauteur calculée pour remplir exactement la largeur disponible
+        const calculatedHeight = availableWidth / totalAspectRatio;
         
-        rowElement.style.height = `${optimalHeight}px`;
+        // Utiliser la hauteur calculée (pas de limite min/max pour forcer la largeur complète)
+        const finalHeight = calculatedHeight;
         
-        rowData.forEach(item => {
+        rowElement.style.height = `${finalHeight}px`;
+        
+        // Calculer les largeurs exactes pour chaque image
+        rowData.forEach((item, index) => {
             const card = this.createImageCard(item.image, item.index);
-            const width = item.aspectRatio * optimalHeight;
+            const exactWidth = item.aspectRatio * finalHeight;
             
-            card.style.width = `${width}px`;
+            card.style.width = `${exactWidth}px`;
             card.style.flex = 'none';
-            card.style.height = `${optimalHeight}px`;
+            card.style.height = `${finalHeight}px`;
             
             rowElement.appendChild(card);
         });
