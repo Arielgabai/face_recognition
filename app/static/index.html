@@ -3077,7 +3077,7 @@
             const hEl = document.getElementById('cd-hours');
             const mEl = document.getElementById('cd-mins');
             const sEl = document.getElementById('cd-secs');
-            if (!container || !timerEl) return;
+            if (!container || !dEl || !hEl || !mEl || !sEl) return;
             try {
                 const resp = await fetch('/api/user/event-expiration', { headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
                 if (!resp.ok) { container.style.display = 'none'; return; }
