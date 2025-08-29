@@ -599,7 +599,13 @@
             const resolved = (injected && injected !== 'undefined' ? injected : '') || fromQuery;
             if (resolved) {
                 const ec = document.getElementById('eventCode');
-                ec.value = resolved; // Laisser éditable pour corriger un code invalide
+                ec.value = resolved;
+                // Si l'utilisateur arrive via QR code / lien avec code, ne pas permettre la modification
+                try {
+                    ec.readOnly = true;
+                    ec.setAttribute('aria-readonly', 'true');
+                    ec.title = 'Code événement défini par le QR code';
+                } catch {}
             }
         });
 
