@@ -5,10 +5,6 @@ import {
   Typography,
   Tabs,
   Tab,
-  Grid,
-  Card,
-  CardMedia,
-  CardContent,
   Button,
   Alert,
   CircularProgress,
@@ -24,6 +20,7 @@ import {
   ArrowBack as ArrowBackIcon, 
   ArrowForward as ArrowForwardIcon 
 } from '@mui/icons-material';
+import PhotoAlbum from 'react-photo-album';
 import { useAuth } from '../contexts/AuthContext';
 import { photoService } from '../services/api';
 import { Photo, UserProfile } from '../types';
@@ -55,7 +52,7 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
-// Composant Galerie moderne intégré
+// Composant Galerie avec react-photo-album
 interface ModernGalleryProps {
   photos: Photo[];
   title?: string;
@@ -70,11 +67,6 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
   error 
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<number | null>(null);
-  const [imageLoaded, setImageLoaded] = useState<{ [key: number]: boolean }>({});
-
-  const handleImageLoad = (photoId: number) => {
-    setImageLoaded(prev => ({ ...prev, [photoId]: true }));
-  };
 
   const openLightbox = (index: number) => {
     setSelectedPhoto(index);
@@ -119,6 +111,14 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
     };
   }, [selectedPhoto]);
 
+  // Convertir les photos au format react-photo-album
+  const albumPhotos = photos.map(photo => ({
+    src: photoService.getImage(photo.filename),
+    width: 800, // Largeur par défaut, sera ajustée par la bibliothèque
+    height: 600, // Hauteur par défaut, sera ajustée par la bibliothèque
+    alt: photo.original_filename || 'Photo'
+  }));
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -161,118 +161,15 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
         </Typography>
       )}
 
-      {/* Grille responsive moderne */}
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: 'repeat(auto-fill, minmax(150px, 1fr))',
-            sm: 'repeat(auto-fill, minmax(200px, 1fr))',
-            md: 'repeat(auto-fill, minmax(250px, 1fr))',
-            lg: 'repeat(auto-fill, minmax(280px, 1fr))',
-          },
-          gap: { xs: 1, sm: 1.5, md: 2 },
-          gridAutoRows: 'minmax(150px, auto)',
-          gridAutoFlow: 'row dense',
-        }}
-      >
-        {photos.map((photo, index) => {
-          const isLoaded = imageLoaded[photo.id];
-          
-          // Déterminer la taille de la grille (on peut améliorer avec l'aspect ratio plus tard)
-          let gridRowSpan = 1;
-          let gridColSpan = 1;
-
-          return (
-            <Card
-              key={photo.id}
-              sx={{
-                gridRowEnd: `span ${gridRowSpan}`,
-                gridColumnEnd: `span ${gridColSpan}`,
-                cursor: 'pointer',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                borderRadius: 2,
-                overflow: 'hidden',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                position: 'relative',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: '0 8px 25px rgba(0,0,0,0.2)',
-                  '& .overlay': {
-                    opacity: 1,
-                  }
-                },
-              }}
-              onClick={() => openLightbox(index)}
-            >
-              {/* Overlay au hover */}
-              <Box
-                className="overlay"
-                sx={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: 'linear-gradient(45deg, rgba(25,118,210,0.8), rgba(220,0,78,0.8))',
-                  opacity: 0,
-                  transition: 'opacity 0.3s ease',
-                  zIndex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Typography 
-                  variant="body2" 
-                  sx={{ 
-                    color: 'white', 
-                    fontWeight: 'bold',
-                    textShadow: '0 1px 3px rgba(0,0,0,0.5)'
-                  }}
-                >
-                  Voir en grand
-                </Typography>
-              </Box>
-
-              {/* Placeholder de chargement */}
-              {!isLoaded && (
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: 'grey.100',
-                    zIndex: 2,
-                  }}
-                >
-                  <CircularProgress size={24} />
-                </Box>
-              )}
-
-              <CardMedia
-                component="img"
-                image={`/api/photo/${photo.id}`}
-                alt={photo.original_filename}
-                onLoad={() => handleImageLoad(photo.id)}
-                sx={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  display: 'block',
-                  opacity: isLoaded ? 1 : 0,
-                  transition: 'opacity 0.3s ease',
-                }}
-              />
-            </Card>
-          );
-        })}
-      </Box>
+      {/* Galerie avec react-photo-album */}
+      <PhotoAlbum
+        layout="rows"
+        photos={albumPhotos}
+        targetRowHeight={150}
+        onClick={({ index }) => openLightbox(index)}
+        spacing={8}
+        padding={0}
+      />
 
       {/* Lightbox Modal */}
       <Dialog
