@@ -48,24 +48,32 @@
     text-shadow: 0 0 10px rgba(138, 43, 226, 0.35);
 }
 
-/* Layout justified rows - hauteurs identiques, largeurs variables */
+/* Layout CSS Grid auto-adaptatif - Style Google Photos */
 .modern-gallery {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 6px;
     width: 100%;
 }
 
-.gallery-row {
-    display: flex;
-    gap: 8px;
-    width: 100%;
-    height: auto;
-    margin-bottom: 8px;
-    align-items: stretch;
+/* Pour mobile : layout spécial justified */
+@media (max-width: 768px) {
+    .modern-gallery.mobile-justified {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .gallery-row {
+        display: flex;
+        gap: 5px;
+        width: 100%;
+        height: 150px;
+        align-items: stretch;
+    }
 }
 
-/* Photos dans layout justified */
+/* Photos dans layout grid/justified */
 .gallery-photo-card {
     position: relative;
     overflow: hidden;
@@ -76,10 +84,19 @@
     animation: fadeInUp 0.6s ease forwards;
     opacity: 0;
     transform: translateY(20px);
-    flex: 1 1 auto;
-    height: auto;
-    min-height: auto;
     display: block;
+}
+
+/* Style grid pour desktop */
+.modern-gallery .gallery-photo-card {
+    aspect-ratio: 1;
+    height: auto;
+}
+
+/* Style justified pour mobile */
+.modern-gallery.mobile-justified .gallery-photo-card {
+    flex: 1 1 auto;
+    height: 100%;
 }
 
 /* Empêcher l'overlay de masquer définitivement l'image sur mobile si hover absent */
@@ -389,32 +406,13 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
 @media (max-width: 480px) {
     .modern-gallery {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
         gap: 4px;
     }
     
-    .gallery-row {
+    .modern-gallery.mobile-justified .gallery-row {
         gap: 4px;
-        height: auto;
-    }
-    
-    .gallery-photo-card {
-        height: auto;
-        min-height: auto;
-    }
-    
-    /* Style Google Photos pour petit mobile */
-    .gallery-row.mobile-google-style {
-        gap: 4px;
-        height: auto !important;
-    }
-    
-    .gallery-row.mobile-google-style .gallery-photo-card {
-        height: 100% !important;
-        display: block;
-    }
-    
-    .gallery-row.mobile-google-style .gallery-photo-card img {
-        object-fit: cover;
+        height: 120px;
     }
 
     .gallery-container {

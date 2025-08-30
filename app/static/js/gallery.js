@@ -78,15 +78,19 @@ class ModernGallery {
         galleryGrid.className = 'modern-gallery';
         galleryGrid.innerHTML = '';
         
-        // Détection mobile pour appliquer le style Google Photos
+        // Détection mobile pour appliquer le style justified
         const isMobile = window.innerWidth <= 768;
         
         if (isMobile) {
-            // Style Google Photos pour mobile : 2-3 photos avec ratios variables
-            this.renderMobileGooglePhotosStyle(galleryGrid);
+            // Mobile : Style justified avec lignes parfaitement alignées
+            galleryGrid.classList.add('mobile-justified');
+            this.renderMobileJustifiedRows(galleryGrid);
         } else {
-            // Style desktop simple : groupes fixes
-            this.renderDesktopStyle(galleryGrid);
+            // Desktop : CSS Grid simple et efficace
+            this.images.forEach((image, index) => {
+                const card = this.createImageCard(image, index);
+                galleryGrid.appendChild(card);
+            });
         }
         
         // Remplace le contenu existant
@@ -116,28 +120,47 @@ class ModernGallery {
         }
     }
     
-    renderMobileGooglePhotosStyle(galleryGrid) {
+    renderMobileJustifiedRows(galleryGrid) {
         const targetHeight = window.innerWidth <= 480 ? 120 : 150;
         const containerWidth = this.container.clientWidth || window.innerWidth - 20;
         const gap = window.innerWidth <= 480 ? 4 : 5;
+        const maxPhotosPerRow = window.innerWidth <= 480 ? 2 : 3;
         
-        // Préparer les données des images avec aspect ratios
-        const imageData = this.images.map((image, index) => ({
-            image,
-            index,
-            aspectRatio: this.estimateAspectRatio(image),
-            width: 0, // Sera calculé
-            height: targetHeight
-        }));
+        // Grouper les images en lignes de 2-3 photos
+        const rows = [];
+        for (let i = 0; i < this.images.length; i += maxPhotosPerRow) {
+            rows.push(this.images.slice(i, i + maxPhotosPerRow));
+        }
         
-        // Utiliser l'algorithme de partitioning linéaire de Google Photos
-        const rows = this.linearPartition(imageData, containerWidth, targetHeight, gap);
-        
-        // Créer les lignes optimisées avec traitement spécial pour la dernière
-        rows.forEach((row, index) => {
-            const isLastRow = index === rows.length - 1;
-            this.createOptimizedMobileRow(galleryGrid, row, containerWidth, targetHeight, gap, isLastRow);
+        // Créer chaque ligne avec alignement parfait
+        rows.forEach((rowImages, rowIndex) => {
+            const isLastRow = rowIndex === rows.length - 1;
+            this.createPerfectAlignedRow(galleryGrid, rowImages, containerWidth, targetHeight, gap, isLastRow);
         });
+    }
+    
+    createPerfectAlignedRow(galleryGrid, rowImages, containerWidth, targetHeight, gap, isLastRow) {
+        const rowElement = document.createElement('div');
+        rowElement.className = 'gallery-row mobile-google-style';
+        
+        // Hauteur fixe pour alignement parfait (sauf dernière ligne)
+        const rowHeight = isLastRow ? Math.min(targetHeight * 1.2, targetHeight) : targetHeight;
+        rowElement.style.height = `${rowHeight}px`;
+        
+        // Calculer les largeurs pour remplir exactement la largeur
+        const totalGaps = (rowImages.length - 1) * gap;
+        const availableWidth = containerWidth - totalGaps;
+        const imageWidth = availableWidth / rowImages.length;
+        
+        rowImages.forEach((image, index) => {
+            const card = this.createImageCard(image, rowImages.indexOf(image));
+            card.style.width = `${imageWidth}px`;
+            card.style.flex = 'none';
+            card.style.height = `${rowHeight}px`;
+            rowElement.appendChild(card);
+        });
+        
+        galleryGrid.appendChild(rowElement);
     }
     
     /**
