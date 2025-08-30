@@ -134,14 +134,23 @@ class AwsFaceRecognizer:
             resp = self.client.search_faces_by_image(
                 CollectionId=self._collection_id(event_id),
                 Image={"Bytes": image_bytes},
-                MaxFaces=8,
-                FaceMatchThreshold=60.0,
+                MaxFaces=10,
+                FaceMatchThreshold=50.0,
             )
-        except ClientError:
+            
+            # Debug: Log du nombre de visages détectés
+            face_matches = resp.get("FaceMatches", [])
+            searched_face = resp.get("SearchedFaceBoundingBox")
+            print(f"🔍 AWS Rekognition - Visages détectés: {len(face_matches)}")
+            if searched_face:
+                print(f"📍 Visage recherché trouvé avec confiance: {searched_face.get('Confidence', 'N/A')}")
+            
+        except ClientError as e:
+            print(f"❌ Erreur AWS Rekognition: {e}")
             return []
 
         results: List[Dict] = []
-        for fm in resp.get("FaceMatches", [])[:8]:
+        for fm in resp.get("FaceMatches", [])[:10]:
             ext_id = fm.get("Face", {}).get("ExternalImageId")
             similarity = fm.get("Similarity", 0.0)  # 0-100
             try:
@@ -149,6 +158,7 @@ class AwsFaceRecognizer:
             except Exception:
                 user_id = None
             if user_id:
+                print(f"✅ Match trouvé - User {user_id}: {similarity:.1f}% similarité")
                 results.append({
                     "user_id": user_id,
                     "confidence_score": int(round(float(similarity)))
