@@ -78,20 +78,11 @@ class ModernGallery {
         galleryGrid.className = 'modern-gallery';
         galleryGrid.innerHTML = '';
         
-        // Détection mobile pour appliquer le style justified
-        const isMobile = window.innerWidth <= 768;
-        
-        if (isMobile) {
-            // Mobile : Style justified avec lignes parfaitement alignées
-            galleryGrid.classList.add('mobile-justified');
-            this.renderMobileJustifiedRows(galleryGrid);
-        } else {
-            // Desktop : CSS Grid simple et efficace
-            this.images.forEach((image, index) => {
-                const card = this.createImageCard(image, index);
-                galleryGrid.appendChild(card);
-            });
-        }
+        // Layout masonry simple - CSS natif fait tout le travail
+        this.images.forEach((image, index) => {
+            const card = this.createImageCard(image, index);
+            galleryGrid.appendChild(card);
+        });
         
         // Remplace le contenu existant
         this.container.innerHTML = '';
@@ -502,21 +493,8 @@ class ModernGallery {
     }
     
     detectAndApplyRatio(img, card) {
-        const aspectRatio = img.naturalWidth / img.naturalHeight;
-        
-        // Retirer les classes existantes
-        card.classList.remove('wide-landscape', 'tall-portrait');
-        
-        // Appliquer seulement les classes pour les cas extrêmes
-        if (aspectRatio > 2.5) {
-            // Paysage très large (panoramique)
-            card.classList.add('wide-landscape');
-        } else if (aspectRatio < 0.5) {
-            // Portrait très étroit
-            card.classList.add('tall-portrait');
-        }
-        
-        // Laisser les autres images s'afficher naturellement
+        // Layout masonry CSS natif - pas besoin de classes spéciales
+        // Les images gardent leurs proportions naturelles
     }
     
     createLightbox() {

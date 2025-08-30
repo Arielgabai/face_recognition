@@ -48,32 +48,14 @@
     text-shadow: 0 0 10px rgba(138, 43, 226, 0.35);
 }
 
-/* Layout CSS Grid auto-adaptatif - Style Google Photos */
+/* Layout masonry CSS natif - Style Google Photos */
 .modern-gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 6px;
+    column-count: 4;
+    column-gap: 8px;
     width: 100%;
 }
 
-/* Pour mobile : layout spécial justified */
-@media (max-width: 768px) {
-    .modern-gallery.mobile-justified {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-    }
-    
-    .gallery-row {
-        display: flex;
-        gap: 5px;
-        width: 100%;
-        height: 150px;
-        align-items: stretch;
-    }
-}
-
-/* Photos dans layout grid/justified */
+/* Photos dans layout masonry */
 .gallery-photo-card {
     position: relative;
     overflow: hidden;
@@ -84,19 +66,11 @@
     animation: fadeInUp 0.6s ease forwards;
     opacity: 0;
     transform: translateY(20px);
-    display: block;
-}
-
-/* Style grid pour desktop */
-.modern-gallery .gallery-photo-card {
-    aspect-ratio: 1;
-    height: auto;
-}
-
-/* Style justified pour mobile */
-.modern-gallery.mobile-justified .gallery-photo-card {
-    flex: 1 1 auto;
-    height: 100%;
+    display: inline-block;
+    width: 100%;
+    margin-bottom: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 /* Empêcher l'overlay de masquer définitivement l'image sur mobile si hover absent */
@@ -111,11 +85,9 @@
 
 .gallery-photo-card img {
     width: 100%;
-    height: 100%;
+    height: auto;
     display: block;
     transition: transform 0.3s ease;
-    object-fit: cover;
-    object-position: center;
 }
 
 .gallery-photo-card:hover img {
@@ -336,51 +308,15 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 /* Responsive Design */
 @media (max-width: 1024px) {
     .modern-gallery {
-        gap: 6px;
-    }
-    
-    .gallery-row {
-        gap: 6px;
-        height: auto;
-    }
-    
-    .gallery-photo-card {
-        height: auto;
-        min-height: auto;
+        column-count: 3;
+        column-gap: 6px;
     }
 }
 
 @media (max-width: 768px) {
     .modern-gallery {
-        gap: 5px;
-    }
-    
-    .gallery-row {
-        gap: 5px;
-        height: auto;
-    }
-    
-    .gallery-photo-card {
-        height: auto;
-        min-height: auto;
-    }
-    
-    /* Style Google Photos pour mobile */
-    .gallery-row.mobile-google-style {
-        justify-content: flex-start;
-        align-items: stretch;
-        width: 100%;
-    }
-    
-    .gallery-row.mobile-google-style .gallery-photo-card {
-        flex: none !important;
-        height: 100% !important;
-        min-height: auto;
-        display: block;
-    }
-    
-    .gallery-row.mobile-google-style .gallery-photo-card img {
-        object-fit: cover;
+        column-count: 2;
+        column-gap: 5px;
     }
 
     .gallery-header h1 {
@@ -406,13 +342,12 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
 @media (max-width: 480px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 4px;
+        column-count: 1;
+        column-gap: 0;
     }
     
-    .modern-gallery.mobile-justified .gallery-row {
-        gap: 4px;
-        height: 120px;
+    .gallery-photo-card {
+        margin-bottom: 6px;
     }
 
     .gallery-container {
