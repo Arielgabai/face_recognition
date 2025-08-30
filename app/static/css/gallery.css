@@ -58,20 +58,22 @@
     width: 100%;
 }
 
-/* Photos dans layout grid */
+/* Photos dans layout grid avec centrage vertical */
 .gallery-photo-card {
     position: relative;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
-    background: transparent;
+    background: #000000;
     animation: fadeInUp 0.6s ease forwards;
     opacity: 0;
     transform: translateY(20px);
-    display: block;
+    display: flex;
+    align-items: center;
     width: 100%;
     height: auto;
+    min-height: 150px;
 }
 
 /* Empêcher l'overlay de masquer définitivement l'image sur mobile si hover absent */
@@ -312,6 +314,10 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 6px;
     }
+    
+    .gallery-photo-card {
+        min-height: 130px;
+    }
 }
 
 @media (max-width: 768px) {
@@ -319,6 +325,11 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         gap: 5px;
     }
+    
+    .gallery-photo-card {
+        min-height: 120px;
+    }
+}
 
     .gallery-header h1 {
         font-size: 2rem;
@@ -345,6 +356,10 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     .modern-gallery {
         grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
         gap: 4px;
+    }
+    
+    .gallery-photo-card {
+        min-height: 100px;
     }
 
     .gallery-container {
