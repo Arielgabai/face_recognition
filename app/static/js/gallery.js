@@ -102,10 +102,22 @@ class ModernGallery {
         const cards = this.container.querySelectorAll('.gallery-photo-card');
         if (cards.length === 0) return;
         
-        // Grouper les cartes par ligne (même offsetTop)
+        // Attendre que toutes les images soient chargées ou donner une hauteur par défaut
+        const allImagesLoaded = Array.from(cards).every(card => {
+            const img = card.querySelector('img');
+            return img && (img.complete || img.naturalHeight > 0);
+        });
+        
+        // Si pas toutes chargées, réessayer plus tard
+        if (!allImagesLoaded) {
+            setTimeout(() => this.adjustRowHeights(), 200);
+            return;
+        }
+        
+        // Grouper les cartes par ligne (même offsetTop avec tolérance)
         const rows = {};
         cards.forEach(card => {
-            const top = card.offsetTop;
+            const top = Math.round(card.offsetTop / 10) * 10; // Tolérance de 10px
             if (!rows[top]) rows[top] = [];
             rows[top].push(card);
         });
@@ -117,21 +129,25 @@ class ModernGallery {
             // Trouver la hauteur maximale de la ligne
             rowCards.forEach(card => {
                 const img = card.querySelector('img');
-                if (img && img.complete) {
-                    maxHeight = Math.max(maxHeight, img.offsetHeight);
+                if (img) {
+                    const imgHeight = img.offsetHeight || img.naturalHeight || 150;
+                    maxHeight = Math.max(maxHeight, imgHeight);
                 }
             });
+            
+            // S'assurer qu'on a une hauteur minimum
+            maxHeight = Math.max(maxHeight, 100);
             
             // Appliquer la hauteur max à toutes les cartes de la ligne
             rowCards.forEach(card => {
                 const img = card.querySelector('img');
-                if (img && img.complete) {
-                    const imgHeight = img.offsetHeight;
+                if (img) {
+                    const imgHeight = img.offsetHeight || img.naturalHeight || 150;
                     
                     card.style.height = `${maxHeight}px`;
                     
                     // Ajouter le centrage seulement si la photo est plus petite
-                    if (imgHeight < maxHeight) {
+                    if (imgHeight < maxHeight * 0.95) { // Tolérance de 5%
                         card.classList.add('needs-centering');
                     } else {
                         card.classList.remove('needs-centering');
