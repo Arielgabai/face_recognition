@@ -161,14 +161,19 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
         </Typography>
       )}
 
-      {/* Galerie avec react-photo-album */}
+      {/* Galerie avec react-photo-album - Layout adaptatif */}
       <PhotoAlbum
-        layout="rows"
+        layout="columns"
         photos={albumPhotos}
-        targetRowHeight={150}
         onClick={({ index }) => openLightbox(index)}
-        spacing={8}
+        spacing={6}
         padding={0}
+        columns={(containerWidth) => {
+          if (containerWidth < 480) return 1;
+          if (containerWidth < 768) return 2;
+          if (containerWidth < 1024) return 3;
+          return 4;
+        }}
       />
 
       {/* Lightbox Modal */}
