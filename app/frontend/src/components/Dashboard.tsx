@@ -111,13 +111,27 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
     };
   }, [selectedPhoto]);
 
-  // Convertir les photos au format react-photo-album
-  const albumPhotos = photos.map(photo => ({
-    src: photoService.getImage(photo.filename),
-    width: 800, // Largeur par défaut, sera ajustée par la bibliothèque
-    height: 600, // Hauteur par défaut, sera ajustée par la bibliothèque
-    alt: photo.original_filename || 'Photo'
-  }));
+  // Convertir les photos au format react-photo-album avec dimensions variées
+  const albumPhotos = photos.map((photo, index) => {
+    // Simuler des dimensions variées pour un rendu plus naturel
+    const aspectRatios = [
+      { width: 800, height: 600 },   // 4:3 paysage
+      { width: 600, height: 800 },   // 3:4 portrait
+      { width: 800, height: 800 },   // 1:1 carré
+      { width: 1200, height: 600 },  // 2:1 panoramique
+      { width: 600, height: 900 },   // 2:3 portrait
+      { width: 900, height: 600 },   // 3:2 paysage
+    ];
+    
+    const ratio = aspectRatios[index % aspectRatios.length];
+    
+    return {
+      src: photoService.getImage(photo.filename),
+      width: ratio.width,
+      height: ratio.height,
+      alt: photo.original_filename || 'Photo'
+    };
+  });
 
   if (loading) {
     return (
@@ -161,9 +175,9 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
         </Typography>
       )}
 
-      {/* Galerie avec react-photo-album - Layout adaptatif */}
+      {/* Galerie avec react-photo-album - Layout masonry Google Photos */}
       <PhotoAlbum
-        layout="columns"
+        layout="masonry"
         photos={albumPhotos}
         onClick={({ index }) => openLightbox(index)}
         spacing={6}
