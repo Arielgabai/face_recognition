@@ -78,7 +78,7 @@ class ModernGallery {
         galleryGrid.className = 'modern-gallery';
         galleryGrid.innerHTML = '';
         
-        // Layout masonry simple - CSS natif fait tout le travail
+        // Créer toutes les cartes d'abord
         this.images.forEach((image, index) => {
             const card = this.createImageCard(image, index);
             galleryGrid.appendChild(card);
@@ -88,9 +88,57 @@ class ModernGallery {
         this.container.innerHTML = '';
         this.container.appendChild(galleryGrid);
         
+        // Après le rendu, ajuster les hauteurs de ligne
+        setTimeout(() => {
+            this.adjustRowHeights();
+        }, 100);
+        
         if (this.options.animations) {
             this.animateCards();
         }
+    }
+    
+    adjustRowHeights() {
+        const cards = this.container.querySelectorAll('.gallery-photo-card');
+        if (cards.length === 0) return;
+        
+        // Grouper les cartes par ligne (même offsetTop)
+        const rows = {};
+        cards.forEach(card => {
+            const top = card.offsetTop;
+            if (!rows[top]) rows[top] = [];
+            rows[top].push(card);
+        });
+        
+        // Pour chaque ligne, trouver la hauteur max et ajuster
+        Object.values(rows).forEach(rowCards => {
+            let maxHeight = 0;
+            
+            // Trouver la hauteur maximale de la ligne
+            rowCards.forEach(card => {
+                const img = card.querySelector('img');
+                if (img && img.complete) {
+                    maxHeight = Math.max(maxHeight, img.offsetHeight);
+                }
+            });
+            
+            // Appliquer la hauteur max à toutes les cartes de la ligne
+            rowCards.forEach(card => {
+                const img = card.querySelector('img');
+                if (img && img.complete) {
+                    const imgHeight = img.offsetHeight;
+                    
+                    card.style.height = `${maxHeight}px`;
+                    
+                    // Ajouter le centrage seulement si la photo est plus petite
+                    if (imgHeight < maxHeight) {
+                        card.classList.add('needs-centering');
+                    } else {
+                        card.classList.remove('needs-centering');
+                    }
+                }
+            });
+        });
     }
     
     renderDesktopStyle(galleryGrid) {
@@ -445,12 +493,10 @@ class ModernGallery {
             
             card.classList.remove('loading');
             
-            // Re-render la galerie avec les nouvelles dimensions si c'est la première fois
-            if (!card.dataset.rendered) {
-                card.dataset.rendered = 'true';
-                // On pourrait re-render ici, mais cela peut causer des boucles
-                // Pour l'instant on garde le ratio estimé
-            }
+            // Réajuster les hauteurs de ligne après chargement
+            setTimeout(() => {
+                this.adjustRowHeights();
+            }, 50);
         };
         
         img.onerror = () => {
