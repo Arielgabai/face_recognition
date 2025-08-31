@@ -353,28 +353,24 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 }
 
 @media (max-width: 768px) {
+    /* Technique identique à la bannière tabs pour tablette */
     .modern-gallery {
         grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 2px;
         grid-row-gap: 2px;
+        width: 100vw;
+        margin-left: -20px;
+        margin-right: -20px;
+        padding: 0 20px;
     }
     
-    /* Réduire le padding du container principal sur tablette */
+    .gallery-container {
+        padding: 0;
+    }
+    
+    /* Restaurer le padding normal du container */
     .container {
-        padding: 20px 4px !important;
-    }
-    
-    /* Ajuster les marges des tabs pour le nouveau padding */
-    .tabs {
-        margin-left: -4px !important;
-        margin-right: -4px !important;
-        padding: 12px 4px !important;
-    }
-    
-    /* Ajuster l'event-banner pour le nouveau padding tablette */
-    .event-banner {
-        margin-left: -4px !important;
-        margin-right: -4px !important;
+        padding: 20px !important;
     }
 }
 
@@ -400,48 +396,27 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 }
 
 @media (max-width: 480px) {
+    /* Technique identique à la bannière tabs */
     .modern-gallery {
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         gap: 1px;
         grid-row-gap: 1px;
-        width: 100vw !important;
-        max-width: 100vw !important;
+        width: 100vw;
+        margin-left: -20px;
+        margin-right: -20px;
+        padding: 0 20px;
     }
 
     .gallery-container {
         padding: 0;
-        width: 100vw !important;
-        max-width: 100vw !important;
-        margin: 0 !important;
     }
     
-    /* Supprimer complètement le padding du container principal sur mobile */
+    /* Restaurer le padding normal du container */
     .container {
-        padding: 20px 0 !important;
-        width: 100vw !important;
-        max-width: 100vw !important;
-        margin: 0 !important;
+        padding: 20px !important;
     }
     
-    /* Forcer tous les éléments parents à utiliser toute la largeur */
-    body {
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow-x: hidden !important;
-    }
-    
-    /* Ajuster les marges des tabs pour padding zéro */
-    .tabs {
-        margin-left: 0 !important;
-        margin-right: 0 !important;
-        padding: 12px 0 !important;
-    }
-    
-    /* Ajuster l'event-banner pour padding zéro */
-    .event-banner {
-        margin-left: 0 !important;
-        margin-right: 0 !important;
-    }
+
 
     .gallery-lightbox-prev {
         left: 10px;
