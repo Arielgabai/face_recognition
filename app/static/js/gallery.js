@@ -149,8 +149,11 @@ class ModernGallery {
                     // Ajouter le centrage seulement si la photo est plus petite
                     if (imgHeight < maxHeight * 0.95) { // Tolérance de 5%
                         card.classList.add('needs-centering');
+                        // Appliquer l'image en arrière-plan flou
+                        card.style.setProperty('--bg-image', `url(${img.src})`);
                     } else {
                         card.classList.remove('needs-centering');
+                        card.style.removeProperty('--bg-image');
                     }
                 }
             });

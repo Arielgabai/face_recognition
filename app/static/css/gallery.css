@@ -73,12 +73,29 @@
     width: 100%;
 }
 
-/* Classe pour photos qui ont besoin de centrage */
+/* Classe pour photos qui ont besoin de centrage avec effet flou */
 .gallery-photo-card.needs-centering {
-    background: transparent;
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.gallery-photo-card.needs-centering::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: var(--bg-image);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    filter: blur(20px);
+    transform: scale(1.1);
+    z-index: 0;
 }
 
 .gallery-photo-card.needs-centering img {
@@ -87,6 +104,8 @@
     width: auto;
     height: auto;
     object-fit: contain;
+    position: relative;
+    z-index: 1;
 }
 
 /* Empêcher l'overlay de masquer définitivement l'image sur mobile si hover absent */
