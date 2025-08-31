@@ -354,9 +354,9 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
 @media (max-width: 768px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: 4px;
-        grid-row-gap: 4px;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 2px;
+        grid-row-gap: 2px;
     }
     
     /* Réduire le padding du container principal sur tablette */
@@ -401,31 +401,31 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
 @media (max-width: 480px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 3px;
-        grid-row-gap: 3px;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1px;
+        grid-row-gap: 1px;
     }
 
     .gallery-container {
-        padding: 0 2px;
+        padding: 0;
     }
     
-    /* Supprimer le padding du container principal sur mobile */
+    /* Supprimer complètement le padding du container principal sur mobile */
     .container {
-        padding: 20px 2px !important;
+        padding: 20px 0 !important;
     }
     
-    /* Ajuster les marges des tabs pour le nouveau padding mobile */
+    /* Ajuster les marges des tabs pour padding zéro */
     .tabs {
-        margin-left: -2px !important;
-        margin-right: -2px !important;
-        padding: 12px 2px !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        padding: 12px 0 !important;
     }
     
-    /* Ajuster l'event-banner pour le nouveau padding mobile */
+    /* Ajuster l'event-banner pour padding zéro */
     .event-banner {
-        margin-left: -2px !important;
-        margin-right: -2px !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
     }
 
     .gallery-lightbox-prev {
