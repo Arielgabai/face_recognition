@@ -358,6 +358,11 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         gap: 4px;
         grid-row-gap: 4px;
     }
+    
+    /* Réduire le padding du container principal sur tablette */
+    .container {
+        padding: 20px 4px !important;
+    }
 }
 
     .gallery-header h1 {
@@ -390,6 +395,11 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
     .gallery-container {
         padding: 0 2px;
+    }
+    
+    /* Supprimer le padding du container principal sur mobile */
+    .container {
+        padding: 20px 2px !important;
     }
 
     .gallery-lightbox-prev {
