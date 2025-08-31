@@ -404,15 +404,30 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         gap: 1px;
         grid-row-gap: 1px;
+        width: 100vw !important;
+        max-width: 100vw !important;
     }
 
     .gallery-container {
         padding: 0;
+        width: 100vw !important;
+        max-width: 100vw !important;
+        margin: 0 !important;
     }
     
     /* Supprimer complètement le padding du container principal sur mobile */
     .container {
         padding: 20px 0 !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+        margin: 0 !important;
+    }
+    
+    /* Forcer tous les éléments parents à utiliser toute la largeur */
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow-x: hidden !important;
     }
     
     /* Ajuster les marges des tabs pour padding zéro */
