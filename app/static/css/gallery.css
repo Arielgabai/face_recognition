@@ -363,6 +363,19 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     .container {
         padding: 20px 4px !important;
     }
+    
+    /* Ajuster les marges des tabs pour le nouveau padding */
+    .tabs {
+        margin-left: -4px !important;
+        margin-right: -4px !important;
+        padding: 12px 4px !important;
+    }
+    
+    /* Ajuster l'event-banner pour le nouveau padding tablette */
+    .event-banner {
+        margin-left: -4px !important;
+        margin-right: -4px !important;
+    }
 }
 
     .gallery-header h1 {
@@ -400,6 +413,19 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     /* Supprimer le padding du container principal sur mobile */
     .container {
         padding: 20px 2px !important;
+    }
+    
+    /* Ajuster les marges des tabs pour le nouveau padding mobile */
+    .tabs {
+        margin-left: -2px !important;
+        margin-right: -2px !important;
+        padding: 12px 2px !important;
+    }
+    
+    /* Ajuster l'event-banner pour le nouveau padding mobile */
+    .event-banner {
+        margin-left: -2px !important;
+        margin-right: -2px !important;
     }
 
     .gallery-lightbox-prev {
