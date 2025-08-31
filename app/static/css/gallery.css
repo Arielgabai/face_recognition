@@ -75,7 +75,7 @@
 
 /* Classe pour photos qui ont besoin de centrage */
 .gallery-photo-card.needs-centering {
-    background: #000000;
+    background: transparent;
     display: flex;
     align-items: center;
     justify-content: center;
