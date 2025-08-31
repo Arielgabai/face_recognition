@@ -354,9 +354,9 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
 @media (max-width: 768px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 5px;
-        grid-row-gap: 5px;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 4px;
+        grid-row-gap: 4px;
     }
 }
 
@@ -383,13 +383,13 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
 @media (max-width: 480px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 4px;
-        grid-row-gap: 4px;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 3px;
+        grid-row-gap: 3px;
     }
 
     .gallery-container {
-        padding: 0 8px;
+        padding: 0 4px;
     }
 
     .gallery-lightbox-prev {
