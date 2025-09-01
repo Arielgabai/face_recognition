@@ -122,13 +122,52 @@ class AwsFaceRecognizer:
         from sqlalchemy import or_  # local import
         user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
         user_ids = [ue.user_id for ue in user_events]
+        # Restreindre aux utilisateurs existants et ayant un selfie
         users_with_selfies = db.query(User).filter(
             User.id.in_(user_ids),
             or_(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
         ).all()
         for u in users_with_selfies:
             self.index_user_selfie(event_id, u)
+
+        # Nettoyer la collection des visages orphelins (ExternalImageId ne correspondant plus aux users de l'événement)
+        try:
+            allowed_external_ids = set(str(uid) for uid in user_ids)
+            coll_id = self._collection_id(event_id)
+            next_token = None
+            while True:
+                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
+                if next_token:
+                    kwargs["NextToken"] = next_token
+                faces = self.client.list_faces(**kwargs)
+                stale_face_ids = []
+                for f in faces.get('Faces', []) or []:
+                    ext = f.get('ExternalImageId')
+                    face_id = f.get('FaceId')
+                    if ext is None or ext not in allowed_external_ids:
+                        if face_id:
+                            stale_face_ids.append(face_id)
+                if stale_face_ids:
+                    try:
+                        self.client.delete_faces(CollectionId=coll_id, FaceIds=stale_face_ids)
+                    except ClientError:
+                        pass
+                next_token = faces.get("NextToken")
+                if not next_token:
+                    break
+        except ClientError:
+            pass
+
         self._indexed_events.add(event_id)
+
+    def _get_allowed_event_user_ids(self, event_id: int, db: Session) -> set[int]:
+        """Renvoie l'ensemble des user_id associés à l'événement et existant dans la table users."""
+        user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+        event_user_ids = {ue.user_id for ue in user_events}
+        if not event_user_ids:
+            return set()
+        existing_ids = {row[0] for row in db.query(User.id).filter(User.id.in_(list(event_user_ids))).all()}
+        return existing_ids
 
     # ---------- Helpers image ----------
     def _prepare_image_bytes(self, photo_input) -> Optional[bytes]:
@@ -234,6 +273,9 @@ class AwsFaceRecognizer:
         print(f"[AWS] DetectFaces: {len(faces)} faces (min_conf={AWS_DETECT_MIN_CONF})")
 
         # 2) Si aucun visage, fallback: un seul SearchFacesByImage sur l'image entière (comportement historique)
+        # Préparer le filtre d'IDs valides pour cet événement
+        allowed_user_ids: set[int] = self._get_allowed_event_user_ids(event_id, db)
+
         if not faces:
             try:
                 resp = self.client.search_faces_by_image(
@@ -254,7 +296,7 @@ class AwsFaceRecognizer:
                     user_id = int(ext_id) if ext_id is not None else None
                 except Exception:
                     user_id = None
-                if user_id is None:
+                if user_id is None or user_id not in allowed_user_ids:
                     continue
                 if (user_id not in user_best) or (similarity > user_best[user_id]):
                     user_best[user_id] = similarity
@@ -284,7 +326,7 @@ class AwsFaceRecognizer:
                     user_id = int(ext_id) if ext_id is not None else None
                 except Exception:
                     user_id = None
-                if user_id is None:
+                if user_id is None or user_id not in allowed_user_ids:
                     continue
                 if (user_id not in user_best) or (similarity > user_best[user_id]):
                     user_best[user_id] = similarity
@@ -364,8 +406,11 @@ class AwsFaceRecognizer:
         db.refresh(photo)
         if event_id:
             matches = self.process_photo_for_event(optimization_result['compressed_data'], event_id, db)
+            allowed_ids = self._get_allowed_event_user_ids(event_id, db)
             for match in matches:
-                db.add(FaceMatch(photo_id=photo.id, user_id=match['user_id'], confidence_score=int(match['confidence_score'])))
+                uid = int(match.get('user_id')) if match.get('user_id') is not None else None
+                if uid in allowed_ids:
+                    db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(match['confidence_score'])))
             db.commit()
         return photo
 
@@ -398,8 +443,12 @@ class AwsFaceRecognizer:
         db.commit()
         db.refresh(photo)
         matches = self.process_photo_for_event(optimization_result['compressed_data'], event_id, db)
+        # Filtrer par utilisateurs existants de l'événement pour éviter les FK errors
+        allowed_ids = self._get_allowed_event_user_ids(event_id, db)
         for match in matches:
-            db.add(FaceMatch(photo_id=photo.id, user_id=match['user_id'], confidence_score=int(match['confidence_score'])))
+            uid = int(match.get('user_id')) if match.get('user_id') is not None else None
+            if uid in allowed_ids:
+                db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(match['confidence_score'])))
         db.commit()
         return photo
 

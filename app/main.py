@@ -1669,7 +1669,7 @@ async def upload_photos_to_event(
             shutil.copyfileobj(file.file, buffer)
         
         try:
-            # Traiter la photo avec reconnaissance faciale pour l'+�v+�nement sp+�cifique
+            # Traiter la photo avec reconnaissance faciale pour l'événement spécifique
             photo = face_recognizer.process_and_save_photo_for_event(
                 temp_path, file.filename, current_user.id, event_id, db
             )
@@ -1677,6 +1677,9 @@ async def upload_photos_to_event(
                 "filename": photo.filename,
                 "original_filename": photo.original_filename
             })
+        except Exception as e:
+            # Ne pas interrompre tout le batch si une photo échoue (ex: FK sur user inexistant)
+            print(f"[UploadEvent] Erreur traitement {file.filename}: {e}")
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
