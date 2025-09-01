@@ -11,7 +11,7 @@ import { CloudUpload } from '@mui/icons-material';
 import { photoService } from '../services/api';
 
 interface SelfieUploadProps {
-  onSuccess: () => void;
+  onSuccess: () => Promise<void>;
 }
 
 const SelfieUpload: React.FC<SelfieUploadProps> = ({ onSuccess }) => {
@@ -57,7 +57,8 @@ const SelfieUpload: React.FC<SelfieUploadProps> = ({ onSuccess }) => {
       setSuccess('Selfie uploadé avec succès !');
       setSelectedFile(null);
       setPreview(null);
-      onSuccess();
+      // Attendre que le parent recharge les photos (Vos photos) avant d'arrêter le spinner
+      await onSuccess();
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Erreur lors de l\'upload');
     } finally {

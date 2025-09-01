@@ -2401,6 +2401,8 @@
                                 <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
                             </div>
                         `;
+                        // Signaler que l'onglet "Vos Photos" est prêt (même s'il est vide)
+                        try { dispatchMyPhotosLoaded(); } catch {}
                     } else {
                         // Mettre à jour le titre de l'événement dans la bannière
                         const eventTitle = document.getElementById('eventTitle');
@@ -3413,7 +3415,11 @@
                     
                     // Rafraîchir les photos sans déconnecter l'utilisateur
                     try {
+                        // Attacher l'attente de fin de chargement "Vos Photos" AVANT le rafraîchissement
+                        const loadedPromise = waitForMyPhotosLoadComplete(15000);
                         await refreshPhotosAfterSelfieUpdate();
+                        // Attendre que l'onglet "Vos Photos" ait fini de charger ses images
+                        await loadedPromise;
                         
                         // Succès final
                         btnText.textContent = 'Terminé !';
@@ -3573,6 +3579,7 @@
                         <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
                     </div>
                 `;
+                try { dispatchMyPhotosLoaded(); } catch {}
                 return;
             }
             
@@ -3620,8 +3627,79 @@
                     </div>
                 `;
             }
+            // Attendre que toutes les images soient chargées avant de signaler la fin
+            try {
+                waitForAllImagesIn(container).then(() => {
+                    dispatchMyPhotosLoaded();
+                });
+            } catch {}
             
             console.log(`Affichage mis à jour avec succès: ${photos.length} photos`);
+        }
+
+        // Helpers: attendre que les images se chargent et signaler la fin de chargement de "Vos Photos"
+        function waitForAllImagesIn(element, timeoutMs = 15000) {
+            return new Promise((resolve) => {
+                try {
+                    const container = (typeof element === 'string') ? document.querySelector(element) : element;
+                    if (!container) { resolve(); return; }
+                    const images = Array.from(container.querySelectorAll('img'));
+                    if (images.length === 0) {
+                        // Attendre un tick (certaines librairies insèrent leurs images après)
+                        setTimeout(() => resolve(), 50);
+                        return;
+                    }
+                    let remaining = images.length;
+                    let done = false;
+                    const finish = () => {
+                        if (!done) {
+                            done = true;
+                            resolve();
+                        }
+                    };
+                    const onSettled = () => {
+                        remaining -= 1;
+                        if (remaining <= 0) finish();
+                    };
+                    images.forEach(img => {
+                        if (img.complete && img.naturalWidth > 0) {
+                            onSettled();
+                        } else {
+                            img.addEventListener('load', onSettled, { once: true });
+                            img.addEventListener('error', onSettled, { once: true });
+                        }
+                    });
+                    setTimeout(finish, timeoutMs);
+                } catch {
+                    resolve();
+                }
+            });
+        }
+
+        function dispatchMyPhotosLoaded() {
+            try {
+                document.dispatchEvent(new CustomEvent('my-photos-load-complete'));
+            } catch {}
+        }
+
+        function waitForMyPhotosLoadComplete(timeoutMs = 15000) {
+            return new Promise((resolve) => {
+                let settled = false;
+                const cleanup = () => {
+                    if (settled) return;
+                    settled = true;
+                    try { document.removeEventListener('my-photos-load-complete', handler); } catch {}
+                    resolve();
+                };
+                const handler = () => cleanup();
+                try {
+                    document.addEventListener('my-photos-load-complete', handler, { once: true });
+                } catch {
+                    resolve();
+                    return;
+                }
+                setTimeout(cleanup, timeoutMs);
+            });
         }
 
         // Fonction pour recharger le dashboard en cas de besoin (sans affecter les photos)
