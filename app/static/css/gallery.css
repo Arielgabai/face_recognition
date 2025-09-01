@@ -58,6 +58,13 @@
     width: 100%;
 }
 
+/* Couleur du titre d'événement pour matcher le countdown */
+.event-title {
+    color: #111 !important;
+    text-shadow: none !important;
+    -webkit-text-stroke: none !important;
+}
+
 /* Photos dans layout grid */
 .gallery-photo-card {
     position: relative;
@@ -372,6 +379,13 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     .container {
         padding: 20px !important;
     }
+    
+    /* Couleur du titre d'événement pour matcher le countdown */
+    .event-title {
+        color: #111 !important;
+        text-shadow: none !important;
+        -webkit-text-stroke: none !important;
+    }
 }
 
     .gallery-header h1 {
@@ -415,6 +429,14 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     .container {
         padding: 20px !important;
     }
+    
+    /* Couleur du titre d'événement pour matcher le countdown */
+    .event-title {
+        color: #111 !important;
+        text-shadow: none !important;
+        -webkit-text-stroke: none !important;
+    }
+}
     
 
 
