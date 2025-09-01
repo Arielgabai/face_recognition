@@ -2329,6 +2329,23 @@
 
 
 
+        function renderPhotosModern(container, photos, galleryId) {
+            try {
+                const target = (typeof container === 'string') ? document.querySelector(container) : container;
+                if (!target) return;
+                const images = photos.map((p, idx) => ({
+                    src: `/api/photo/${p.id}`,
+                    alt: p.original_filename || `Photo ${idx + 1}`
+                }));
+                const gid = galleryId || `modern_${Math.random().toString(36).slice(2)}`;
+                target.innerHTML = `<div id="${gid}"></div>`;
+                const gallery = new ModernGallery(`#${gid}`, { lightbox: true, keyboardNavigation: true, lazy: false });
+                gallery.loadImages(images);
+            } catch (e) {
+                console.error('renderPhotosModern error:', e);
+            }
+        }
+
         async function loadMyPhotos() {
             const container = document.getElementById('myPhotosList');
             const loadingDiv = document.getElementById('myPhotosLoading');
@@ -2372,29 +2389,11 @@
                             myPhotosTab.textContent = `Vos Photos (${photos.length})`;
                         }
                         
-                        const useModern = typeof window.ModernGallery !== 'undefined';
-                        if (useModern) {
-                            try {
-                                // Utiliser la galerie moderne avec lightbox et téléchargement
-                                const images = photos.map((p, idx) => ({
-                                    src: `/api/photo/${p.id}`,
-                                    alt: p.original_filename || `Photo ${idx + 1}`
-                                }));
-                                container.innerHTML = '<div id="myModernGallery"></div>';
-                                const g1 = new ModernGallery('#myModernGallery', { lightbox: true, keyboardNavigation: true, lazy: false });
-                                g1.loadImages(images);
-                            } catch (e) {
-                                console.error('ModernGallery error (my):', e);
-                                container.innerHTML = `
-                                    <div class="masonry">
-                                        ${photos.map(photo => `
-                                            <div class="masonry-item"><img src="/api/photo/${photo.id}" alt="Photo"></div>
-                                        `).join('')}
-                                    </div>
-                                `;
-                            }
+                        // Toujours utiliser la même galerie que l'onglet Général
+                        if (typeof window.ModernGallery !== 'undefined') {
+                            renderPhotosModern(container, photos, 'myModernGallery');
                         } else {
-                            // Fallback masonry harmonieux
+                            // Fallback masonry harmonisé
                             container.innerHTML = `
                                 <div class="masonry">
                                     ${photos.map(photo => `
@@ -2471,26 +2470,8 @@
                             allPhotosTab.textContent = `Général (${photos.length})`;
                         }
                         
-                        const useModern = typeof window.ModernGallery !== 'undefined';
-                        if (useModern) {
-                            try {
-                                const images = photos.map((p, idx) => ({
-                                    src: `/api/photo/${p.id}`,
-                                    alt: p.original_filename || `Photo ${idx + 1}`
-                                }));
-                                container.innerHTML = '<div id="allModernGallery"></div>';
-                                const g2 = new ModernGallery('#allModernGallery', { lightbox: true, keyboardNavigation: true, lazy: false });
-                                g2.loadImages(images);
-                            } catch (e) {
-                                console.error('ModernGallery error (all):', e);
-                                container.innerHTML = `
-                                    <div class="masonry">
-                                        ${photos.map(photo => `
-                                            <div class="masonry-item"><img src="/api/photo/${photo.id}" alt="Photo"></div>
-                                        `).join('')}
-                                    </div>
-                                `;
-                            }
+                        if (typeof window.ModernGallery !== 'undefined') {
+                            renderPhotosModern(container, photos, 'allModernGallery');
                         } else {
                             container.innerHTML = `
                                 <div class="masonry">
