@@ -262,36 +262,35 @@ def validate_selfie_image(image_bytes: bytes) -> None:
             faces_hog = []
         faces.extend(faces_hog or [])
 
-        # Ne tenter un upsample supplémentaire que si aucun visage détecté à la première passe
-        if len(faces) == 0:
+        # Tenter un upsample supplémentaire si peu de visages pour détecter des seconds visages éventuels
+        if len(faces) <= 1:
             try:
                 faces_hog2 = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=2)
             except Exception:
                 faces_hog2 = []
             faces.extend(faces_hog2 or [])
 
-        # Utiliser Haar uniquement si HOG n'a rien trouvé, pour éviter les doublons multi-détecteurs
-        if len(faces) == 0:
-            try:
-                import cv2 as _cv2
-                gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
-                cascades = [
-                    _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml',
-                    _cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml',
-                    _cv2.data.haarcascades + 'haarcascade_profileface.xml',
-                ]
-                rects_all = []
-                for cpath in cascades:
-                    fc = _cv2.CascadeClassifier(cpath)
-                    if fc.empty():
-                        continue
-                    rects = fc.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
-                    rects_all.extend(rects)
-                # Convert to (t, r, b, l)
-                haar_faces = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects_all]
-                faces.extend(haar_faces)
-            except Exception:
-                pass
+        # Ajouter Haar en complément pour détecter des visages manqués par HOG (puis dédupliquer)
+        try:
+            import cv2 as _cv2
+            gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
+            cascades = [
+                _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml',
+                _cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml',
+                _cv2.data.haarcascades + 'haarcascade_profileface.xml',
+            ]
+            rects_all = []
+            for cpath in cascades:
+                fc = _cv2.CascadeClassifier(cpath)
+                if fc.empty():
+                    continue
+                rects = fc.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
+                rects_all.extend(rects)
+            # Convert to (t, r, b, l)
+            haar_faces = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects_all]
+            faces.extend(haar_faces)
+        except Exception:
+            pass
 
         # Déduplication par IoU
         def _iou(a, b):
@@ -316,8 +315,8 @@ def validate_selfie_image(image_bytes: bytes) -> None:
             if not unique:
                 unique.append(f)
                 continue
-            # Seuil de déduplication plus strict pour fusionner des détections du même visage
-            if all(_iou(f, u) < 0.65 for u in unique):
+            # Déduplication (IoU): fusionner les détections très recouvrantes (HOG/Haar du même visage)
+            if all(_iou(f, u) < 0.55 for u in unique):
                 unique.append(f)
 
         face_locations = unique
