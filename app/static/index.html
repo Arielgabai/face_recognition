@@ -2656,6 +2656,14 @@
             
             // Activer l'onglet sélectionné
             event.target.classList.add('active');
+            
+            // NOUVEAU: Si on clique sur "Vos Photos", recharger avec le bon layout
+            if (tabName === 'my-photos') {
+                console.log('🔄 Rechargement de "Vos Photos" avec layout optimisé');
+                setTimeout(() => {
+                    loadMyPhotos();
+                }, 50);
+            }
         }
 
         // Hamburger Menu Functions
