@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
@@ -7,10 +7,25 @@ from sqlalchemy.orm import Session
 
 from models import User, Photo, FaceMatch, Event, UserEvent
 from photo_optimizer import PhotoOptimizer
+from io import BytesIO as _BytesIO
+from PIL import Image as _Image, ImageOps as _ImageOps
 
 
 AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")  # Ireland (Rekognition supported, close to FR)
 COLL_PREFIX = os.environ.get("AWS_REKOGNITION_COLLECTION_PREFIX", "event_")
+
+# Recherche
+AWS_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SEARCH_MAXFACES", "10") or "10")
+AWS_SEARCH_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", "50") or "50")
+AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTER", "AUTO").upper()  # AUTO|LOW|MEDIUM|HIGH|NONE
+
+# Détection
+AWS_DETECT_MIN_CONF = float(os.environ.get("AWS_REKOGNITION_DETECT_MIN_CONF", "70") or "70")
+
+# Préparation image / crop
+AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "2048") or "2048")
+AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.2") or "0.2")  # 20% padding
+AWS_MIN_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_CROP_SIDE", "36") or "36")
 
 
 class AwsFaceRecognizer:
@@ -115,54 +130,166 @@ class AwsFaceRecognizer:
             self.index_user_selfie(event_id, u)
         self._indexed_events.add(event_id)
 
+    # ---------- Helpers image ----------
+    def _prepare_image_bytes(self, photo_input) -> Optional[bytes]:
+        """Charge une image (path/bytes) et retourne des bytes JPEG normalisés (EXIF transposé).
+
+        Limite la dimension max à AWS_IMAGE_MAX_DIM pour rester dans les limites de payload.
+        """
+        try:
+            if isinstance(photo_input, str) and os.path.exists(photo_input):
+                with open(photo_input, "rb") as f:
+                    raw = f.read()
+            elif isinstance(photo_input, (bytes, bytearray)):
+                raw = bytes(photo_input)
+            else:
+                return None
+
+            im = _Image.open(_BytesIO(raw))
+            im = _ImageOps.exif_transpose(im)
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            # Downscale si nécessaire (ne pas agrandir)
+            w, h = im.size
+            max_dim = AWS_IMAGE_MAX_DIM
+            scale = min(1.0, float(max_dim) / float(max(w, h)))
+            if scale < 1.0:
+                im = im.resize((int(w * scale), int(h * scale)), _Image.Resampling.LANCZOS)
+            out = _BytesIO()
+            im.save(out, format="JPEG", quality=92, optimize=True, progressive=False)
+            return out.getvalue()
+        except Exception:
+            # Fallback brut si échec PIL
+            try:
+                return bytes(photo_input) if isinstance(photo_input, (bytes, bytearray)) else None
+            except Exception:
+                return None
+
+    def _detect_faces_boxes(self, image_bytes: bytes) -> List[Dict]:
+        """Appelle Rekognition DetectFaces et renvoie les FaceDetails filtrés par confiance."""
+        try:
+            resp = self.client.detect_faces(Image={"Bytes": image_bytes}, Attributes=["DEFAULT"])
+            faces = resp.get("FaceDetails", []) or []
+            faces = [f for f in faces if float(f.get("Confidence", 0.0)) >= AWS_DETECT_MIN_CONF]
+            return faces
+        except ClientError as e:
+            print(f"❌ AWS DetectFaces error: {e}")
+            return []
+
+    def _crop_face_regions(self, image_bytes: bytes, boxes: List[Dict]) -> List[bytes]:
+        """Recadre l'image selon les BoundingBox Rekognition.
+
+        BoundingBox fields are normalized [0,1]: Left, Top, Width, Height
+        """
+        crops: List[bytes] = []
+        try:
+            im = _Image.open(_BytesIO(image_bytes))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            W, H = im.size
+            for f in boxes:
+                bb = f.get("BoundingBox") or {}
+                left = float(bb.get("Left", 0.0))
+                top = float(bb.get("Top", 0.0))
+                width = float(bb.get("Width", 0.0))
+                height = float(bb.get("Height", 0.0))
+                x1 = int(max(0, left * W))
+                y1 = int(max(0, top * H))
+                x2 = int(min(W, (left + width) * W))
+                y2 = int(min(H, (top + height) * H))
+                # Padding
+                pad = int(max(x2 - x1, y2 - y1) * AWS_CROP_PADDING)
+                x1p = max(0, x1 - pad)
+                y1p = max(0, y1 - pad)
+                x2p = min(W, x2 + pad)
+                y2p = min(H, y2 + pad)
+                if (x2p - x1p) < AWS_MIN_CROP_SIDE or (y2p - y1p) < AWS_MIN_CROP_SIDE:
+                    continue
+                try:
+                    crop = im.crop((x1p, y1p, x2p, y2p))
+                    out = _BytesIO()
+                    crop.save(out, format="JPEG", quality=92, optimize=True)
+                    crops.append(out.getvalue())
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"⚠️  Crop error: {e}")
+        return crops
+
     def process_photo_for_event(self, photo_input, event_id: int, db: Session) -> List[Dict]:
+        """Multi-visages: DetectFaces -> crops -> SearchFacesByImage pour chaque visage.
+
+        Retourne une liste dédupliquée par user_id avec le meilleur score par photo.
+        """
         self.ensure_collection(event_id)
-        # Assurer l'indexation des selfies des participants une seule fois
         self.ensure_event_users_indexed(event_id, db)
 
-        # Préparer l'image
-        if isinstance(photo_input, str) and os.path.exists(photo_input):
-            with open(photo_input, "rb") as f:
-                image_bytes = f.read()
-        elif isinstance(photo_input, (bytes, bytearray)):
-            image_bytes = bytes(photo_input)
-        else:
+        # Normaliser et sécuriser l'image
+        image_bytes = self._prepare_image_bytes(photo_input)
+        if not image_bytes:
             return []
 
-        # Recherche
-        try:
-            resp = self.client.search_faces_by_image(
-                CollectionId=self._collection_id(event_id),
-                Image={"Bytes": image_bytes},
-                MaxFaces=10,
-                FaceMatchThreshold=50.0,
-            )
-            
-            # Debug: Log du nombre de visages détectés
-            face_matches = resp.get("FaceMatches", [])
-            searched_face = resp.get("SearchedFaceBoundingBox")
-            print(f"🔍 AWS Rekognition - Visages détectés: {len(face_matches)}")
-            if searched_face:
-                print(f"📍 Visage recherché trouvé avec confiance: {searched_face.get('Confidence', 'N/A')}")
-            
-        except ClientError as e:
-            print(f"❌ Erreur AWS Rekognition: {e}")
-            return []
+        # 1) Détecter tous les visages
+        faces = self._detect_faces_boxes(image_bytes)
+        print(f"[AWS] DetectFaces: {len(faces)} faces (min_conf={AWS_DETECT_MIN_CONF})")
 
-        results: List[Dict] = []
-        for fm in resp.get("FaceMatches", [])[:10]:
-            ext_id = fm.get("Face", {}).get("ExternalImageId")
-            similarity = fm.get("Similarity", 0.0)  # 0-100
+        # 2) Si aucun visage, fallback: un seul SearchFacesByImage sur l'image entière (comportement historique)
+        if not faces:
             try:
-                user_id = int(ext_id) if ext_id is not None else None
-            except Exception:
-                user_id = None
-            if user_id:
-                print(f"✅ Match trouvé - User {user_id}: {similarity:.1f}% similarité")
-                results.append({
-                    "user_id": user_id,
-                    "confidence_score": int(round(float(similarity)))
-                })
+                resp = self.client.search_faces_by_image(
+                    CollectionId=self._collection_id(event_id),
+                    Image={"Bytes": image_bytes},
+                    MaxFaces=AWS_SEARCH_MAXFACES,
+                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+                )
+            except ClientError as e:
+                print(f"❌ Erreur AWS Rekognition (fallback search): {e}")
+                return []
+            user_best: Dict[int, float] = {}
+            for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                ext_id = fm.get("Face", {}).get("ExternalImageId")
+                similarity = float(fm.get("Similarity", 0.0))
+                try:
+                    user_id = int(ext_id) if ext_id is not None else None
+                except Exception:
+                    user_id = None
+                if user_id is None:
+                    continue
+                if (user_id not in user_best) or (similarity > user_best[user_id]):
+                    user_best[user_id] = similarity
+            return [{"user_id": uid, "confidence_score": int(round(sim))} for uid, sim in user_best.items()]
+
+        # 3) Recadrer et rechercher pour chaque visage détecté
+        crops = self._crop_face_regions(image_bytes, faces)
+        print(f"[AWS] Crops to search: {len(crops)}")
+
+        user_best: Dict[int, float] = {}
+        for i, crop_bytes in enumerate(crops):
+            try:
+                resp = self.client.search_faces_by_image(
+                    CollectionId=self._collection_id(event_id),
+                    Image={"Bytes": crop_bytes},
+                    MaxFaces=AWS_SEARCH_MAXFACES,
+                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+                )
+            except ClientError as e:
+                print(f"❌ Erreur AWS SearchFacesByImage (crop #{i}): {e}")
+                continue
+            for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                ext_id = fm.get("Face", {}).get("ExternalImageId")
+                similarity = float(fm.get("Similarity", 0.0))
+                try:
+                    user_id = int(ext_id) if ext_id is not None else None
+                except Exception:
+                    user_id = None
+                if user_id is None:
+                    continue
+                if (user_id not in user_best) or (similarity > user_best[user_id]):
+                    user_best[user_id] = similarity
+
+        results: List[Dict] = [{"user_id": uid, "confidence_score": int(round(sim))} for uid, sim in user_best.items()]
         return results
 
     def match_user_selfie_with_photos_event(self, user: User, event_id: int, db: Session) -> int:
