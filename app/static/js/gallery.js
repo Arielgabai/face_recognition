@@ -129,20 +129,41 @@ class ModernGallery {
         }
     }
     
-    adjustRowHeights() {
+    adjustRowHeights(retryCount = 0) {
         const cards = this.container.querySelectorAll('.gallery-photo-card');
         if (cards.length === 0) return;
         
-        // Attendre que toutes les images soient chargées ou donner une hauteur par défaut
-        const allImagesLoaded = Array.from(cards).every(card => {
+        // Compter les images chargées
+        let loadedImages = 0;
+        let totalImages = 0;
+        
+        Array.from(cards).forEach(card => {
             const img = card.querySelector('img');
-            return img && (img.complete || img.naturalHeight > 0);
+            if (img) {
+                totalImages++;
+                if (img.complete && img.naturalHeight > 0) {
+                    loadedImages++;
+                }
+            }
         });
         
-        // Si pas toutes chargées, réessayer plus tard
-        if (!allImagesLoaded) {
-            setTimeout(() => this.adjustRowHeights(), 200);
+        console.log(`📊 Images chargées: ${loadedImages}/${totalImages} (tentative ${retryCount + 1})`);
+        
+        // Si pas toutes chargées et moins de 10 tentatives, réessayer
+        if (loadedImages < totalImages && retryCount < 10) {
+            setTimeout(() => this.adjustRowHeights(retryCount + 1), 300);
             return;
+        }
+        
+        // Procéder même si toutes ne sont pas chargées (après 10 tentatives)
+        if (retryCount >= 10) {
+            console.log('⚠️ Proceeding with partial image loading');
+        }
+        
+        // S'assurer que les styles mobiles sont appliqués
+        const galleryGrid = this.container.querySelector('.modern-gallery');
+        if (galleryGrid) {
+            this.applyMobileStyles(galleryGrid);
         }
         
         // Grouper les cartes par ligne (même offsetTop avec tolérance)
