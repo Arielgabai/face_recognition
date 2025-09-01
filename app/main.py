@@ -252,7 +252,7 @@ def validate_selfie_image(image_bytes: bytes) -> None:
             # En cas d'erreur Azure, fallback local
             pass
 
-        # Détections multi-techniques (HOG sensible + Haar cascades)
+        # Détections multi-techniques (HOG prioritaire, Haar en fallback uniquement si HOG ne trouve rien)
         import face_recognition as _fr
         faces = []  # (top, right, bottom, left)
 
@@ -262,35 +262,36 @@ def validate_selfie_image(image_bytes: bytes) -> None:
             faces_hog = []
         faces.extend(faces_hog or [])
 
-        # Si peu de visages, tenter un upsample supplémentaire
-        if len(faces) <= 1:
+        # Ne tenter un upsample supplémentaire que si aucun visage détecté à la première passe
+        if len(faces) == 0:
             try:
                 faces_hog2 = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=2)
             except Exception:
                 faces_hog2 = []
             faces.extend(faces_hog2 or [])
 
-        # Fallback Haar (frontal + alt2 + profil)
-        try:
-            import cv2 as _cv2
-            gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
-            cascades = [
-                _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml',
-                _cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml',
-                _cv2.data.haarcascades + 'haarcascade_profileface.xml',
-            ]
-            rects_all = []
-            for cpath in cascades:
-                fc = _cv2.CascadeClassifier(cpath)
-                if fc.empty():
-                    continue
-                rects = fc.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
-                rects_all.extend(rects)
-            # Convert to (t, r, b, l)
-            haar_faces = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects_all]
-            faces.extend(haar_faces)
-        except Exception:
-            pass
+        # Utiliser Haar uniquement si HOG n'a rien trouvé, pour éviter les doublons multi-détecteurs
+        if len(faces) == 0:
+            try:
+                import cv2 as _cv2
+                gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
+                cascades = [
+                    _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml',
+                    _cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml',
+                    _cv2.data.haarcascades + 'haarcascade_profileface.xml',
+                ]
+                rects_all = []
+                for cpath in cascades:
+                    fc = _cv2.CascadeClassifier(cpath)
+                    if fc.empty():
+                        continue
+                    rects = fc.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
+                    rects_all.extend(rects)
+                # Convert to (t, r, b, l)
+                haar_faces = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects_all]
+                faces.extend(haar_faces)
+            except Exception:
+                pass
 
         # Déduplication par IoU
         def _iou(a, b):
@@ -315,7 +316,8 @@ def validate_selfie_image(image_bytes: bytes) -> None:
             if not unique:
                 unique.append(f)
                 continue
-            if all(_iou(f, u) < 0.4 for u in unique):
+            # Seuil de déduplication plus strict pour fusionner des détections du même visage
+            if all(_iou(f, u) < 0.65 for u in unique):
                 unique.append(f)
 
         face_locations = unique
@@ -617,8 +619,25 @@ async def register_invite_with_selfie(
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = None,
 ):
-    """Inscription d'un invit+� avec selfie et event_code (QR code)"""
-    # V+�rifier si l'utilisateur existe d+�j+�
+    """Inscription d'un invité avec selfie et event_code (QR code).
+    Important: Valider le selfie et l'event_code AVANT de créer l'utilisateur
+    pour éviter toute création prématurée en cas d'erreur.
+    """
+    # Vérifier l'event_code en premier
+    event = find_event_by_code(db, event_code)
+    if not event:
+        raise HTTPException(status_code=404, detail="event_code invalide")
+
+    # Vérifier le fichier selfie AVANT toute création
+    if not file or not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Le fichier doit être une image")
+    selfie_bytes = await file.read()
+    if not selfie_bytes:
+        raise HTTPException(status_code=400, detail="Fichier selfie vide")
+    # Validation stricte du selfie (1 visage, taille minimale)
+    validate_selfie_image(selfie_bytes)
+
+    # Vérifier collision username/email après validations (pour agréger les erreurs côté UI en amont)
     existing_user = db.query(User).filter(
         (User.username == username) | (User.email == email)
     ).first()
@@ -628,13 +647,11 @@ async def register_invite_with_selfie(
         if existing_user.email == email:
             raise HTTPException(status_code=400, detail="Email déjà utilisé")
         raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
+
     # Vérifier la robustesse du mot de passe
     assert_password_valid(password)
-    # V+�rifier l'event_code
-    event = find_event_by_code(db, event_code)
-    if not event:
-        raise HTTPException(status_code=404, detail="event_code invalide")
-    # Cr+�er le nouvel utilisateur
+
+    # Créer le nouvel utilisateur (après toutes les validations)
     hashed_password = get_password_hash(password)
     db_user = User(
         username=username,
@@ -645,15 +662,13 @@ async def register_invite_with_selfie(
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    # Lier l'utilisateur +� l'+�v+�nement
+
+    # Lier l'utilisateur à l'événement
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
-    # Gérer le selfie (validation stricte + persistance)
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Le fichier doit être une image")
-    selfie_bytes = await file.read()
-    validate_selfie_image(selfie_bytes)
+
+    # Persister le selfie après réussite des étapes précédentes
     import uuid, os
     file_extension = os.path.splitext(file.filename)[1] or ".jpg"
     unique_filename = f"{db_user.id}_{uuid.uuid4()}{file_extension}"
