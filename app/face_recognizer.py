@@ -16,24 +16,115 @@ from datetime import datetime, timedelta, timezone
 
 class FaceRecognizer:
     def __init__(self, tolerance=0.7):
+        import os as _os
+        # Permettre d'ajuster par variable d'environnement si besoin
+        try:
+            tol_env = _os.getenv("FACE_RECOGNITION_TOLERANCE")
+            if tol_env is not None:
+                tolerance = float(tol_env)
+        except Exception:
+            pass
         self.tolerance = tolerance
-        self.user_encodings = {}  # Cache des encodages des utilisateurs
+        # Cache global des encodages utilisateurs (user_id -> embedding)
+        self.user_encodings: Dict[int, np.ndarray] = {}
+        # Cache par événement (event_id -> {user_id -> embedding})
+        self.event_user_encodings: Dict[int, Dict[int, np.ndarray]] = {}
 
     def load_user_encoding(self, user: User) -> Optional[np.ndarray]:
-        """Charge l'encodage facial d'un utilisateur depuis son selfie"""
+        """Charge l'encodage facial d'un utilisateur depuis son selfie (avec EXIF + robustesse)."""
         if not user.selfie_data:
             return None
-        
         try:
-            # Convertir les données binaires en image
-            image_data = io.BytesIO(user.selfie_data)
-            image = face_recognition.load_image_file(image_data)
-            encodings = face_recognition.face_encodings(image)
+            # Charger via PIL pour corriger l'orientation EXIF et normaliser en RGB
+            pil_img = Image.open(io.BytesIO(bytes(user.selfie_data)))
+            from PIL import ImageOps as _ImageOps
+            pil_img = _ImageOps.exif_transpose(pil_img)
+            if pil_img.mode not in ("RGB", "L"):
+                pil_img = pil_img.convert("RGB")
+            np_img = np.array(pil_img)
+            encodings = face_recognition.face_encodings(np_img)
             if encodings:
                 return encodings[0]
         except Exception as e:
-            print(f"Erreur lors du chargement de l'encodage pour {user.username}: {e}")
+            print(f"Erreur lors du chargement de l'encodage pour {getattr(user, 'username', user.id)}: {e}")
         return None
+
+    def _detect_faces_multipass(self, np_img: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """Détection robuste multi-pass avec HOG (upsample 0→2) + fallback Haar, dédoublonnée.
+
+        Retourne des box (top, right, bottom, left) dans l'espace de l'image d'origine.
+        """
+        try:
+            img_h, img_w = np_img.shape[0], np_img.shape[1]
+
+            # Détection principale HOG à différentes échelles d'upsampling
+            faces: List[Tuple[int, int, int, int]] = []
+            try:
+                faces += face_recognition.face_locations(np_img, model="hog", number_of_times_to_upsample=0) or []
+            except Exception:
+                pass
+            if len(faces) < 2:
+                try:
+                    faces2 = face_recognition.face_locations(np_img, model="hog", number_of_times_to_upsample=1) or []
+                    faces += faces2
+                except Exception:
+                    pass
+            if len(faces) < 2:
+                try:
+                    faces3 = face_recognition.face_locations(np_img, model="hog", number_of_times_to_upsample=2) or []
+                    faces += faces3
+                except Exception:
+                    pass
+
+            # Fallback Haar si rien ou très peu détecté
+            if len(faces) == 0:
+                try:
+                    gray = cv2.cvtColor(np_img, cv2.COLOR_RGB2GRAY)
+                    cascades = [
+                        cv2.data.haarcascades + 'haarcascade_frontalface_default.xml',
+                        cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml',
+                        cv2.data.haarcascades + 'haarcascade_profileface.xml',
+                    ]
+                    rects_all = []
+                    for cpath in cascades:
+                        fc = cv2.CascadeClassifier(cpath)
+                        if fc.empty():
+                            continue
+                        rects = fc.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
+                        rects_all.extend(rects)
+                    faces = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects_all]
+                except Exception:
+                    faces = []
+
+            # Déduplication par IoU
+            def _iou(a, b):
+                (t1, r1, b1, l1) = a
+                (t2, r2, b2, l2) = b
+                xA = max(l1, l2)
+                yA = max(t1, t2)
+                xB = min(r1, r2)
+                yB = min(b1, b2)
+                interW = max(0, xB - xA)
+                interH = max(0, yB - yA)
+                inter = interW * interH
+                area1 = max(0, (r1 - l1)) * max(0, (b1 - t1))
+                area2 = max(0, (r2 - l2)) * max(0, (b2 - t2))
+                union = area1 + area2 - inter if (area1 + area2 - inter) > 0 else 1
+                return inter / union
+
+            unique: List[Tuple[int, int, int, int]] = []
+            for f in faces:
+                top, right, bottom, left = f
+                if (right - left) <= 0 or (bottom - top) <= 0:
+                    continue
+                if not unique:
+                    unique.append(f)
+                    continue
+                if all(_iou(f, u) < 0.4 for u in unique):
+                    unique.append(f)
+            return unique
+        except Exception as _e:
+            return []
 
     def detect_faces(self, image_data: bytes) -> List[Tuple[int, int, int, int]]:
         """Détecte les visages dans une image et retourne leurs positions"""
@@ -81,15 +172,36 @@ class FaceRecognizer:
             return []
 
     def get_all_user_encodings(self, db: Session) -> Dict[int, np.ndarray]:
-        """Récupère tous les encodages des utilisateurs qui ont un selfie"""
-        encodings = {}
+        """Récupère les encodages de tous les utilisateurs (avec cache en mémoire)."""
         users = db.query(User).filter(User.selfie_data.isnot(None)).all()
-        
         for user in users:
-            encoding = self.load_user_encoding(user)
-            if encoding is not None:
-                encodings[user.id] = encoding
-        
+            if user.id not in self.user_encodings:
+                encoding = self.load_user_encoding(user)
+                if encoding is not None:
+                    self.user_encodings[user.id] = encoding
+        return dict(self.user_encodings)
+
+    def get_user_encodings_for_event(self, db: Session, event_id: int) -> Dict[int, np.ndarray]:
+        """Encodages des utilisateurs d'un événement (cache par event_id)."""
+        if event_id in self.event_user_encodings:
+            return self.event_user_encodings[event_id]
+        from models import UserEvent
+        user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+        user_ids = [ue.user_id for ue in user_events]
+        users_with_selfies = db.query(User).filter(
+            User.id.in_(user_ids),
+            User.selfie_data.isnot(None)
+        ).all()
+        encodings: Dict[int, np.ndarray] = {}
+        for user in users_with_selfies:
+            enc = self.user_encodings.get(user.id)
+            if enc is None:
+                enc = self.load_user_encoding(user)
+                if enc is not None:
+                    self.user_encodings[user.id] = enc
+            if enc is not None:
+                encodings[user.id] = enc
+        self.event_user_encodings[event_id] = encodings
         return encodings
 
     def process_photo(self, photo_data: bytes, db: Session) -> List[Dict]:
@@ -101,44 +213,58 @@ class FaceRecognizer:
             return []
 
         try:
-            # Supporter le passage d'un chemin de fichier
-            if isinstance(photo_data, (str, bytes)) and not isinstance(photo_data, (bytearray,)):
-                if isinstance(photo_data, str) and os.path.exists(photo_data):
-                    image = face_recognition.load_image_file(photo_data)
-                else:
-                    image_data = io.BytesIO(photo_data if isinstance(photo_data, (bytes, bytearray)) else bytes(photo_data))
-                    image = face_recognition.load_image_file(image_data)
+            # Charger l'image (chemin/bytes) via PIL pour normaliser EXIF + RGB
+            if isinstance(photo_data, str) and os.path.exists(photo_data):
+                with open(photo_data, 'rb') as f:
+                    raw_bytes = f.read()
             else:
-                image_data = io.BytesIO(photo_data)
-                image = face_recognition.load_image_file(image_data)
-            face_locations = face_recognition.face_locations(image)
-            face_encodings = face_recognition.face_encodings(image, face_locations)
-            
+                raw_bytes = bytes(photo_data)
+
+            pil_img = Image.open(io.BytesIO(raw_bytes))
+            from PIL import ImageOps as _ImageOps
+            pil_img = _ImageOps.exif_transpose(pil_img)
+            if pil_img.mode not in ("RGB", "L"):
+                pil_img = pil_img.convert("RGB")
+            np_img = np.array(pil_img)
+
+            # Détection robuste
+            face_locations = self._detect_faces_multipass(np_img)
+            if not face_locations:
+                return []
+            # Encodage des visages détectés
+            face_encodings = face_recognition.face_encodings(np_img, face_locations)
             if not face_encodings:
                 return []
 
-            # Récupérer tous les encodages des utilisateurs
+            # Encodages utilisateurs (avec cache)
             user_encodings = self.get_all_user_encodings(db)
-            
-            matches = []
-            
-            for face_encoding in face_encodings:
-                # Comparer avec tous les utilisateurs
-                for user_id, user_encoding in user_encodings.items():
-                    # Calculer la distance
-                    distance = face_recognition.face_distance([user_encoding], face_encoding)[0]
-                    
-                    # Convertir la distance en score de confiance (0-100)
-                    confidence_score = max(0, int((1 - distance) * 100))
-                    
-                    # Vérifier si c'est une correspondance
-                    if distance <= self.tolerance:
-                        matches.append({
-                            'user_id': user_id,
-                            'confidence_score': confidence_score,
-                            'distance': distance
-                        })
-            
+            if not user_encodings:
+                return []
+
+            user_ids = list(user_encodings.keys())
+            user_matrix = np.array([user_encodings[uid] for uid in user_ids])
+
+            # Calcul vectorisé des distances et agrégation par utilisateur (max score)
+            best_by_user: Dict[int, int] = {}
+            for enc in face_encodings:
+                try:
+                    dists = face_recognition.face_distance(user_matrix, enc)
+                except Exception:
+                    # Fallback non vectorisé
+                    dists = np.array([face_recognition.face_distance([u], enc)[0] for u in user_matrix])
+                for idx, dist in enumerate(dists):
+                    if dist <= self.tolerance:
+                        uid = user_ids[idx]
+                        score = max(0, int((1 - float(dist)) * 100))
+                        if (uid not in best_by_user) or (score > best_by_user[uid]):
+                            best_by_user[uid] = score
+
+            matches = [{
+                'user_id': uid,
+                'confidence_score': score,
+                'distance': 1 - (score / 100.0)
+            } for uid, score in best_by_user.items()]
+
             return matches
             
         except Exception as e:
@@ -196,8 +322,8 @@ class FaceRecognizer:
         db.commit()
         db.refresh(photo)
         
-        # Traiter la reconnaissance faciale avec les données optimisées
-        matches = self.process_photo(optimization_result['compressed_data'], db)
+        # Traiter la reconnaissance faciale avec les données ORIGINALES (meilleure détection)
+        matches = self.process_photo(original_data, db)
         
         # Sauvegarder les correspondances
         for match in matches:
@@ -264,8 +390,8 @@ class FaceRecognizer:
         db.commit()
         db.refresh(photo)
         
-        # Traiter la reconnaissance faciale pour cet événement spécifique avec les données optimisées
-        matches = self.process_photo_for_event(optimization_result['compressed_data'], event_id, db)
+        # Traiter la reconnaissance faciale pour cet événement spécifique AVEC les données ORIGINALES
+        matches = self.process_photo_for_event(original_data, event_id, db)
         
         # Sauvegarder les correspondances
         for match in matches:
@@ -302,54 +428,55 @@ class FaceRecognizer:
             return []
 
         try:
-            # Supporter le passage d'un chemin de fichier
+            # Charger l'image (chemin/bytes) via PIL pour normaliser EXIF + RGB
             if isinstance(photo_data, str) and os.path.exists(photo_data):
-                image = face_recognition.load_image_file(photo_data)
+                with open(photo_data, 'rb') as f:
+                    raw_bytes = f.read()
             else:
-                image_data = io.BytesIO(photo_data if isinstance(photo_data, (bytes, bytearray)) else bytes(photo_data))
-                image = face_recognition.load_image_file(image_data)
-            face_locations = face_recognition.face_locations(image)
-            face_encodings = face_recognition.face_encodings(image, face_locations)
-            
+                raw_bytes = bytes(photo_data if isinstance(photo_data, (bytes, bytearray)) else bytes(photo_data))
+
+            pil_img = Image.open(io.BytesIO(raw_bytes))
+            from PIL import ImageOps as _ImageOps
+            pil_img = _ImageOps.exif_transpose(pil_img)
+            if pil_img.mode not in ("RGB", "L"):
+                pil_img = pil_img.convert("RGB")
+            np_img = np.array(pil_img)
+
+            # Détection robuste
+            face_locations = self._detect_faces_multipass(np_img)
+            if not face_locations:
+                return []
+            face_encodings = face_recognition.face_encodings(np_img, face_locations)
             if not face_encodings:
                 return []
 
-            # Récupérer les utilisateurs inscrits à cet événement qui ont un selfie
-            from models import UserEvent
-            user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
-            user_ids = [ue.user_id for ue in user_events]
-            
-            users_with_selfies = db.query(User).filter(
-                User.id.in_(user_ids),
-                User.selfie_data.isnot(None)
-            ).all()
-            
-            # Charger les encodages des utilisateurs de cet événement
-            user_encodings = {}
-            for user in users_with_selfies:
-                encoding = self.load_user_encoding(user)
-                if encoding is not None:
-                    user_encodings[user.id] = encoding
-            
-            matches = []
-            
-            for face_encoding in face_encodings:
-                # Comparer avec tous les utilisateurs de l'événement
-                for user_id, user_encoding in user_encodings.items():
-                    # Calculer la distance
-                    distance = face_recognition.face_distance([user_encoding], face_encoding)[0]
-                    
-                    # Convertir la distance en score de confiance (0-100)
-                    confidence_score = max(0, int((1 - distance) * 100))
-                    
-                    # Vérifier si c'est une correspondance
-                    if distance <= self.tolerance:
-                        matches.append({
-                            'user_id': user_id,
-                            'confidence_score': confidence_score,
-                            'distance': distance
-                        })
-            
+            # Encodages des utilisateurs de l'événement (avec cache)
+            user_encodings = self.get_user_encodings_for_event(db, event_id)
+            if not user_encodings:
+                return []
+            user_ids = list(user_encodings.keys())
+            user_matrix = np.array([user_encodings[uid] for uid in user_ids])
+
+            # Calcul vectorisé des distances et déduplication par utilisateur
+            best_by_user: Dict[int, int] = {}
+            for enc in face_encodings:
+                try:
+                    dists = face_recognition.face_distance(user_matrix, enc)
+                except Exception:
+                    dists = np.array([face_recognition.face_distance([u], enc)[0] for u in user_matrix])
+                for idx, dist in enumerate(dists):
+                    if dist <= self.tolerance:
+                        uid = user_ids[idx]
+                        score = max(0, int((1 - float(dist)) * 100))
+                        if (uid not in best_by_user) or (score > best_by_user[uid]):
+                            best_by_user[uid] = score
+
+            matches = [{
+                'user_id': uid,
+                'confidence_score': score,
+                'distance': 1 - (score / 100.0)
+            } for uid, score in best_by_user.items()]
+
             return matches
             
         except Exception as e:
