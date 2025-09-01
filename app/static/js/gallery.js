@@ -91,6 +91,9 @@ class ModernGallery {
         this.container.innerHTML = '';
         this.container.appendChild(galleryGrid);
         
+        // Afficher un indicateur de chargement
+        this.showLoadingIndicator();
+        
         // Après le rendu, ajuster les hauteurs de ligne
         setTimeout(() => {
             this.adjustRowHeights();
@@ -149,16 +152,21 @@ class ModernGallery {
         
         console.log(`📊 Images chargées: ${loadedImages}/${totalImages} (tentative ${retryCount + 1})`);
         
-        // Si pas toutes chargées et moins de 10 tentatives, réessayer
-        if (loadedImages < totalImages && retryCount < 10) {
-            setTimeout(() => this.adjustRowHeights(retryCount + 1), 300);
+        // GARANTIR 100% : Attendre jusqu'à ce que TOUTES les images soient chargées
+        if (loadedImages < totalImages) {
+            // Augmenter l'intervalle progressivement pour être patient
+            const waitTime = Math.min(500 + (retryCount * 100), 2000);
+            console.log(`⏳ Attente ${waitTime}ms pour chargement complet...`);
+            setTimeout(() => this.adjustRowHeights(retryCount + 1), waitTime);
             return;
         }
         
-        // Procéder même si toutes ne sont pas chargées (après 10 tentatives)
-        if (retryCount >= 10) {
-            console.log('⚠️ Proceeding with partial image loading');
-        }
+        console.log('✅ Toutes les images chargées - Application du layout parfait');
+        
+        // Cacher l'indicateur de chargement
+        this.hideLoadingIndicator();
+        
+        // Maintenant on est sûr que toutes les images sont chargées
         
         // S'assurer que les styles mobiles sont appliqués
         const galleryGrid = this.container.querySelector('.modern-gallery');
@@ -538,6 +546,32 @@ class ModernGallery {
             hash = hash & hash; // Convertir en 32bit integer
         }
         return Math.abs(hash);
+    }
+    
+    showLoadingIndicator() {
+        const indicator = document.createElement('div');
+        indicator.id = 'gallery-loading-indicator';
+        indicator.innerHTML = '⏳ Optimisation de l\'affichage...';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            z-index: 9999;
+            font-size: 14px;
+        `;
+        document.body.appendChild(indicator);
+    }
+    
+    hideLoadingIndicator() {
+        const indicator = document.getElementById('gallery-loading-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
     }
     
     createImageCard(image, index) {
