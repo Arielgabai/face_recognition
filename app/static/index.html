@@ -2422,19 +2422,8 @@
                             myPhotosTab.textContent = `Vos Photos (${photos.length})`;
                         }
                         
-                        // Toujours utiliser la même galerie que l'onglet Général
-                        if (typeof window.ModernGallery !== 'undefined') {
-                            renderPhotosModern(container, photos, 'myModernGallery');
-                        } else {
-                            // Fallback masonry harmonisé
-                            container.innerHTML = `
-                                <div class="masonry">
-                                    ${photos.map(photo => `
-                                        <div class="masonry-item"><img src="/api/photo/${photo.id}" alt="Photo"></div>
-                                    `).join('')}
-                                </div>
-                            `;
-                        }
+                        // Utiliser la même fonction que pour les mises à jour (qui fonctionne)
+                        updatePhotoDisplay(photos);
                     }
                 } else {
                     container.innerHTML = `
