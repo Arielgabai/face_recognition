@@ -78,6 +78,9 @@ class ModernGallery {
         galleryGrid.className = 'modern-gallery';
         galleryGrid.innerHTML = '';
         
+        // Appliquer les styles mobile directement si nécessaire
+        this.applyMobileStyles(galleryGrid);
+        
         // Créer toutes les cartes d'abord
         this.images.forEach((image, index) => {
             const card = this.createImageCard(image, index);
@@ -95,6 +98,34 @@ class ModernGallery {
         
         if (this.options.animations) {
             this.animateCards();
+        }
+    }
+    
+    applyMobileStyles(galleryGrid) {
+        const width = window.innerWidth;
+        
+        if (width <= 480) {
+            // Mobile - appliquer les styles directement
+            galleryGrid.style.display = 'grid';
+            galleryGrid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(150px, 1fr))';
+            galleryGrid.style.gap = '1px';
+            galleryGrid.style.gridRowGap = '1px';
+            galleryGrid.style.width = '100vw';
+            galleryGrid.style.marginLeft = '-20px';
+            galleryGrid.style.marginRight = '-20px';
+            galleryGrid.style.padding = '0 20px';
+            galleryGrid.style.alignItems = 'start';
+        } else if (width <= 768) {
+            // Tablette - appliquer les styles directement
+            galleryGrid.style.display = 'grid';
+            galleryGrid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(160px, 1fr))';
+            galleryGrid.style.gap = '2px';
+            galleryGrid.style.gridRowGap = '2px';
+            galleryGrid.style.width = '100vw';
+            galleryGrid.style.marginLeft = '-20px';
+            galleryGrid.style.marginRight = '-20px';
+            galleryGrid.style.padding = '0 20px';
+            galleryGrid.style.alignItems = 'start';
         }
     }
     
