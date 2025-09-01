@@ -2660,8 +2660,11 @@
             // NOUVEAU: Si on clique sur "Vos Photos", recharger avec le bon layout
             if (tabName === 'my-photos') {
                 console.log('🔄 Rechargement de "Vos Photos" avec layout optimisé');
+                showGlobalLoading('Chargement de vos photos...');
                 setTimeout(() => {
-                    loadMyPhotos();
+                    loadMyPhotos().finally(() => {
+                        hideGlobalLoading();
+                    });
                 }, 50);
             }
         }

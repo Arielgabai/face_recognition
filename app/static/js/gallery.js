@@ -91,9 +91,6 @@ class ModernGallery {
         this.container.innerHTML = '';
         this.container.appendChild(galleryGrid);
         
-        // Afficher un indicateur de chargement
-        this.showLoadingIndicator();
-        
         // Après le rendu, ajuster les hauteurs de ligne
         setTimeout(() => {
             this.adjustRowHeights();
@@ -162,9 +159,6 @@ class ModernGallery {
         }
         
         console.log('✅ Toutes les images chargées - Application du layout parfait');
-        
-        // Cacher l'indicateur de chargement
-        this.hideLoadingIndicator();
         
         // Maintenant on est sûr que toutes les images sont chargées
         
@@ -548,31 +542,7 @@ class ModernGallery {
         return Math.abs(hash);
     }
     
-    showLoadingIndicator() {
-        const indicator = document.createElement('div');
-        indicator.id = 'gallery-loading-indicator';
-        indicator.innerHTML = '⏳ Optimisation de l\'affichage...';
-        indicator.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 20px;
-            z-index: 9999;
-            font-size: 14px;
-        `;
-        document.body.appendChild(indicator);
-    }
-    
-    hideLoadingIndicator() {
-        const indicator = document.getElementById('gallery-loading-indicator');
-        if (indicator) {
-            indicator.remove();
-        }
-    }
+
     
     createImageCard(image, index) {
         const card = document.createElement('div');
