@@ -1640,7 +1640,7 @@ async def upload_photos_to_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Upload de photos pour un +�v+�nement sp+�cifique"""
+    """Upload de photos pour un événement spécifique (batch-friendly)."""
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent uploader des photos")
     
@@ -1658,6 +1658,7 @@ async def upload_photos_to_event(
     
     uploaded_photos = []
     
+    # Traiter séquentiellement pour limiter la mémoire (le client enverra par batch)
     for file in files:
         if not file.content_type.startswith("image/"):
             continue
@@ -1681,7 +1682,7 @@ async def upload_photos_to_event(
                 os.remove(temp_path)
     
     return {
-        "message": f"{len(uploaded_photos)} photos upload+�es et trait+�es avec succ+�s",
+        "message": f"{len(uploaded_photos)} photos uploadées et traitées avec succès",
         "uploaded_photos": uploaded_photos
     }
 

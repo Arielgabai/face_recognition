@@ -777,8 +777,8 @@
                 return;
             }
 
-            const files = document.getElementById('photoFiles').files;
-            if (files.length === 0) {
+            const fileList = document.getElementById('photoFiles').files;
+            if (fileList.length === 0) {
                 showAlert('Veuillez sélectionner des photos', 'error');
                 return;
             }
@@ -786,33 +786,80 @@
             document.getElementById('uploadLoading').style.display = 'block';
             document.getElementById('uploadPreview').style.display = 'none';
 
-            try {
+            // Environnement d'hébergement: limiter la taille par requête pour éviter les erreurs 413/timeouts
+            const MAX_FILES_PER_BATCH = 20;         // Sécurité: limiter le nombre par batch
+            const MAX_BATCH_BYTES = 20 * 1024 * 1024; // ~20MB par requête
+
+            const files = Array.from(fileList).filter(f => f && f.size > 0);
+            let uploadedCount = 0;
+            let failedCount = 0;
+
+            async function sendBatch(batch) {
+                if (!batch || batch.length === 0) return { ok: true, count: 0 };
                 const formData = new FormData();
-                Array.from(files).forEach(file => {
-                    formData.append('files', file);
-                });
-
-                const response = await fetch(`/api/photographer/events/${currentEvent.id}/upload-photos`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: formData
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    showAlert(`${data.uploaded_photos.length} photos téléchargées avec succès !`, 'success');
-                    cancelUpload();
-                    loadMyPhotos();
-                    loadStats();
-                } else {
-                    showAlert(data.detail || 'Erreur lors du téléchargement', 'error');
+                batch.forEach(file => formData.append('files', file));
+                let resp, data;
+                try {
+                    resp = await fetch(`/api/photographer/events/${currentEvent.id}/upload-photos`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        body: formData
+                    });
+                } catch (e) {
+                    return { ok: false, count: 0, error: 'Réseau indisponible' };
                 }
-            } catch (error) {
-                showAlert('Erreur lors du téléchargement', 'error');
-            } finally {
-                document.getElementById('uploadLoading').style.display = 'none';
+                try { data = await resp.json(); } catch { data = null; }
+                if (!resp.ok) {
+                    const status = resp.status;
+                    if (status === 413) {
+                        return { ok: false, count: 0, error: 'Requête trop volumineuse (413). Réduisez la taille ou le nombre de fichiers.' };
+                    }
+                    return { ok: false, count: 0, error: (data && data.detail) || `Erreur HTTP ${status}` };
+                }
+                const count = (data && Array.isArray(data.uploaded_photos)) ? data.uploaded_photos.length : 0;
+                return { ok: true, count };
             }
+
+            // Découper en batchs par taille et par nombre
+            let currentBatch = [];
+            let currentBytes = 0;
+            for (const file of files) {
+                // Si un fichier dépasse seul la limite, l'envoyer isolément
+                if (file.size >= MAX_BATCH_BYTES) {
+                    const r = await sendBatch([file]);
+                    if (r.ok) uploadedCount += r.count; else failedCount += 1;
+                    // Petite pause pour ne pas saturer le backend
+                    await new Promise(r => setTimeout(r, 150));
+                    continue;
+                }
+                const wouldExceed = (currentBatch.length + 1 > MAX_FILES_PER_BATCH) || (currentBytes + file.size > MAX_BATCH_BYTES);
+                if (wouldExceed) {
+                    const r = await sendBatch(currentBatch);
+                    if (r.ok) uploadedCount += r.count; else failedCount += currentBatch.length;
+                    currentBatch = [];
+                    currentBytes = 0;
+                    // Petite pause pour laisser le serveur respirer
+                    await new Promise(r => setTimeout(r, 150));
+                }
+                currentBatch.push(file);
+                currentBytes += file.size;
+            }
+            // Dernier batch
+            if (currentBatch.length) {
+                const r = await sendBatch(currentBatch);
+                if (r.ok) uploadedCount += r.count; else failedCount += currentBatch.length;
+            }
+
+            if (uploadedCount > 0) {
+                showAlert(`${uploadedCount} photo(s) téléchargée(s) avec succès${failedCount ? `, ${failedCount} en échec` : ''}.`, failedCount ? 'warning' : 'success');
+                cancelUpload();
+                loadMyPhotos();
+                loadStats();
+            } else {
+                showAlert('Aucune photo n\'a pu être téléchargée. Réduisez le nombre/taille et réessayez.', 'error');
+            }
+
+            document.getElementById('uploadLoading').style.display = 'none';
         }
 
         function showTab(tabName) {
