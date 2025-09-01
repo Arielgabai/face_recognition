@@ -373,14 +373,17 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     /* Technique identique à la bannière tabs pour tablette */
     .modern-gallery,
     #myModernGallery,
-    #allModernGallery {
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 2px;
-        grid-row-gap: 2px;
-        width: 100vw;
-        margin-left: -20px;
-        margin-right: -20px;
-        padding: 0 20px;
+    #allModernGallery,
+    div[id*="ModernGallery"] {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
+        gap: 2px !important;
+        grid-row-gap: 2px !important;
+        width: 100vw !important;
+        margin-left: -20px !important;
+        margin-right: -20px !important;
+        padding: 0 20px !important;
+        align-items: start !important;
     }
     
     .gallery-container {
@@ -425,14 +428,17 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     /* Technique identique à la bannière tabs */
     .modern-gallery,
     #myModernGallery,
-    #allModernGallery {
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 1px;
-        grid-row-gap: 1px;
-        width: 100vw;
-        margin-left: -20px;
-        margin-right: -20px;
-        padding: 0 20px;
+    #allModernGallery,
+    div[id*="ModernGallery"] {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+        gap: 1px !important;
+        grid-row-gap: 1px !important;
+        width: 100vw !important;
+        margin-left: -20px !important;
+        margin-right: -20px !important;
+        padding: 0 20px !important;
+        align-items: start !important;
     }
 
     .gallery-container {
