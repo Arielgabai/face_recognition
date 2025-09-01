@@ -58,9 +58,9 @@
     width: 100%;
 }
 
-/* Couleur du titre d'événement pour matcher le countdown */
+/* Couleur du titre d'événement pour matcher le fond countdown */
 .event-title {
-    color: #111 !important;
+    color: rgba(255,255,255,0.92) !important;
     text-shadow: none !important;
     -webkit-text-stroke: none !important;
 }
@@ -380,9 +380,9 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         padding: 20px !important;
     }
     
-    /* Couleur du titre d'événement pour matcher le countdown */
+    /* Couleur du titre d'événement pour matcher le fond countdown */
     .event-title {
-        color: #111 !important;
+        color: rgba(255,255,255,0.92) !important;
         text-shadow: none !important;
         -webkit-text-stroke: none !important;
     }
@@ -430,9 +430,9 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         padding: 20px !important;
     }
     
-    /* Couleur du titre d'événement pour matcher le countdown */
+    /* Couleur du titre d'événement pour matcher le fond countdown */
     .event-title {
-        color: #111 !important;
+        color: rgba(255,255,255,0.92) !important;
         text-shadow: none !important;
         -webkit-text-stroke: none !important;
     }
