@@ -44,6 +44,7 @@ class AwsFaceRecognizer:
         print(f"[FaceRecognition][AWS] Using region: {AWS_REGION}")
         # Cache simple en mémoire pour éviter de réindexer à chaque photo
         self._indexed_events: Set[int] = set()
+        self._photos_indexed_events: Set[int] = set()
 
     def _collection_id(self, event_id: int) -> str:
         return f"{COLL_PREFIX}{event_id}"
@@ -167,6 +168,22 @@ class AwsFaceRecognizer:
         except ClientError as e:
             print(f"❌ AWS IndexFaces error for photo {photo_id}: {e}")
             return []
+
+    def ensure_event_photos_indexed(self, event_id: int, db: Session):
+        """Indexe tous les visages des photos de l'événement (idempotent grâce au nettoyage par photo)."""
+        if event_id in getattr(self, "_photos_indexed_events", set()):
+            return
+        self.ensure_collection(event_id)
+        photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+        for p in photos:
+            photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
+            if not photo_input:
+                continue
+            img_bytes = self._prepare_image_bytes(photo_input)
+            if not img_bytes:
+                continue
+            self._index_photo_faces_and_get_ids(event_id, p.id, img_bytes)
+        self._photos_indexed_events.add(event_id)
 
     def ensure_event_users_indexed(self, event_id: int, db: Session):
         """
@@ -455,6 +472,35 @@ class AwsFaceRecognizer:
 
         # Créer des FaceMatch en bulk
         from sqlalchemy import and_ as _and
+        # Si aucun résultat, c'est peut-être que les faces des photos ne sont pas encore indexées → indexer maintenant et réessayer une fois
+        if not matched_photo_ids:
+            try:
+                print(f"[AWS] No photo matches from selfie search. Indexing event photos for event_id={event_id} and retrying...")
+                self.ensure_event_photos_indexed(event_id, db)
+                resp = self.client.search_faces_by_image(
+                    CollectionId=self._collection_id(event_id),
+                    Image={"Bytes": image_bytes},
+                    MaxFaces=AWS_SEARCH_MAXFACES,
+                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+                )
+                matched_photo_ids = {}
+                for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                    face = fm.get("Face") or {}
+                    ext = face.get("ExternalImageId") or ""
+                    if not ext.startswith("photo:"):
+                        continue
+                    try:
+                        pid = int(ext.split(":", 1)[1])
+                    except Exception:
+                        continue
+                    similarity = int(float(fm.get("Similarity", 0.0)))
+                    prev = matched_photo_ids.get(pid)
+                    if prev is None or similarity > prev:
+                        matched_photo_ids[pid] = similarity
+            except Exception as _e:
+                print(f"[AWS] Retry after photo indexing failed: {_e}")
+
         allowed_ids = set(pid for (pid,) in db.query(Photo.id).filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys()))).all())
         count_matches = 0
         for pid in allowed_ids:
