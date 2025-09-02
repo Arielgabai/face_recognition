@@ -2238,9 +2238,8 @@
             }, 5000);
         }
 
-        // Etat global: indique si "Vos Photos" a déjà été pré-chargé et prêt
-        window.__myPhotosPrimed = false;
-        window.__myPhotosHash = '';
+        // Etat global supprimé: on refetch systématiquement pour garantir fraîcheur
+        try { delete window.__myPhotosPrimed; delete window.__myPhotosHash; } catch {}
 
         async function login() {
             if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
@@ -2393,7 +2392,8 @@
             if (emptyDiv) emptyDiv.style.display = 'none';
             
             try {
-                const response = await apiFetch('/api/my-photos');
+                // Désactiver le cache pour ce fetch
+                const response = await apiFetch('/api/my-photos?cb=' + Date.now());
                 
                 if (response.ok) {
                     const photos = await response.json();
@@ -2663,22 +2663,15 @@
             // Activer l'onglet sélectionné
             event.target.classList.add('active');
             
-            // NOUVEAU: Si on clique sur "Vos Photos", recharger avec le bon layout
+            // NOUVEAU: Si on clique sur "Vos Photos", recharger avec le bon layout (toujours refetch)
             if (tabName === 'my-photos') {
                 console.log('🔄 Rechargement de "Vos Photos" avec layout optimisé');
-                // Si déjà préchargé par le flux selfie, ne pas refaire un fetch immédiatement
-                if (window.__myPhotosPrimed === true) {
-                    hideGlobalLoading();
-                    const loadingDiv = document.getElementById('myPhotosLoading');
-                    if (loadingDiv) loadingDiv.style.display = 'none';
-                } else {
-                    showGlobalLoading('Chargement de vos photos...');
-                    setTimeout(() => {
-                        loadMyPhotos().finally(() => {
-                            hideGlobalLoading();
-                        });
-                    }, 50);
-                }
+                showGlobalLoading('Chargement de vos photos...');
+                setTimeout(() => {
+                    loadMyPhotos().finally(() => {
+                        hideGlobalLoading();
+                    });
+                }, 50);
             }
         }
 
@@ -3429,7 +3422,7 @@
                         // Afficher le spinner global pendant on attend le rematching serveur
                         showGlobalLoading('Mise à jour des photos...');
                         // Poller l'état côté serveur jusqu'à statut "done"
-                        const waitRematchDone = async (timeoutMs = 120000) => {
+                        const waitRematchDone = async (timeoutMs = 240000) => {
                             const start = Date.now();
                             while (Date.now() - start < timeoutMs) {
                                 try {
@@ -3439,7 +3432,7 @@
                                         if (st && st.status === 'done') return st;
                                     }
                                 } catch {}
-                                await sleep(2000);
+                                await sleep(3000);
                             }
                             return { status: 'timeout' };
                         };

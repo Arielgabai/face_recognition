@@ -408,6 +408,7 @@ const Dashboard: React.FC = () => {
 
   // Attendre qu'il y ait une croissance (nouvelles correspondances) puis que les images soient chargées
   const waitForDashboardGrowthAndImages = async (baselineMyLen: number, baselineMatches: number, timeoutMs = 90000, intervalMs = 2000) => {
+    // Toujours repartir d'un refetch complet (éviter cache)
     const start = Date.now();
     try {
       setLoading(true);
