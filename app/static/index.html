@@ -2632,7 +2632,15 @@
                 if (response.ok) {
                     showAlert(`${data.uploaded_count} photos téléchargées avec succès !`, 'success');
                     cancelUpload();
+                    // Recharger "Général"
                     loadAllPhotos();
+                    // Et recharger "Vos Photos" pour prendre en compte les nouveaux FaceMatch
+                    try { showGlobalLoading('Mise à jour de vos photos...'); } catch {}
+                    try {
+                        await loadMyPhotos();
+                    } finally {
+                        try { hideGlobalLoading(); } catch {}
+                    }
                 } else {
                     showAlert(data.detail || 'Erreur lors du téléchargement', 'error');
                 }

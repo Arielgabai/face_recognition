@@ -558,7 +558,14 @@ const Dashboard: React.FC = () => {
 
         {user?.user_type === 'photographer' && (
           <TabPanel value={tabValue} index={3}>
-            <PhotoUpload onSuccess={loadDashboardData} eventId={currentEventId ?? undefined} />
+            <PhotoUpload onSuccess={async () => {
+              // Recharger toutes les photos + mes photos, attendre images
+              await loadDashboardData();
+              const myUrls = myPhotos.map((p) => photoService.getImage(p.filename));
+              const allUrls = allPhotos.map((p) => photoService.getImage(p.filename));
+              await preloadImages([...myUrls, ...allUrls]);
+              await new Promise((r) => setTimeout(r, 150));
+            }} eventId={currentEventId ?? undefined} />
           </TabPanel>
         )}
 
