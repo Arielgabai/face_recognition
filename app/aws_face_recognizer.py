@@ -596,6 +596,19 @@ class AwsFaceRecognizer:
             for uid, score in user_best.items():
                 if uid in allowed_user_ids:
                     db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+            # Réinitialiser l'expiration pour harmoniser (30 jours)
+            try:
+                from datetime import datetime, timedelta
+                new_expiration = datetime.utcnow() + timedelta(days=30)
+                db.query(Photo).filter(
+                    Photo.event_id == event_id,
+                    Photo.expires_at.isnot(None)
+                ).update({
+                    Photo.expires_at: new_expiration
+                }, synchronize_session=False)
+                print(f"🔄 [AWS] Expiration reset for event {event_id} to {new_expiration}")
+            except Exception as _e:
+                print(f"⚠️  [AWS] Expiration reset failed: {_e}")
             db.commit()
         return photo
 
@@ -661,6 +674,19 @@ class AwsFaceRecognizer:
         for uid, score in user_best.items():
             if uid in allowed_user_ids:
                 db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+        # Réinitialiser la date d'expiration de toutes les photos de l'événement (compte à rebours commun)
+        try:
+            from datetime import datetime, timedelta
+            new_expiration = datetime.utcnow() + timedelta(days=30)
+            db.query(Photo).filter(
+                Photo.event_id == event_id,
+                Photo.expires_at.isnot(None)
+            ).update({
+                Photo.expires_at: new_expiration
+            }, synchronize_session=False)
+            print(f"🔄 [AWS] Expiration reset for event {event_id} to {new_expiration}")
+        except Exception as _e:
+            print(f"⚠️  [AWS] Expiration reset failed: {_e}")
         db.commit()
         return photo
 
