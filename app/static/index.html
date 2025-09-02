@@ -3413,31 +3413,40 @@
                     btnText.textContent = 'Mise à jour des photos...';
                     btnText.style.color = 'var(--text)';
                     
-                    // Rafraîchir les photos sans déconnecter l'utilisateur
+                    // Recharger "Vos Photos" et attendre que les images soient réellement chargées
                     try {
-                        // Attacher l'attente de fin de chargement "Vos Photos" AVANT le rafraîchissement
-                        const loadedPromise = waitForMyPhotosLoadComplete(15000);
-                        await refreshPhotosAfterSelfieUpdate();
-                        // Attendre que l'onglet "Vos Photos" ait fini de charger ses images
-                        await loadedPromise;
+                        // Afficher le spinner de l'onglet "Vos Photos" pendant l'attente
+                        try { toggleMyPhotosLoading(true); } catch {}
+                        const photos = await reloadMyPhotosUntilStable({ timeoutMs: 60000, intervalMs: 2000 });
+                        // Forcer l'affichage (au cas où) puis attendre que les images du DOM soient chargées
+                        updatePhotoDisplay(photos);
+                        await waitForAllImagesIn('#myPhotosList', 20000);
                         
-                        // Succès final
+                        // Succès final après chargement complet
                         btnText.textContent = 'Terminé !';
                         btnText.style.color = '#22c55e';
                         
                         setTimeout(() => {
                             showAlert('Selfie et photos mis à jour avec succès!', 'success');
                             closeSelfieModal();
-                        }, 1000);
+                        }, 600);
                     } catch (error) {
-                        console.error('Erreur lors du rafraîchissement des photos:', error);
-                        btnText.textContent = 'Terminé !';
-                        btnText.style.color = '#22c55e';
-                        
-                        setTimeout(() => {
-                            showAlert('Selfie mis à jour ! Les photos se mettront à jour automatiquement.', 'success');
-                            closeSelfieModal();
-                        }, 1000);
+                        console.error('Erreur lors du rechargement des photos:', error);
+                        // En cas d'échec, ne pas prétendre que les photos se mettront à jour automatiquement
+                        const errorBox = document.getElementById('selfieModalError');
+                        const message = 'La mise à jour des photos a pris trop de temps. Veuillez réessayer.';
+                        if (errorBox) {
+                            errorBox.style.display = 'block';
+                            errorBox.textContent = message;
+                        } else {
+                            showAlert(message, 'error');
+                        }
+                        // Réinitialiser le bouton
+                        btnText.textContent = 'Mettre à jour';
+                        btnText.style.color = '';
+                        updateBtn.disabled = false;
+                    } finally {
+                        try { toggleMyPhotosLoading(false); } catch {}
                     }
                 } else {
                     const errorData = await response.json().catch(() => ({}));
@@ -3643,32 +3652,50 @@
                 try {
                     const container = (typeof element === 'string') ? document.querySelector(element) : element;
                     if (!container) { resolve(); return; }
-                    const images = Array.from(container.querySelectorAll('img'));
-                    if (images.length === 0) {
-                        // Attendre un tick (certaines librairies insèrent leurs images après)
-                        setTimeout(() => resolve(), 50);
-                        return;
-                    }
-                    let remaining = images.length;
                     let done = false;
                     const finish = () => {
                         if (!done) {
                             done = true;
+                            try { if (observer) observer.disconnect(); } catch {}
                             resolve();
                         }
                     };
-                    const onSettled = () => {
-                        remaining -= 1;
-                        if (remaining <= 0) finish();
-                    };
-                    images.forEach(img => {
-                        if (img.complete && img.naturalWidth > 0) {
-                            onSettled();
-                        } else {
-                            img.addEventListener('load', onSettled, { once: true });
-                            img.addEventListener('error', onSettled, { once: true });
+                    const start = Date.now();
+                    const attachListeners = () => {
+                        const images = Array.from(container.querySelectorAll('img'));
+                        if (images.length === 0) {
+                            return false;
                         }
-                    });
+                        let remaining = images.reduce((count, img) => count + ((img.complete && img.naturalWidth > 0) ? 0 : 1), 0);
+                        if (remaining === 0) {
+                            finish();
+                            return true;
+                        }
+                        const onSettled = () => {
+                            remaining -= 1;
+                            if (remaining <= 0) finish();
+                        };
+                        images.forEach(img => {
+                            if (!(img.complete && img.naturalWidth > 0)) {
+                                img.addEventListener('load', onSettled, { once: true });
+                                img.addEventListener('error', onSettled, { once: true });
+                            }
+                        });
+                        return true;
+                    };
+                    let observer = null;
+                    if (!attachListeners()) {
+                        try {
+                            observer = new MutationObserver(() => {
+                                // Essayer de rattacher une fois que les images apparaissent
+                                if (attachListeners()) {
+                                    try { observer.disconnect(); } catch {}
+                                    observer = null;
+                                }
+                            });
+                            observer.observe(container, { childList: true, subtree: true });
+                        } catch {}
+                    }
                     setTimeout(finish, timeoutMs);
                 } catch {
                     resolve();
@@ -3700,6 +3727,54 @@
                 }
                 setTimeout(cleanup, timeoutMs);
             });
+        }
+
+        // Nouveaux helpers pour garantir que les photos sont réellement rechargées
+        async function getMyPhotosJson() {
+            const response = await apiFetch('/api/my-photos');
+            if (!response.ok) throw new Error('API my-photos error');
+            return await response.json();
+        }
+
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        function toggleMyPhotosLoading(show) {
+            try {
+                const loadingDiv = document.getElementById('myPhotosLoading');
+                if (loadingDiv) loadingDiv.style.display = show ? 'flex' : 'none';
+            } catch {}
+        }
+
+        function idsHash(photos) {
+            try { return JSON.stringify((photos || []).map(p => p.id).sort()); } catch { return ''; }
+        }
+
+        async function reloadMyPhotosUntilStable({ timeoutMs = 60000, intervalMs = 2000 } = {}) {
+            const start = Date.now();
+            let lastHash = null;
+            let lastPhotos = [];
+            let stableCount = 0;
+            while (Date.now() - start < timeoutMs) {
+                const photos = await getMyPhotosJson();
+                const currentHash = idsHash(photos);
+                if (currentHash !== lastHash) {
+                    // Changement détecté -> publier et attendre rendu
+                    updatePhotoDisplay(photos);
+                    await waitForAllImagesIn('#myPhotosList', 20000);
+                    lastHash = currentHash;
+                    lastPhotos = photos;
+                    stableCount = 0;
+                } else {
+                    stableCount += 1;
+                    // Si même set 2 fois de suite, considérer stable
+                    if (stableCount >= 1) {
+                        return photos;
+                    }
+                }
+                await sleep(intervalMs);
+            }
+            // Timeout: échec explicite
+            throw new Error('Timeout waiting for photos to stabilize');
         }
 
         // Fonction pour recharger le dashboard en cas de besoin (sans affecter les photos)
