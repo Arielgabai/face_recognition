@@ -3417,7 +3417,12 @@
                     try {
                         // Afficher le spinner de l'onglet "Vos Photos" pendant l'attente
                         try { toggleMyPhotosLoading(true); } catch {}
-                        const photos = await reloadMyPhotosUntilStable({ timeoutMs: 60000, intervalMs: 2000 });
+                        // Noter le baseline avant recharge
+                        const baselineResp = await apiFetch('/api/my-photos');
+                        const baselinePhotos = baselineResp.ok ? await baselineResp.json() : [];
+                        const baselineCount = Array.isArray(baselinePhotos) ? baselinePhotos.length : 0;
+                        const photos = await reloadMyPhotosUntilStable({ timeoutMs: 90000, intervalMs: 2000 });
+                        const growth = (Array.isArray(photos) ? photos.length : 0) > baselineCount;
                         // Forcer l'affichage (au cas où) puis attendre que les images du DOM soient chargées
                         updatePhotoDisplay(photos);
                         await waitForAllImagesIn('#myPhotosList', 20000);
@@ -3427,7 +3432,10 @@
                         btnText.style.color = '#22c55e';
                         
                         setTimeout(() => {
-                            showAlert('Selfie et photos mis à jour avec succès!', 'success');
+                            const msg = growth
+                                ? 'Selfie et photos mis à jour avec succès !'
+                                : 'Selfie mis à jour. Aucune nouvelle photo trouvée.';
+                            showAlert(msg, growth ? 'success' : 'info');
                             closeSelfieModal();
                         }, 600);
                     } catch (error) {
@@ -3510,10 +3518,11 @@
                     }
                 });
                 
-                // Recharger spécifiquement les photos "pour vous" avec un polling
+                // Recharger spécifiquement les photos "pour vous" avec un polling, en exigeant une croissance
                 let attempts = 0;
-                const maxAttempts = 15; // Augmenté pour plus de chances
+                const maxAttempts = 30; // plus de chances
                 let lastPhotoCount = -1;
+                let baselineCount = -1;
                 
                 while (attempts < maxAttempts) {
                     try {
@@ -3528,17 +3537,23 @@
                         if (response.ok) {
                             const newPhotos = await response.json();
                             console.log(`API response: ${newPhotos.length} photos trouvées`);
+                            if (baselineCount === -1) baselineCount = newPhotos.length;
                             
-                            // Vérifier si le nombre de photos a changé
+                            // Vérifier si le nombre de photos a changé (croissance)
                             if (newPhotos.length !== lastPhotoCount) {
                                 console.log(`Mise à jour détectée: ${lastPhotoCount} -> ${newPhotos.length} photos`);
                                 
                                 // Mettre à jour l'affichage des photos
                                 updatePhotoDisplay(newPhotos);
                                 
-                                // Si on a des photos et que c'est un changement, on considère que c'est un succès
-                                if (newPhotos.length > 0 || attempts > 5) {
+                                // Si croissance par rapport au baseline ou stabilité confirmée sans photos
+                                if (newPhotos.length > baselineCount) {
                                     console.log(`Photos rafraîchies avec succès: ${newPhotos.length} photos`);
+                                    return;
+                                }
+                                // Si aucune croissance après plusieurs tentatives et que c'est stable, considérer terminé (aucun match)
+                                if (attempts > 10 && newPhotos.length === baselineCount) {
+                                    console.log('Aucune croissance détectée après plusieurs tentatives, terminer sans nouvelles photos.');
                                     return;
                                 }
                                 
@@ -3564,8 +3579,8 @@
                     }
                 }
                 
-                // Si on arrive ici, essayer de forcer un rechargement final
-                console.log('Tentatives épuisées, rechargement final...');
+                // Si on arrive ici, forcer un rechargement final (aucune croissance)
+                console.log('Tentatives épuisées, aucune croissance détectée. Rechargement final...');
                 await loadMyPhotos();
                 
             } catch (error) {

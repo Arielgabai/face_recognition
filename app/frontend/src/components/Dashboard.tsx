@@ -406,43 +406,48 @@ const Dashboard: React.FC = () => {
     });
   };
 
-  // Recharge les données et attend que les images de la galerie soient prêtes avant de retirer le spinner
-  const reloadDashboardAndWaitForImages = async () => {
+  // Attendre qu'il y ait une croissance (nouvelles correspondances) puis que les images soient chargées
+  const waitForDashboardGrowthAndImages = async (baselineMyLen: number, baselineMatches: number, timeoutMs = 90000, intervalMs = 2000) => {
+    const start = Date.now();
     try {
       setLoading(true);
       setError(null);
-
-      if (user?.user_type === 'user' && currentEventId) {
-        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
-          photoService.getProfile(),
-          photoService.getUserEventPhotos(currentEventId),
-          photoService.getAllEventPhotos(currentEventId),
-        ]);
-        setProfile(profileData.data);
-        setMyPhotos(myPhotosData.data);
-        setAllPhotos(allPhotosData.data);
-        // Précharger les images clés du tableau de bord
-        const myUrls = myPhotosData.data.map((p: any) => photoService.getImage(p.filename));
-        const allUrls = allPhotosData.data.map((p: any) => photoService.getImage(p.filename));
-        await preloadImages([...myUrls, ...allUrls]);
-      } else {
-        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
-          photoService.getProfile(),
-          photoService.getMyPhotos(),
-          photoService.getAllPhotos(),
-        ]);
-        setProfile(profileData.data);
-        setMyPhotos(myPhotosData.data);
-        setAllPhotos(allPhotosData.data);
-        const myUrls = myPhotosData.data.map((p: any) => photoService.getImage(p.filename));
-        const allUrls = allPhotosData.data.map((p: any) => photoService.getImage(p.filename));
-        await preloadImages([...myUrls, ...allUrls]);
+      while (Date.now() - start < timeoutMs) {
+        if (user?.user_type === 'user' && currentEventId) {
+          const [profileData, myPhotosData] = await Promise.all([
+            photoService.getProfile(),
+            photoService.getUserEventPhotos(currentEventId),
+          ]);
+          const matchesNow = profileData.data?.photos_with_face ?? 0;
+          const myNow = myPhotosData.data ?? [];
+          setProfile(profileData.data);
+          setMyPhotos(myNow);
+          // Si croissance détectée, précharger et terminer
+          if (matchesNow > baselineMatches || myNow.length > baselineMyLen) {
+            const myUrls = myNow.map((p: any) => photoService.getImage(p.filename));
+            await preloadImages(myUrls);
+            await new Promise((r) => setTimeout(r, 150));
+            return;
+          }
+        } else {
+          const [profileData, myPhotosData] = await Promise.all([
+            photoService.getProfile(),
+            photoService.getMyPhotos(),
+          ]);
+          const matchesNow = profileData.data?.photos_with_face ?? 0;
+          const myNow = myPhotosData.data ?? [];
+          setProfile(profileData.data);
+          setMyPhotos(myNow);
+          if (matchesNow > baselineMatches || myNow.length > baselineMyLen) {
+            const myUrls = myNow.map((p: any) => photoService.getImage(p.filename));
+            await preloadImages(myUrls);
+            await new Promise((r) => setTimeout(r, 150));
+            return;
+          }
+        }
+        await new Promise((r) => setTimeout(r, intervalMs));
       }
-
-      // Laisser un tout petit délai de paint pour "placer" les images
-      await new Promise((r) => setTimeout(r, 150));
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Erreur lors du chargement des données');
+      // Timeout: pas de croissance -> on considère qu'il n'y a pas de photos à afficher
     } finally {
       setLoading(false);
     }
@@ -538,7 +543,11 @@ const Dashboard: React.FC = () => {
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
-          <SelfieUpload onSuccess={reloadDashboardAndWaitForImages} />
+          <SelfieUpload onSuccess={async () => {
+            const baselineMyLen = myPhotos.length;
+            const baselineMatches = profile?.photos_with_face ?? baselineMyLen;
+            await waitForDashboardGrowthAndImages(baselineMyLen, baselineMatches);
+          }} />
         </TabPanel>
 
         {user?.user_type === 'photographer' && (
