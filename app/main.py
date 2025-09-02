@@ -924,6 +924,12 @@ async def upload_selfie(
             total = 0
             for ue in events:
                 try:
+                    # Optimisation AWS: indexer les visages des photos de l'événement avant la recherche par selfie
+                    try:
+                        if hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                            face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
+                    except Exception as _e:
+                        print(f"[SelfieUpdate][bg] ensure_event_photos_indexed error: {_e}")
                     if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
                         total += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
                     else:
