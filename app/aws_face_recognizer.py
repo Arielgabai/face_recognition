@@ -155,8 +155,8 @@ class AwsFaceRecognizer:
                 Image={"Bytes": image_bytes},
                 ExternalImageId=f"photo:{photo_id}",
                 DetectionAttributes=[],
-                QualityFilter="AUTO",
-                MaxFaces=50,
+                QualityFilter="NONE",
+                MaxFaces=200,
             )
             face_ids: List[str] = []
             for rec in (resp.get('FaceRecords') or []):
@@ -446,8 +446,8 @@ class AwsFaceRecognizer:
                 CollectionId=self._collection_id(event_id),
                 Image={"Bytes": image_bytes},
                 MaxFaces=AWS_SEARCH_MAXFACES,
-                FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
-                QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+                FaceMatchThreshold=max(30.0, AWS_SEARCH_THRESHOLD),
+                QualityFilter="NONE",
             )
         except ClientError as e:
             print(f"❌ Erreur AWS SearchFacesByImage (selfie->photo): {e}")
@@ -575,7 +575,7 @@ class AwsFaceRecognizer:
                         CollectionId=self._collection_id(event_id),
                         FaceId=fid,
                         MaxFaces=AWS_SEARCH_MAXFACES,
-                        FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                        FaceMatchThreshold=max(30.0, AWS_SEARCH_THRESHOLD),
                     )
                 except ClientError as e:
                     print(f"❌ AWS SearchFaces (photoFace->{photo.id}): {e}")
