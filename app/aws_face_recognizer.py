@@ -541,34 +541,6 @@ class AwsFaceRecognizer:
 
         # Créer des FaceMatch en bulk
         from sqlalchemy import and_ as _and
-        # Si aucun résultat, c'est peut-être que les faces des photos ne sont pas encore indexées → indexer maintenant et réessayer une fois
-        if not matched_photo_ids:
-            try:
-                print(f"[AWS] No photo matches from selfie search. Indexing event photos for event_id={event_id} and retrying...")
-                self.ensure_event_photos_indexed(event_id, db)
-                resp = self.client.search_faces_by_image(
-                    CollectionId=self._collection_id(event_id),
-                    Image={"Bytes": image_bytes},
-                    MaxFaces=AWS_SEARCH_MAXFACES,
-                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
-                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
-                )
-                matched_photo_ids = {}
-                for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
-                    face = fm.get("Face") or {}
-                    ext = face.get("ExternalImageId") or ""
-                    if not ext.startswith("photo:"):
-                        continue
-                    try:
-                        pid = int(ext.split(":", 1)[1])
-                    except Exception:
-                        continue
-                    similarity = int(float(fm.get("Similarity", 0.0)))
-                    prev = matched_photo_ids.get(pid)
-                    if prev is None or similarity > prev:
-                        matched_photo_ids[pid] = similarity
-            except Exception as _e:
-                print(f"[AWS] Retry after photo indexing failed: {_e}")
 
         allowed_ids = set(pid for (pid,) in db.query(Photo.id).filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys()))).all())
         count_matches = 0
