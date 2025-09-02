@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Res
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
+from typing import Dict, Any
+import time
 import os
 import shutil
 import uuid
@@ -38,6 +40,9 @@ import requests
 create_tables()
 
 app = FastAPI(title="Face Recognition API", version="1.0.0")
+
+# État en mémoire pour suivre l'avancement du rematching de selfie par utilisateur
+REMATCH_STATUS: Dict[int, Dict[str, Any]] = {}
 
 # Helper pour trouver un événement par code (tolérant: trim, insensible à la casse, ignore les espaces internes)
 def find_event_by_code(db: Session, code: str) -> Event:
@@ -898,6 +903,16 @@ async def upload_selfie(
                 pass
     db.commit()
 
+    # Marquer l'état de rematching en cours pour ce user
+    try:
+        REMATCH_STATUS[current_user.id] = {
+            "status": "running",
+            "started_at": time.time(),
+            "matched": 0,
+        }
+    except Exception:
+        pass
+
     # Lancer le matching en tâche de fond pour éviter les timeouts côté client
     def _rematch_all_events(user_id: int):
         try:
@@ -916,6 +931,14 @@ async def upload_selfie(
                 except Exception:
                     continue
             print(f"[SelfieUpdate][bg] user_id={user_id} rematch_total={total}")
+            try:
+                REMATCH_STATUS[user_id] = {
+                    "status": "done",
+                    "finished_at": time.time(),
+                    "matched": int(total or 0),
+                }
+            except Exception:
+                pass
         except Exception as e:
             print(f"[SelfieUpdate][bg] error: {e}")
 
@@ -927,6 +950,17 @@ async def upload_selfie(
 
     print(f"[SelfieUpdate] scheduled rematch; deleted_matches={total_deleted} user_id={current_user.id}")
     return {"message": "Selfie uploadée avec succès", "deleted": total_deleted, "scheduled": True}
+
+@app.get("/api/rematch-status")
+def get_rematch_status(current_user: User = Depends(get_current_user)):
+    """Retourne l'état du rematching de selfie pour l'utilisateur courant."""
+    try:
+        st = REMATCH_STATUS.get(current_user.id)
+        if not st:
+            return {"status": "idle"}
+        return st
+    except Exception:
+        return {"status": "idle"}
 
 # === GESTION DES PHOTOS (PHOTOGRAPHES) ===
 

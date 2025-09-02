@@ -3426,17 +3426,30 @@
                     
                     // Recharger "Vos Photos" et attendre que les images soient réellement chargées
                     try {
-                        // Afficher le spinner de l'onglet "Vos Photos" pendant l'attente
+                        // Afficher le spinner global pendant on attend le rematching serveur
+                        showGlobalLoading('Mise à jour des photos...');
+                        // Poller l'état côté serveur jusqu'à statut "done"
+                        const waitRematchDone = async (timeoutMs = 120000) => {
+                            const start = Date.now();
+                            while (Date.now() - start < timeoutMs) {
+                                try {
+                                    const res = await apiFetch('/api/rematch-status');
+                                    if (res.ok) {
+                                        const st = await res.json();
+                                        if (st && st.status === 'done') return st;
+                                    }
+                                } catch {}
+                                await sleep(2000);
+                            }
+                            return { status: 'timeout' };
+                        };
+                        const st = await waitRematchDone();
+                        // Une fois terminé côté serveur, recharger mes photos puis attendre images DOM
                         try { toggleMyPhotosLoading(true); } catch {}
-                        // Noter le baseline avant recharge
-                        const baselineResp = await apiFetch('/api/my-photos');
-                        const baselinePhotos = baselineResp.ok ? await baselineResp.json() : [];
-                        const baselineCount = Array.isArray(baselinePhotos) ? baselinePhotos.length : 0;
-                        const photos = await reloadMyPhotosUntilStable({ timeoutMs: 90000, intervalMs: 2000 });
-                        const growth = (Array.isArray(photos) ? photos.length : 0) > baselineCount;
-                        // Forcer l'affichage (au cas où) puis attendre que les images du DOM soient chargées
+                        const myResp = await apiFetch('/api/my-photos');
+                        const photos = myResp.ok ? await myResp.json() : [];
                         updatePhotoDisplay(photos);
-                        await waitForAllImagesIn('#myPhotosList', 20000);
+                        await waitForAllImagesIn('#myPhotosList', 30000);
                         try { window.__myPhotosPrimed = true; window.__myPhotosHash = idsHash(photos); } catch {}
                         
                         // Succès final après chargement complet
@@ -3444,10 +3457,10 @@
                         btnText.style.color = '#22c55e';
                         
                         setTimeout(() => {
-                            const msg = growth
+                            const msg = (st && st.matched > 0)
                                 ? 'Selfie et photos mis à jour avec succès !'
                                 : 'Selfie mis à jour. Aucune nouvelle photo trouvée.';
-                            showAlert(msg, growth ? 'success' : 'info');
+                            showAlert(msg, (st && st.matched > 0) ? 'success' : 'info');
                             closeSelfieModal();
                         }, 600);
                     } catch (error) {
@@ -3511,6 +3524,7 @@
             } finally {
                 if (btnText) btnText.style.opacity = '1';
                 if (spinner) spinner.style.display = 'none';
+                hideGlobalLoading();
                 selfieUpdateController = null;
             }
         }
