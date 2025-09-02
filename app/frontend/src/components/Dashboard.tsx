@@ -427,6 +427,10 @@ const Dashboard: React.FC = () => {
             const myUrls = myNow.map((p: any) => photoService.getImage(p.filename));
             await preloadImages(myUrls);
             await new Promise((r) => setTimeout(r, 150));
+            try {
+              // Indicateur global (optionnel) pour ré-ouv. ultérieure des onglets : primed
+              (window as any).__myPhotosPrimedReact = true;
+            } catch {}
             return;
           }
         } else {
@@ -442,6 +446,7 @@ const Dashboard: React.FC = () => {
             const myUrls = myNow.map((p: any) => photoService.getImage(p.filename));
             await preloadImages(myUrls);
             await new Promise((r) => setTimeout(r, 150));
+            try { (window as any).__myPhotosPrimedReact = true; } catch {}
             return;
           }
         }

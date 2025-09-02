@@ -2238,6 +2238,10 @@
             }, 5000);
         }
 
+        // Etat global: indique si "Vos Photos" a déjà été pré-chargé et prêt
+        window.__myPhotosPrimed = false;
+        window.__myPhotosHash = '';
+
         async function login() {
             if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
             const username = document.getElementById('username').value;
@@ -2662,12 +2666,19 @@
             // NOUVEAU: Si on clique sur "Vos Photos", recharger avec le bon layout
             if (tabName === 'my-photos') {
                 console.log('🔄 Rechargement de "Vos Photos" avec layout optimisé');
-                showGlobalLoading('Chargement de vos photos...');
-                setTimeout(() => {
-                    loadMyPhotos().finally(() => {
-                        hideGlobalLoading();
-                    });
-                }, 50);
+                // Si déjà préchargé par le flux selfie, ne pas refaire un fetch immédiatement
+                if (window.__myPhotosPrimed === true) {
+                    hideGlobalLoading();
+                    const loadingDiv = document.getElementById('myPhotosLoading');
+                    if (loadingDiv) loadingDiv.style.display = 'none';
+                } else {
+                    showGlobalLoading('Chargement de vos photos...');
+                    setTimeout(() => {
+                        loadMyPhotos().finally(() => {
+                            hideGlobalLoading();
+                        });
+                    }, 50);
+                }
             }
         }
 
@@ -3426,6 +3437,7 @@
                         // Forcer l'affichage (au cas où) puis attendre que les images du DOM soient chargées
                         updatePhotoDisplay(photos);
                         await waitForAllImagesIn('#myPhotosList', 20000);
+                        try { window.__myPhotosPrimed = true; window.__myPhotosHash = idsHash(photos); } catch {}
                         
                         // Succès final après chargement complet
                         btnText.textContent = 'Terminé !';
@@ -3654,6 +3666,7 @@
             // Attendre que toutes les images soient chargées avant de signaler la fin
             try {
                 waitForAllImagesIn(container).then(() => {
+                    try { window.__myPhotosPrimed = true; window.__myPhotosHash = idsHash(photos); } catch {}
                     dispatchMyPhotosLoaded();
                 });
             } catch {}
