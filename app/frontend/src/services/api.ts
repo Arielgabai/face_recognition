@@ -89,6 +89,7 @@ export const photoService = {
   getEventPhotos: (eventId: number) => api.get(`/photographer/events/${eventId}/photos`),
   getUserEventPhotos: (eventId: number) => api.get(`/user/events/${eventId}/photos`),
   getAllEventPhotos: (eventId: number) => api.get(`/user/events/${eventId}/all-photos`),
+  deletePhotosBulk: (photoIds: number[]) => api.delete('/photos', { params: { photo_ids: photoIds.join(',') } }),
   joinEvent: (eventCode: string) => api.post('/join-event', { event_code: eventCode }),
   registerWithEventCode: (userData: any, eventCode: string) => 
     api.post('/register-with-event-code', { user_data: userData, event_code: eventCode }),

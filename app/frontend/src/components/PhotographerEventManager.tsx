@@ -43,6 +43,8 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
   const [eventPhotos, setEventPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     loadEvents();
@@ -75,6 +77,7 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
     try {
       const response = await photoService.getEventPhotos(eventId);
       setEventPhotos(response.data);
+      setSelectedIds([]);
     } catch (err: any) {
       console.error('Erreur lors du chargement des photos:', err);
     }
@@ -175,6 +178,32 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
             <Typography variant="h6" gutterBottom>
               Photos de l'événement ({eventPhotos.length})
             </Typography>
+            {eventPhotos.length > 0 && (
+              <Box display="flex" gap={1} mb={2}>
+                <Button variant="outlined" onClick={() => setSelectedIds([])} disabled={bulkBusy}>Désélectionner</Button>
+                <Button variant="outlined" onClick={() => setSelectedIds(eventPhotos.map(p => p.id))} disabled={bulkBusy}>Tout sélectionner</Button>
+                <Button 
+                  variant="contained" 
+                  color="error" 
+                  disabled={bulkBusy || selectedIds.length === 0}
+                  onClick={async () => {
+                    if (!selectedEventId || selectedIds.length === 0) return;
+                    if (!confirm(`Supprimer ${selectedIds.length} photo(s) ?`)) return;
+                    try {
+                      setBulkBusy(true);
+                      await photoService.deletePhotosBulk(selectedIds);
+                      await loadEventPhotos(selectedEventId);
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setBulkBusy(false);
+                    }
+                  }}
+                >
+                  Supprimer sélection ({selectedIds.length})
+                </Button>
+              </Box>
+            )}
             
             {eventPhotos.length === 0 ? (
               <Typography color="text.secondary">
@@ -182,23 +211,37 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
               </Typography>
             ) : (
               <Grid container spacing={2}>
-                {eventPhotos.map((photo) => (
-                  <Grid item xs={12} sm={6} md={4} key={photo.id}>
-                    <Card>
-                      <CardMedia
-                        component="img"
-                        height="200"
-                        image={photoService.getImage(photo.filename)}
-                        alt={photo.original_filename}
-                      />
-                      <CardContent>
-                        <Typography variant="body2" color="text.secondary">
-                          {photo.original_filename}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                ))}
+                {eventPhotos.map((photo) => {
+                  const checked = selectedIds.includes(photo.id);
+                  return (
+                    <Grid item xs={12} sm={6} md={4} key={photo.id}>
+                      <Card sx={{ position: 'relative', outline: checked ? '3px solid #d32f2f' : 'none' }}>
+                        <CardMedia
+                          component="img"
+                          height="200"
+                          image={photoService.getImage(photo.filename)}
+                          alt={photo.original_filename}
+                          onClick={() => {
+                            setSelectedIds(prev => checked ? prev.filter(id => id !== photo.id) : [...prev, photo.id]);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <CardContent>
+                          <Box display="flex" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" color="text.secondary">
+                              {photo.original_filename}
+                            </Typography>
+                            <Button size="small" onClick={() => {
+                              setSelectedIds(prev => checked ? prev.filter(id => id !== photo.id) : [...prev, photo.id]);
+                            }}>
+                              {checked ? 'Retirer' : 'Sélectionner'}
+                            </Button>
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  );
+                })}
               </Grid>
             )}
           </CardContent>
