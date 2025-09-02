@@ -15,7 +15,7 @@ AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")  # Ireland (Rekognition s
 COLL_PREFIX = os.environ.get("AWS_REKOGNITION_COLLECTION_PREFIX", "event_")
 
 # Recherche
-AWS_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SEARCH_MAXFACES", "100") or "100")
+AWS_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SEARCH_MAXFACES", "10") or "10")
 AWS_SEARCH_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", "50") or "50")
 AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTER", "AUTO").upper()  # AUTO|LOW|MEDIUM|HIGH|NONE
 
@@ -155,8 +155,8 @@ class AwsFaceRecognizer:
                 Image={"Bytes": image_bytes},
                 ExternalImageId=f"photo:{photo_id}",
                 DetectionAttributes=[],
-                QualityFilter="NONE",
-                MaxFaces=200,
+                QualityFilter="AUTO",
+                MaxFaces=50,
             )
             face_ids: List[str] = []
             for rec in (resp.get('FaceRecords') or []):
@@ -446,8 +446,8 @@ class AwsFaceRecognizer:
                 CollectionId=self._collection_id(event_id),
                 Image={"Bytes": image_bytes},
                 MaxFaces=AWS_SEARCH_MAXFACES,
-                FaceMatchThreshold=max(30.0, AWS_SEARCH_THRESHOLD),
-                QualityFilter="NONE",
+                FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                QualityFilter=AWS_SEARCH_QUALITY_FILTER,
             )
         except ClientError as e:
             print(f"❌ Erreur AWS SearchFacesByImage (selfie->photo): {e}")
@@ -575,7 +575,7 @@ class AwsFaceRecognizer:
                         CollectionId=self._collection_id(event_id),
                         FaceId=fid,
                         MaxFaces=AWS_SEARCH_MAXFACES,
-                        FaceMatchThreshold=max(30.0, AWS_SEARCH_THRESHOLD),
+                        FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
                     )
                 except ClientError as e:
                     print(f"❌ AWS SearchFaces (photoFace->{photo.id}): {e}")
@@ -630,6 +630,7 @@ class AwsFaceRecognizer:
         # Indexer les faces de la photo et rechercher des correspondances côté utilisateurs
         image_bytes = optimization_result['compressed_data']
         self.ensure_collection(event_id)
+        # IMPORTANT: indexer aussi les selfies des users de l'événement avant de matcher
         self.ensure_event_users_indexed(event_id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
         user_best: Dict[int, int] = {}
