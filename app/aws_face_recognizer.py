@@ -433,12 +433,7 @@ class AwsFaceRecognizer:
         if not image_bytes:
             return 0
 
-        # Supprimer anciens FaceMatch pour cet utilisateur dans cet événement
-        photo_ids = [p.id for p in db.query(Photo).filter(Photo.event_id == event_id).all()]
-        if photo_ids:
-            from sqlalchemy import and_ as _and
-            db.query(FaceMatch).filter(_and(FaceMatch.user_id == user.id, FaceMatch.photo_id.in_(photo_ids))).delete(synchronize_session=False)
-            db.commit()
+        # Ne pas supprimer les anciens FaceMatch; on ne fait qu'ajouter les nouveaux afin de préserver l'historique
 
         # Chercher les faces photo qui matchent le selfie
         try:

@@ -1718,24 +1718,8 @@ async def upload_photos_to_event(
             if os.path.exists(temp_path):
                 os.remove(temp_path)
     
-    # Après upload: relancer le matching à partir des selfies pour TOUS les users de l'événement
-    try:
-        from sqlalchemy import or_ as _or
-        user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
-        user_ids = [ue.user_id for ue in user_events]
-        users_with_selfies = db.query(User).filter(
-            User.id.in_(user_ids),
-            _or(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
-        ).all()
-        for u in users_with_selfies:
-            try:
-                # Utilise la méthode provider (AWS: search à partir du selfie) pour mettre à jour FaceMatch
-                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                    face_recognizer.match_user_selfie_with_photos_event(u, event_id, db)
-            except Exception as e:
-                print(f"[UploadEvent] Matching depuis selfie échoué pour user_id={u.id}: {e}")
-    except Exception as e:
-        print(f"[UploadEvent] Erreur lors du matching depuis selfies: {e}")
+    # Après upload: inutile de relancer un matching global qui pourrait écraser l'existant.
+    # Le process d'upload gère déjà l'indexation et le matching pour les nouvelles photos.
 
     return {
         "message": f"{len(uploaded_photos)} photos uploadées et traitées avec succès",
