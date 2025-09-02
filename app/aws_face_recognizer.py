@@ -1,5 +1,7 @@
 import os
+import time
 from typing import List, Dict, Optional, Set, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
 from botocore.exceptions import ClientError
@@ -26,6 +28,11 @@ AWS_DETECT_MIN_CONF = float(os.environ.get("AWS_REKOGNITION_DETECT_MIN_CONF", "7
 AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "2048") or "2048")
 AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.2") or "0.2")  # 20% padding
 AWS_MIN_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_CROP_SIDE", "36") or "36")
+
+# Parallélisation bornée (bornes codées simplement; pas d'arrière-plan)
+MAX_PARALLEL_PER_REQUEST = 4
+AWS_MAX_RETRIES = 2
+AWS_BACKOFF_BASE_SEC = 0.2
 
 
 class AwsFaceRecognizer:
@@ -347,6 +354,58 @@ class AwsFaceRecognizer:
             print(f"⚠️  Crop error: {e}")
         return crops
 
+    # ---------- Helpers AWS avec retry ----------
+    def _search_faces_retry(self, collection_id: str, face_id: str):
+        last_exc = None
+        for attempt in range(AWS_MAX_RETRIES + 1):
+            try:
+                return self.client.search_faces(
+                    CollectionId=collection_id,
+                    FaceId=face_id,
+                    MaxFaces=AWS_SEARCH_MAXFACES,
+                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                )
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "")
+                if "Throttl" in code or code in {"ProvisionedThroughputExceededException"}:
+                    time.sleep(AWS_BACKOFF_BASE_SEC * (2 ** attempt))
+                    last_exc = e
+                    continue
+                last_exc = e
+                break
+            except Exception as e:
+                last_exc = e
+                break
+        if last_exc:
+            print(f"⚠️  search_faces retry failed: {last_exc}")
+        return None
+
+    def _search_faces_by_image_retry(self, collection_id: str, image_bytes: bytes):
+        last_exc = None
+        for attempt in range(AWS_MAX_RETRIES + 1):
+            try:
+                return self.client.search_faces_by_image(
+                    CollectionId=collection_id,
+                    Image={"Bytes": image_bytes},
+                    MaxFaces=AWS_SEARCH_MAXFACES,
+                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+                )
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "")
+                if "Throttl" in code or code in {"ProvisionedThroughputExceededException"}:
+                    time.sleep(AWS_BACKOFF_BASE_SEC * (2 ** attempt))
+                    last_exc = e
+                    continue
+                last_exc = e
+                break
+            except Exception as e:
+                last_exc = e
+                break
+        if last_exc:
+            print(f"⚠️  search_faces_by_image retry failed: {last_exc}")
+        return None
+
     def process_photo_for_event(self, photo_input, event_id: int, db: Session) -> List[Dict]:
         """Multi-visages: DetectFaces -> crops -> SearchFacesByImage pour chaque visage.
 
@@ -399,29 +458,25 @@ class AwsFaceRecognizer:
         print(f"[AWS] Crops to search: {len(crops)}")
 
         user_best: Dict[int, float] = {}
-        for i, crop_bytes in enumerate(crops):
-            try:
-                resp = self.client.search_faces_by_image(
-                    CollectionId=self._collection_id(event_id),
-                    Image={"Bytes": crop_bytes},
-                    MaxFaces=AWS_SEARCH_MAXFACES,
-                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
-                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
-                )
-            except ClientError as e:
-                print(f"❌ Erreur AWS SearchFacesByImage (crop #{i}): {e}")
-                continue
-            for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
-                ext_id = fm.get("Face", {}).get("ExternalImageId")
-                similarity = float(fm.get("Similarity", 0.0))
-                try:
-                    user_id = int(ext_id) if ext_id is not None else None
-                except Exception:
-                    user_id = None
-                if user_id is None or user_id not in allowed_user_ids:
-                    continue
-                if (user_id not in user_best) or (similarity > user_best[user_id]):
-                    user_best[user_id] = similarity
+        if crops:
+            coll_id = self._collection_id(event_id)
+            with ThreadPoolExecutor(max_workers=MAX_PARALLEL_PER_REQUEST) as ex:
+                futures = {ex.submit(self._search_faces_by_image_retry, coll_id, crop_bytes): idx for idx, crop_bytes in enumerate(crops)}
+                for fut in as_completed(futures):
+                    resp = fut.result()
+                    if not resp:
+                        continue
+                    for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                        ext_id = fm.get("Face", {}).get("ExternalImageId")
+                        similarity = float(fm.get("Similarity", 0.0))
+                        try:
+                            user_id = int(ext_id) if ext_id is not None else None
+                        except Exception:
+                            user_id = None
+                        if user_id is None or user_id not in allowed_user_ids:
+                            continue
+                        if (user_id not in user_best) or (similarity > user_best[user_id]):
+                            user_best[user_id] = similarity
 
         results: List[Dict] = [{"user_id": uid, "confidence_score": int(round(sim))} for uid, sim in user_best.items()]
         return results
@@ -662,16 +717,7 @@ class AwsFaceRecognizer:
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
         if not face_ids:
             # Si aucun visage détecté/indexé, tenter une recherche directe par image complète (fallback)
-            try:
-                resp = self.client.search_faces_by_image(
-                    CollectionId=self._collection_id(event_id),
-                    Image={"Bytes": image_bytes},
-                    MaxFaces=AWS_SEARCH_MAXFACES,
-                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
-                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
-                )
-            except ClientError as e:
-                resp = None
+            resp = self._search_faces_by_image_retry(self._collection_id(event_id), image_bytes)
             if resp:
                 for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
                     ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
@@ -686,29 +732,26 @@ class AwsFaceRecognizer:
                     if prev is None or sim > prev:
                         user_best[uid] = sim
         user_best: Dict[int, int] = {}
-        for fid in face_ids:
-            try:
-                resp = self.client.search_faces(
-                    CollectionId=self._collection_id(event_id),
-                    FaceId=fid,
-                    MaxFaces=AWS_SEARCH_MAXFACES,
-                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
-                )
-            except ClientError as e:
-                print(f"❌ AWS SearchFaces (photoFace->{photo.id}): {e}")
-                continue
-            for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
-                ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
-                if not (ext.startswith("user:") or ext.isdigit()):
-                    continue
-                try:
-                    uid = int(ext.split(":", 1)[1]) if ext.startswith("user:") else int(ext)
-                except Exception:
-                    continue
-                sim = int(float(fm.get("Similarity", 0.0)))
-                prev = user_best.get(uid)
-                if prev is None or sim > prev:
-                    user_best[uid] = sim
+        if face_ids:
+            coll_id = self._collection_id(event_id)
+            with ThreadPoolExecutor(max_workers=MAX_PARALLEL_PER_REQUEST) as ex:
+                futures = {ex.submit(self._search_faces_retry, coll_id, fid): fid for fid in face_ids}
+                for fut in as_completed(futures):
+                    resp = fut.result()
+                    if not resp:
+                        continue
+                    for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                        ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
+                        if not (ext.startswith("user:") or ext.isdigit()):
+                            continue
+                        try:
+                            uid = int(ext.split(":", 1)[1]) if ext.startswith("user:") else int(ext)
+                        except Exception:
+                            continue
+                        sim = int(float(fm.get("Similarity", 0.0)))
+                        prev = user_best.get(uid)
+                        if prev is None or sim > prev:
+                            user_best[uid] = sim
         allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
         for uid, score in user_best.items():
             if uid in allowed_user_ids:
