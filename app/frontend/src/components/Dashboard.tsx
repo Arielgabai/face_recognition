@@ -380,6 +380,13 @@ const Dashboard: React.FC = () => {
     loadDashboardData();
   };
 
+  // Attendre que le rechargement des données soit terminé avant de stopper le spinner du selfie
+  const loadDashboardDataAndWait = async () => {
+    await loadDashboardData();
+    // Petit délai pour laisser React peindre la galerie
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  };
+
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
@@ -470,7 +477,7 @@ const Dashboard: React.FC = () => {
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
-          <SelfieUpload onSuccess={loadDashboardData} />
+          <SelfieUpload onSuccess={loadDashboardDataAndWait} />
         </TabPanel>
 
         {user?.user_type === 'photographer' && (
