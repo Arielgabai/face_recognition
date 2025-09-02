@@ -380,11 +380,72 @@ const Dashboard: React.FC = () => {
     loadDashboardData();
   };
 
-  // Attendre que le rechargement des données soit terminé avant de stopper le spinner du selfie
-  const loadDashboardDataAndWait = async () => {
-    await loadDashboardData();
-    // Petit délai pour laisser React peindre la galerie
-    await new Promise((resolve) => setTimeout(resolve, 300));
+  // Précharger une liste d'URLs d'images et résoudre uniquement quand tout est chargé (ou timeout)
+  const preloadImages = (urls: string[], timeoutMs = 20000): Promise<void> => {
+    return new Promise((resolve) => {
+      try {
+        if (!urls || urls.length === 0) { resolve(); return; }
+        let remaining = urls.length;
+        let done = false;
+        const finish = () => {
+          if (!done) { done = true; resolve(); }
+        };
+        const onSettled = () => { remaining -= 1; if (remaining <= 0) finish(); };
+        urls.forEach((u) => {
+          const img = new Image();
+          img.onload = onSettled;
+          img.onerror = onSettled;
+          // Empêcher le cache agressif
+          const bust = `${u}${u.includes('?') ? '&' : '?'}t=${Date.now()}`;
+          img.src = bust;
+        });
+        setTimeout(finish, timeoutMs);
+      } catch {
+        resolve();
+      }
+    });
+  };
+
+  // Recharge les données et attend que les images de la galerie soient prêtes avant de retirer le spinner
+  const reloadDashboardAndWaitForImages = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      if (user?.user_type === 'user' && currentEventId) {
+        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
+          photoService.getProfile(),
+          photoService.getUserEventPhotos(currentEventId),
+          photoService.getAllEventPhotos(currentEventId),
+        ]);
+        setProfile(profileData.data);
+        setMyPhotos(myPhotosData.data);
+        setAllPhotos(allPhotosData.data);
+        // Précharger les images clés du tableau de bord
+        const myUrls = myPhotosData.data.map((p: any) => photoService.getImage(p.filename));
+        const allUrls = allPhotosData.data.map((p: any) => photoService.getImage(p.filename));
+        await preloadImages([...myUrls, ...allUrls]);
+      } else {
+        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
+          photoService.getProfile(),
+          photoService.getMyPhotos(),
+          photoService.getAllPhotos(),
+        ]);
+        setProfile(profileData.data);
+        setMyPhotos(myPhotosData.data);
+        setAllPhotos(allPhotosData.data);
+        const myUrls = myPhotosData.data.map((p: any) => photoService.getImage(p.filename));
+        const allUrls = allPhotosData.data.map((p: any) => photoService.getImage(p.filename));
+        await preloadImages([...myUrls, ...allUrls]);
+      }
+
+      // Laisser un tout petit délai de paint pour "placer" les images
+      await new Promise((r) => setTimeout(r, 150));
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Erreur lors du chargement des données');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -477,7 +538,7 @@ const Dashboard: React.FC = () => {
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
-          <SelfieUpload onSuccess={loadDashboardDataAndWait} />
+          <SelfieUpload onSuccess={reloadDashboardAndWaitForImages} />
         </TabPanel>
 
         {user?.user_type === 'photographer' && (

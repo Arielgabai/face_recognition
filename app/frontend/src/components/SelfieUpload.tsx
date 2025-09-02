@@ -54,7 +54,7 @@ const SelfieUpload: React.FC<SelfieUploadProps> = ({ onSuccess }) => {
 
     try {
       await photoService.uploadSelfie(selectedFile);
-      setSuccess('Selfie uploadé avec succès !');
+      setSuccess('Selfie et photos mis à jour avec succès !');
       setSelectedFile(null);
       setPreview(null);
       // Attendre que le parent recharge les photos (Vos photos) avant d'arrêter le spinner
