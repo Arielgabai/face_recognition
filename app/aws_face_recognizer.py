@@ -203,9 +203,12 @@ class AwsFaceRecognizer:
         for u in users_with_selfies:
             self.index_user_selfie(event_id, u)
 
-        # Nettoyer la collection des visages orphelins (ExternalImageId ne correspondant plus aux users de l'événement)
+        # Nettoyer la collection des visages orphelins: 
+        # - Conserver toutes les faces "photo:{photo_id}" (appartiennent à l'événement)
+        # - Conserver les faces des users de l'événement sous formes "user:{id}" ou legacy "{id}"
+        # - Supprimer uniquement les faces "user:*" dont l'id n'est pas dans la liste des users de l'événement
         try:
-            allowed_external_ids = set(str(uid) for uid in user_ids)
+            allowed_user_ids = set(str(uid) for uid in user_ids)
             coll_id = self._collection_id(event_id)
             next_token = None
             while True:
@@ -215,11 +218,27 @@ class AwsFaceRecognizer:
                 faces = self.client.list_faces(**kwargs)
                 stale_face_ids = []
                 for f in faces.get('Faces', []) or []:
-                    ext = f.get('ExternalImageId')
+                    ext = (f.get('ExternalImageId') or "").strip()
                     face_id = f.get('FaceId')
-                    if ext is None or ext not in allowed_external_ids:
-                        if face_id:
-                            stale_face_ids.append(face_id)
+                    if ext.startswith('photo:'):
+                        continue  # ne pas supprimer les faces des photos ici
+                    if ext.startswith('user:'):
+                        try:
+                            uid = ext.split(':', 1)[1]
+                        except Exception:
+                            uid = None
+                        if not uid or uid not in allowed_user_ids:
+                            if face_id:
+                                stale_face_ids.append(face_id)
+                    else:
+                        # legacy: ext est un id numérique
+                        if ext and ext.isdigit():
+                            if ext not in allowed_user_ids and face_id:
+                                stale_face_ids.append(face_id)
+                        else:
+                            # ext inconnu -> supprimer prudemment
+                            if face_id:
+                                stale_face_ids.append(face_id)
                 if stale_face_ids:
                     try:
                         self.client.delete_faces(CollectionId=coll_id, FaceIds=stale_face_ids)
@@ -641,6 +660,31 @@ class AwsFaceRecognizer:
         # IMPORTANT: indexer aussi les selfies des users de l'événement avant de matcher
         self.ensure_event_users_indexed(event_id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+        if not face_ids:
+            # Si aucun visage détecté/indexé, tenter une recherche directe par image complète (fallback)
+            try:
+                resp = self.client.search_faces_by_image(
+                    CollectionId=self._collection_id(event_id),
+                    Image={"Bytes": image_bytes},
+                    MaxFaces=AWS_SEARCH_MAXFACES,
+                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+                )
+            except ClientError as e:
+                resp = None
+            if resp:
+                for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                    ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
+                    if not (ext.startswith("user:") or ext.isdigit()):
+                        continue
+                    try:
+                        uid = int(ext.split(":", 1)[1]) if ext.startswith("user:") else int(ext)
+                    except Exception:
+                        continue
+                    sim = int(float(fm.get("Similarity", 0.0)))
+                    prev = user_best.get(uid)
+                    if prev is None or sim > prev:
+                        user_best[uid] = sim
         user_best: Dict[int, int] = {}
         for fid in face_ids:
             try:
