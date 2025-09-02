@@ -15,7 +15,7 @@ AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")  # Ireland (Rekognition s
 COLL_PREFIX = os.environ.get("AWS_REKOGNITION_COLLECTION_PREFIX", "event_")
 
 # Recherche
-AWS_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SEARCH_MAXFACES", "10") or "10")
+AWS_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SEARCH_MAXFACES", "100") or "100")
 AWS_SEARCH_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", "50") or "50")
 AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTER", "AUTO").upper()  # AUTO|LOW|MEDIUM|HIGH|NONE
 
@@ -32,8 +32,11 @@ class AwsFaceRecognizer:
     """
     Provider basé sur AWS Rekognition Collections.
     - 1 collection par événement: f"{COLL_PREFIX}{event_id}"
-    - Chaque utilisateur (selfie) est indexé avec l'ExternalImageId = user_id
-    - Matching par SearchFacesByImage
+    - Chaque utilisateur (selfie) est indexé avec ExternalImageId = "user:{user_id}"
+    - Chaque visage de photo est indexé avec ExternalImageId = "photo:{photo_id}"
+    - Matching inversé: 
+      * lors d'une modif selfie: SearchFacesByImage(selfie) => ExternalImageId "photo:{photo_id}" => FaceMatch
+      * lors d'un upload photo: IndexFaces(photo) => FaceId => SearchFaces(FaceId) => ExternalImageId "user:{user_id}" => FaceMatch
     """
 
     def __init__(self):
@@ -86,7 +89,9 @@ class AwsFaceRecognizer:
                     kwargs["NextToken"] = next_token
                 faces = self.client.list_faces(**kwargs)
                 for f in faces.get('Faces', []):
-                    if f.get('ExternalImageId') == str(user.id):
+                    # Ancien schéma (str(user.id)) et nouveau (user:{id})
+                    ext = f.get('ExternalImageId')
+                    if ext == str(user.id) or ext == f"user:{user.id}":
                         try:
                             self.client.delete_faces(CollectionId=coll_id, FaceIds=[f.get('FaceId')])
                         except ClientError:
@@ -103,7 +108,7 @@ class AwsFaceRecognizer:
             self.client.index_faces(
                 CollectionId=coll_id,
                 Image={"Bytes": image_bytes},
-                ExternalImageId=str(user.id),
+                ExternalImageId=f"user:{user.id}",
                 DetectionAttributes=[],
                 QualityFilter="AUTO",
                 MaxFaces=1,
@@ -111,6 +116,57 @@ class AwsFaceRecognizer:
         except ClientError:
             # Si l'indexation échoue, on laisse la fonction silencieuse pour ne pas interrompre le flux
             pass
+
+    def _delete_photo_faces(self, event_id: int, photo_id: int):
+        coll_id = self._collection_id(event_id)
+        try:
+            next_token = None
+            while True:
+                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
+                if next_token:
+                    kwargs["NextToken"] = next_token
+                faces = self.client.list_faces(**kwargs)
+                to_delete = []
+                for f in faces.get('Faces', []) or []:
+                    if f.get('ExternalImageId') == f"photo:{photo_id}":
+                        fid = f.get('FaceId')
+                        if fid:
+                            to_delete.append(fid)
+                if to_delete:
+                    try:
+                        self.client.delete_faces(CollectionId=coll_id, FaceIds=to_delete)
+                    except ClientError:
+                        pass
+                next_token = faces.get("NextToken")
+                if not next_token:
+                    break
+        except ClientError:
+            pass
+
+    def _index_photo_faces_and_get_ids(self, event_id: int, photo_id: int, image_bytes: bytes) -> List[str]:
+        """Indexe les visages d'une photo et retourne la liste des FaceId créés."""
+        coll_id = self._collection_id(event_id)
+        # Nettoyer d'abord d'anciens visages pour ce photo_id
+        self._delete_photo_faces(event_id, photo_id)
+        try:
+            resp = self.client.index_faces(
+                CollectionId=coll_id,
+                Image={"Bytes": image_bytes},
+                ExternalImageId=f"photo:{photo_id}",
+                DetectionAttributes=[],
+                QualityFilter="AUTO",
+                MaxFaces=50,
+            )
+            face_ids: List[str] = []
+            for rec in (resp.get('FaceRecords') or []):
+                face = rec.get('Face') or {}
+                fid = face.get('FaceId')
+                if fid:
+                    face_ids.append(fid)
+            return face_ids
+        except ClientError as e:
+            print(f"❌ AWS IndexFaces error for photo {photo_id}: {e}")
+            return []
 
     def ensure_event_users_indexed(self, event_id: int, db: Session):
         """
@@ -335,20 +391,75 @@ class AwsFaceRecognizer:
         return results
 
     def match_user_selfie_with_photos_event(self, user: User, event_id: int, db: Session) -> int:
+        """Matching inversé: recherche des faces de photos à partir du selfie (1 seul appel image).
+
+        1) Indexer/mettre à jour le selfie (ExternalImageId=user:{id})
+        2) SearchFacesByImage(selfie) sur la collection de l'événement
+        3) Filtrer les matches "photo:{photo_id}" et créer FaceMatch en bulk
+        """
         self.ensure_collection(event_id)
         self.index_user_selfie(event_id, user)
 
-        photos = db.query(Photo).filter(Photo.event_id == event_id).all()
-        count_matches = 0
-        for p in photos:
-            photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
-            if not photo_input:
+        # Charger les octets du selfie
+        image_bytes: Optional[bytes] = None
+        if getattr(user, "selfie_path", None) and os.path.exists(user.selfie_path):
+            try:
+                with open(user.selfie_path, "rb") as f:
+                    image_bytes = f.read()
+            except Exception:
+                image_bytes = None
+        elif getattr(user, "selfie_data", None):
+            try:
+                image_bytes = bytes(user.selfie_data)
+            except Exception:
+                image_bytes = None
+        if not image_bytes:
+            return 0
+
+        # Supprimer anciens FaceMatch pour cet utilisateur dans cet événement
+        photo_ids = [p.id for p in db.query(Photo).filter(Photo.event_id == event_id).all()]
+        if photo_ids:
+            from sqlalchemy import and_ as _and
+            db.query(FaceMatch).filter(_and(FaceMatch.user_id == user.id, FaceMatch.photo_id.in_(photo_ids))).delete(synchronize_session=False)
+            db.commit()
+
+        # Chercher les faces photo qui matchent le selfie
+        try:
+            resp = self.client.search_faces_by_image(
+                CollectionId=self._collection_id(event_id),
+                Image={"Bytes": image_bytes},
+                MaxFaces=AWS_SEARCH_MAXFACES,
+                FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+            )
+        except ClientError as e:
+            print(f"❌ Erreur AWS SearchFacesByImage (selfie->photo): {e}")
+            return 0
+
+        # Extraire les photo_id à partir des ExternalImageId "photo:{photo_id}"
+        matched_photo_ids: Dict[int, int] = {}
+        for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+            face = fm.get("Face") or {}
+            ext = face.get("ExternalImageId") or ""
+            if not ext.startswith("photo:"):
                 continue
-            matches = self.process_photo_for_event(photo_input, event_id, db)
-            for m in matches:
-                if m.get("user_id") == user.id:
-                    db.add(FaceMatch(photo_id=p.id, user_id=user.id, confidence_score=int(m.get("confidence_score", 0))))
-                    count_matches += 1
+            try:
+                pid = int(ext.split(":", 1)[1])
+            except Exception:
+                continue
+            similarity = int(float(fm.get("Similarity", 0.0)))
+            # Garder le meilleur score par photo
+            prev = matched_photo_ids.get(pid)
+            if prev is None or similarity > prev:
+                matched_photo_ids[pid] = similarity
+
+        # Créer des FaceMatch en bulk
+        from sqlalchemy import and_ as _and
+        allowed_ids = set(pid for (pid,) in db.query(Photo.id).filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys()))).all())
+        count_matches = 0
+        for pid in allowed_ids:
+            db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=int(matched_photo_ids.get(pid) or 0)))
+            count_matches += 1
         db.commit()
         return count_matches
 
@@ -405,12 +516,40 @@ class AwsFaceRecognizer:
         db.commit()
         db.refresh(photo)
         if event_id:
-            matches = self.process_photo_for_event(optimization_result['compressed_data'], event_id, db)
-            allowed_ids = self._get_allowed_event_user_ids(event_id, db)
-            for match in matches:
-                uid = int(match.get('user_id')) if match.get('user_id') is not None else None
-                if uid in allowed_ids:
-                    db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(match['confidence_score'])))
+            # Indexer les faces de la photo et rechercher des correspondances côté utilisateurs (selfies)
+            image_bytes = optimization_result['compressed_data']
+            self.ensure_collection(event_id)
+            self.ensure_event_users_indexed(event_id, db)
+            face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+            # Pour chaque FaceId indexé, rechercher des selfies correspondants (ExternalImageId user:{user_id})
+            user_best: Dict[int, int] = {}
+            for fid in face_ids:
+                try:
+                    resp = self.client.search_faces(
+                        CollectionId=self._collection_id(event_id),
+                        FaceId=fid,
+                        MaxFaces=AWS_SEARCH_MAXFACES,
+                        FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    )
+                except ClientError as e:
+                    print(f"❌ AWS SearchFaces (photoFace->{photo.id}): {e}")
+                    continue
+                for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                    ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
+                    if not (ext.startswith("user:") or ext.isdigit()):
+                        continue
+                    try:
+                        uid = int(ext.split(":", 1)[1]) if ext.startswith("user:") else int(ext)
+                    except Exception:
+                        continue
+                    sim = int(float(fm.get("Similarity", 0.0)))
+                    prev = user_best.get(uid)
+                    if prev is None or sim > prev:
+                        user_best[uid] = sim
+            allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
+            for uid, score in user_best.items():
+                if uid in allowed_user_ids:
+                    db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
             db.commit()
         return photo
 
@@ -442,13 +581,39 @@ class AwsFaceRecognizer:
         db.add(photo)
         db.commit()
         db.refresh(photo)
-        matches = self.process_photo_for_event(optimization_result['compressed_data'], event_id, db)
-        # Filtrer par utilisateurs existants de l'événement pour éviter les FK errors
-        allowed_ids = self._get_allowed_event_user_ids(event_id, db)
-        for match in matches:
-            uid = int(match.get('user_id')) if match.get('user_id') is not None else None
-            if uid in allowed_ids:
-                db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(match['confidence_score'])))
+        # Indexer les faces de la photo et rechercher des correspondances côté utilisateurs
+        image_bytes = optimization_result['compressed_data']
+        self.ensure_collection(event_id)
+        self.ensure_event_users_indexed(event_id, db)
+        face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+        user_best: Dict[int, int] = {}
+        for fid in face_ids:
+            try:
+                resp = self.client.search_faces(
+                    CollectionId=self._collection_id(event_id),
+                    FaceId=fid,
+                    MaxFaces=AWS_SEARCH_MAXFACES,
+                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                )
+            except ClientError as e:
+                print(f"❌ AWS SearchFaces (photoFace->{photo.id}): {e}")
+                continue
+            for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
+                if not (ext.startswith("user:") or ext.isdigit()):
+                    continue
+                try:
+                    uid = int(ext.split(":", 1)[1]) if ext.startswith("user:") else int(ext)
+                except Exception:
+                    continue
+                sim = int(float(fm.get("Similarity", 0.0)))
+                prev = user_best.get(uid)
+                if prev is None or sim > prev:
+                    user_best[uid] = sim
+        allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
+        for uid, score in user_best.items():
+            if uid in allowed_user_ids:
+                db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
         db.commit()
         return photo
 
