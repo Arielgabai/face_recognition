@@ -341,6 +341,9 @@
                     <div class="loading" id="uploadLoading">
                         <div class="spinner"></div>
                         <p>Téléchargement en cours...</p>
+                        <p id="uploadProgress" style="margin-top:8px; color:#666; display:none;">
+                            Traitement: <span id="processedCount">0</span>/<span id="totalCount">0</span>
+                        </p>
                     </div>
                 </div>
             </div>
@@ -861,6 +864,15 @@
             }
 
             document.getElementById('uploadLoading').style.display = 'block';
+            // Initialiser la progression
+            const progressEl = document.getElementById('uploadProgress');
+            const processedEl = document.getElementById('processedCount');
+            const totalEl = document.getElementById('totalCount');
+            if (progressEl && processedEl && totalEl) {
+                progressEl.style.display = 'block';
+                processedEl.textContent = '0';
+                totalEl.textContent = String(files.length);
+            }
             document.getElementById('uploadPreview').style.display = 'none';
 
             // Environnement d'hébergement: limiter la taille par requête pour éviter les erreurs 413/timeouts
@@ -925,6 +937,8 @@
             if (currentBatch.length) {
                 const r = await sendBatch(currentBatch);
                 if (r.ok) uploadedCount += r.count; else failedCount += currentBatch.length;
+                if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
+                if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
             }
 
             if (uploadedCount > 0) {
@@ -937,6 +951,7 @@
             }
 
             document.getElementById('uploadLoading').style.display = 'none';
+            if (progressEl) progressEl.style.display = 'none';
         }
 
         function showTab(tabName) {
