@@ -1005,27 +1005,27 @@ async def upload_multiple_photos(
     from aws_metrics import aws_metrics
     with aws_metrics.action_context(f"upload_event:{event_id}"):
         for file in files:
-        if not file.content_type.startswith("image/"):
-            continue  # Ignorer les fichiers non-images
-        
-        # Sauvegarder temporairement le fichier
-        temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        try:
-            # Traiter la photo avec reconnaissance faciale
-            photo = face_recognizer.process_and_save_photo(
-                temp_path, file.filename, current_user.id, db
-            )
-            uploaded_photos.append({
-                "filename": photo.filename,
-                "original_filename": photo.original_filename
-            })
-        finally:
-            # Nettoyer le fichier temporaire
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+            if not file.content_type.startswith("image/"):
+                continue  # Ignorer les fichiers non-images
+            
+            # Sauvegarder temporairement le fichier
+            temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            try:
+                # Traiter la photo avec reconnaissance faciale
+                photo = face_recognizer.process_and_save_photo(
+                    temp_path, file.filename, current_user.id, db
+                )
+                uploaded_photos.append({
+                    "filename": photo.filename,
+                    "original_filename": photo.original_filename
+                })
+            finally:
+                # Nettoyer le fichier temporaire
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
     
     return {
         "message": f"{len(uploaded_photos)} photos upload+�es et trait+�es avec succ+�s",
