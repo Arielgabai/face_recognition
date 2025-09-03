@@ -18,6 +18,8 @@ COLL_PREFIX = os.environ.get("AWS_REKOGNITION_COLLECTION_PREFIX", "event_")
 
 # Recherche
 AWS_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SEARCH_MAXFACES", "10") or "10")
+# Spécifique recherche depuis selfie: besoin de récupérer potentiellement des dizaines/centaines de visages
+AWS_SELFIE_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SELFIE_SEARCH_MAXFACES", "500") or "500")
 AWS_SEARCH_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", "50") or "50")
 AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTER", "AUTO").upper()  # AUTO|LOW|MEDIUM|HIGH|NONE
 
@@ -514,7 +516,7 @@ class AwsFaceRecognizer:
             resp = self.client.search_faces_by_image(
                 CollectionId=self._collection_id(event_id),
                 Image={"Bytes": image_bytes},
-                MaxFaces=AWS_SEARCH_MAXFACES,
+                MaxFaces=AWS_SELFIE_SEARCH_MAXFACES,
                 FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
                 QualityFilter=AWS_SEARCH_QUALITY_FILTER,
             )
