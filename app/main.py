@@ -1714,31 +1714,34 @@ async def upload_photos_to_event(
     
     uploaded_photos = []
     
-    # Traiter séquentiellement pour limiter la mémoire (le client enverra par batch)
-    for file in files:
-        if not file.content_type.startswith("image/"):
-            continue
-        
-        # Sauvegarder temporairement le fichier
-        temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        try:
-            # Traiter la photo avec reconnaissance faciale pour l'événement spécifique
-            photo = face_recognizer.process_and_save_photo_for_event(
-                temp_path, file.filename, current_user.id, event_id, db
-            )
-            uploaded_photos.append({
-                "filename": photo.filename,
-                "original_filename": photo.original_filename
-            })
-        except Exception as e:
-            # Ne pas interrompre tout le batch si une photo échoue (ex: FK sur user inexistant)
-            print(f"[UploadEvent] Erreur traitement {file.filename}: {e}")
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+    # Traquer l'action d'upload par événement (pour l'affichage des coûts)
+    from aws_metrics import aws_metrics
+    with aws_metrics.action_context(f"upload_event:{event_id}"):
+        # Traiter séquentiellement pour limiter la mémoire (le client enverra par batch)
+        for file in files:
+            if not file.content_type.startswith("image/"):
+                continue
+            
+            # Sauvegarder temporairement le fichier
+            temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            try:
+                # Traiter la photo avec reconnaissance faciale pour l'événement spécifique
+                photo = face_recognizer.process_and_save_photo_for_event(
+                    temp_path, file.filename, current_user.id, event_id, db
+                )
+                uploaded_photos.append({
+                    "filename": photo.filename,
+                    "original_filename": photo.original_filename
+                })
+            except Exception as e:
+                # Ne pas interrompre tout le batch si une photo échoue (ex: FK sur user inexistant)
+                print(f"[UploadEvent] Erreur traitement {file.filename}: {e}")
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
     
     # Après upload: inutile de relancer un matching global qui pourrait écraser l'existant.
     # Le process d'upload gère déjà l'indexation et le matching pour les nouvelles photos.
