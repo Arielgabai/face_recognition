@@ -609,49 +609,7 @@
                                 </tr>\n\
                             </tbody>\n\
                         </table>`;
-                    // Per-action breakdown (agrégé)
-                    const UNIT = { IndexFaces: 0.001, SearchFaces: 0.001, SearchFacesByImage: 0.001, DetectFaces: 0.001 };
-                    const actionKeys = Object.keys(actions).sort();
-                    let actionRows = '';
-                    if (actionKeys.length === 0) {
-                        actionRows = '<tr><td colspan="6" style="color:#666; text-align:center;">Aucune action tracée</td></tr>';
-                    } else {
-                        actionRows = actionKeys.map(k => {
-                            const a = actions[k] || {};
-                            const cIF = a.IndexFaces || 0;
-                            const cSF = a.SearchFaces || 0;
-                            const cSFB = a.SearchFacesByImage || 0;
-                            const cDF = a.DetectFaces || 0;
-                            const cost = (cIF*UNIT.IndexFaces) + (cSF*UNIT.SearchFaces) + (cSFB*UNIT.SearchFacesByImage) + (cDF*UNIT.DetectFaces);
-                            return `
-                                <tr>
-                                    <td>${k}</td>
-                                    <td>${cIF}</td>
-                                    <td>${cSF}</td>
-                                    <td>${cSFB}</td>
-                                    <td>${cDF}</td>
-                                    <td>$${cost.toFixed(6)}</td>
-                                </tr>
-                            `;
-                        }).join('');
-                    }
-                    html += `
-                        <h4 style=\"margin:16px 0 8px;\">Par action</h4>
-                        <table style=\"width:100%; border-collapse:collapse;\">\n\
-                            <thead>\n\
-                                <tr style=\"text-align:left; border-bottom:1px solid #eee;\">\n\
-                                    <th>Action</th>\n\
-                                    <th>IndexFaces</th>\n\
-                                    <th>SearchFaces</th>\n\
-                                    <th>SearchFacesByImage</th>\n\
-                                    <th>DetectFaces</th>\n\
-                                    <th>Coût estimé</th>\n\
-                                </tr>\n\
-                            </thead>\n\
-                            <tbody>\n\
-                                ${actionRows}\n\
-                            </tbody>\n\
-                        </table>`;
+                    // Supprime le tableau agrégé par action, on n'affiche que l'historique
                     // Action log (ligne par action avec horodatage et coût)
                     let logRows = '';
                     if (!actionLog.length) {
