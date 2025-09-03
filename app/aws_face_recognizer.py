@@ -357,14 +357,15 @@ class AwsFaceRecognizer:
         return crops
 
     # ---------- Helpers AWS avec retry ----------
-    def _search_faces_retry(self, collection_id: str, face_id: str):
+    def _search_faces_retry(self, collection_id: str, face_id: str, max_faces: Optional[int] = None):
         last_exc = None
+        mf = int(max_faces or AWS_SEARCH_MAXFACES)
         for attempt in range(AWS_MAX_RETRIES + 1):
             try:
                 return self.client.search_faces(
                     CollectionId=collection_id,
                     FaceId=face_id,
-                    MaxFaces=AWS_SEARCH_MAXFACES,
+                    MaxFaces=mf,
                     FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
                 )
             except ClientError as e:
@@ -539,7 +540,7 @@ class AwsFaceRecognizer:
         resp = None
         user_fid = self._find_user_face_id(event_id, user.id)
         if user_fid:
-            resp = self._search_faces_retry(self._collection_id(event_id), user_fid)
+            resp = self._search_faces_retry(self._collection_id(event_id), user_fid, max_faces=AWS_SELFIE_SEARCH_MAXFACES)
         if not resp:
             try:
                 resp = self.client.search_faces_by_image(
@@ -557,16 +558,17 @@ class AwsFaceRecognizer:
         matched_photo_ids: Dict[int, int] = {}
         for fm in resp.get("FaceMatches", [])[:AWS_SELFIE_SEARCH_MAXFACES]:
             face = fm.get("Face") or {}
-            ext = face.get("ExternalImageId") or ""
-            if ext.startswith("photo:"):
-                try:
-                    pid = int(ext.split(":", 1)[1])
-                except Exception:
-                    continue
-                similarity = int(float(fm.get("Similarity", 0.0)))
-                prev = matched_photo_ids.get(pid)
-                if prev is None or similarity > prev:
-                    matched_photo_ids[pid] = similarity
+            ext = (face.get("ExternalImageId") or "").strip()
+            if not ext or not ext.startswith("photo:"):
+                continue
+            try:
+                pid = int(ext.split(":", 1)[1])
+            except Exception:
+                continue
+            similarity = int(float(fm.get("Similarity", 0.0)))
+            prev = matched_photo_ids.get(pid)
+            if prev is None or similarity > prev:
+                matched_photo_ids[pid] = similarity
 
         # Créer des FaceMatch en bulk
         from sqlalchemy import and_ as _and
