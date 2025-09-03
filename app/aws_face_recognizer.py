@@ -408,6 +408,29 @@ class AwsFaceRecognizer:
             print(f"⚠️  search_faces_by_image retry failed: {last_exc}")
         return None
 
+    def _find_user_face_id(self, event_id: int, user_id: int) -> Optional[str]:
+        coll_id = self._collection_id(event_id)
+        next_token = None
+        target_exts = {str(user_id), f"user:{user_id}"}
+        try:
+            while True:
+                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
+                if next_token:
+                    kwargs["NextToken"] = next_token
+                resp = self.client.list_faces(**kwargs)
+                for f in resp.get('Faces', []) or []:
+                    ext = (f.get('ExternalImageId') or '').strip()
+                    if ext in target_exts:
+                        fid = f.get('FaceId')
+                        if fid:
+                            return fid
+                next_token = resp.get('NextToken')
+                if not next_token:
+                    break
+        except ClientError as e:
+            print(f"⚠️  list_faces error while finding user face id: {e}")
+        return None
+
     def process_photo_for_event(self, photo_input, event_id: int, db: Session) -> List[Dict]:
         """Multi-visages: DetectFaces -> crops -> SearchFacesByImage pour chaque visage.
 
@@ -512,34 +535,38 @@ class AwsFaceRecognizer:
         # Ne pas supprimer les anciens FaceMatch; on ne fait qu'ajouter les nouveaux afin de préserver l'historique
 
         # Chercher les faces photo qui matchent le selfie
-        try:
-            resp = self.client.search_faces_by_image(
-                CollectionId=self._collection_id(event_id),
-                Image={"Bytes": image_bytes},
-                MaxFaces=AWS_SELFIE_SEARCH_MAXFACES,
-                FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
-                QualityFilter=AWS_SEARCH_QUALITY_FILTER,
-            )
-        except ClientError as e:
-            print(f"❌ Erreur AWS SearchFacesByImage (selfie->photo): {e}")
-            return 0
+        # Préférence: utiliser SearchFaces avec le FaceId du selfie déjà indexé (plus robuste)
+        resp = None
+        user_fid = self._find_user_face_id(event_id, user.id)
+        if user_fid:
+            resp = self._search_faces_retry(self._collection_id(event_id), user_fid)
+        if not resp:
+            try:
+                resp = self.client.search_faces_by_image(
+                    CollectionId=self._collection_id(event_id),
+                    Image={"Bytes": image_bytes},
+                    MaxFaces=AWS_SELFIE_SEARCH_MAXFACES,
+                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+                )
+            except ClientError as e:
+                print(f"❌ Erreur AWS SearchFacesByImage (selfie->photo): {e}")
+                return 0
 
         # Extraire les photo_id à partir des ExternalImageId "photo:{photo_id}"
         matched_photo_ids: Dict[int, int] = {}
-        for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+        for fm in resp.get("FaceMatches", [])[:AWS_SELFIE_SEARCH_MAXFACES]:
             face = fm.get("Face") or {}
             ext = face.get("ExternalImageId") or ""
-            if not ext.startswith("photo:"):
-                continue
-            try:
-                pid = int(ext.split(":", 1)[1])
-            except Exception:
-                continue
-            similarity = int(float(fm.get("Similarity", 0.0)))
-            # Garder le meilleur score par photo
-            prev = matched_photo_ids.get(pid)
-            if prev is None or similarity > prev:
-                matched_photo_ids[pid] = similarity
+            if ext.startswith("photo:"):
+                try:
+                    pid = int(ext.split(":", 1)[1])
+                except Exception:
+                    continue
+                similarity = int(float(fm.get("Similarity", 0.0)))
+                prev = matched_photo_ids.get(pid)
+                if prev is None or similarity > prev:
+                    matched_photo_ids[pid] = similarity
 
         # Créer des FaceMatch en bulk
         from sqlalchemy import and_ as _and
