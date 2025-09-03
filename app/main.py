@@ -941,11 +941,21 @@ async def upload_selfie(
             total = 0
             for ue in events:
                 try:
+                    # Per-action metrics: selfie update per event
+                    try:
+                        from aws_metrics import aws_metrics as _m
+                        _m.begin_action(f"selfie_update:event:{ue.event_id}:user:{user_id}")
+                    except Exception:
+                        pass
                     # Ne pas pré-indexer systématiquement (déjà fait à l'upload). On garde la recherche selfie directe.
                     if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
                         total += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
                     else:
                         total += face_recognizer.match_user_selfie_with_photos(user, session)
+                    try:
+                        _m.end_action(f"selfie_update:event:{ue.event_id}:user:{user_id}")
+                    except Exception:
+                        pass
                 except Exception:
                     continue
             print(f"[SelfieUpdate][bg] user_id={user_id} rematch_total={total}")
@@ -1000,6 +1010,8 @@ async def upload_multiple_photos(
     
     uploaded_photos = []
     
+    from aws_metrics import aws_metrics
+    aws_metrics.begin_action(f"upload_event:{event_id}")
     for file in files:
         if not file.content_type.startswith("image/"):
             continue  # Ignorer les fichiers non-images
@@ -1739,6 +1751,7 @@ async def upload_photos_to_event(
     # Après upload: inutile de relancer un matching global qui pourrait écraser l'existant.
     # Le process d'upload gère déjà l'indexation et le matching pour les nouvelles photos.
 
+    aws_metrics.end_action(f"upload_event:{event_id}")
     return {
         "message": f"{len(uploaded_photos)} photos uploadées et traitées avec succès",
         "uploaded_photos": uploaded_photos

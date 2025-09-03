@@ -558,6 +558,7 @@
                         <div class="stat-label">Événements</div>
                     </div>
                 `;
+                try { refreshAwsUsage(); } catch (e) {}
             } catch (error) {
                 console.error('Erreur lors du chargement des stats:', error);
             }

@@ -25,6 +25,7 @@ class AwsMetrics:
     def __init__(self) -> None:
         self._lock = Lock()
         self._counts: Dict[str, int] = {}
+        self._actions: Dict[str, Dict[str, int]] = {}
         self._since_ts = time.time()
 
     def inc(self, op: str, n: int = 1) -> None:
@@ -34,6 +35,7 @@ class AwsMetrics:
     def reset(self) -> None:
         with self._lock:
             self._counts = {}
+            self._actions = {}
             self._since_ts = time.time()
 
     def snapshot(self) -> Dict:
@@ -51,7 +53,27 @@ class AwsMetrics:
                 'counts': counts,
                 'costs': costs,
                 'total_cost_usd': round(total_cost, 6),
+                'actions': self._actions,
             }
+
+    # -------- Per-action helpers --------
+    def begin_action(self, action: str) -> None:
+        with self._lock:
+            self._actions.setdefault(action, {
+                'IndexFaces': 0,
+                'SearchFaces': 0,
+                'SearchFacesByImage': 0,
+                'DetectFaces': 0,
+            })
+
+    def inc_action(self, action: str, op: str, n: int = 1) -> None:
+        with self._lock:
+            a = self._actions.setdefault(action, {})
+            a[op] = a.get(op, 0) + n
+
+    def end_action(self, action: str) -> None:
+        # No-op placeholder for future timing if needed
+        return
 
 
 aws_metrics = AwsMetrics()
