@@ -871,7 +871,6 @@
             if (progressEl && processedEl && totalEl) {
                 progressEl.style.display = 'block';
                 processedEl.textContent = '0';
-                totalEl.textContent = String(files.length);
             }
             document.getElementById('uploadPreview').style.display = 'none';
 
@@ -880,6 +879,7 @@
             const MAX_BATCH_BYTES = 20 * 1024 * 1024; // ~20MB par requête
 
             const files = Array.from(fileList).filter(f => f && f.size > 0);
+            if (totalEl) totalEl.textContent = String(files.length);
             let uploadedCount = 0;
             let failedCount = 0;
 
@@ -919,6 +919,7 @@
                     if (r.ok) uploadedCount += r.count; else failedCount += 1;
                     // Petite pause pour ne pas saturer le backend
                     await new Promise(r => setTimeout(r, 150));
+                    if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
                     continue;
                 }
                 const wouldExceed = (currentBatch.length + 1 > MAX_FILES_PER_BATCH) || (currentBytes + file.size > MAX_BATCH_BYTES);
@@ -929,6 +930,7 @@
                     currentBytes = 0;
                     // Petite pause pour laisser le serveur respirer
                     await new Promise(r => setTimeout(r, 150));
+                    if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
                 }
                 currentBatch.push(file);
                 currentBytes += file.size;
@@ -937,7 +939,6 @@
             if (currentBatch.length) {
                 const r = await sendBatch(currentBatch);
                 if (r.ok) uploadedCount += r.count; else failedCount += currentBatch.length;
-                if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
                 if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
             }
 
