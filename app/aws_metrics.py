@@ -28,6 +28,8 @@ class AwsMetrics:
         self._counts: Dict[str, int] = {}
         self._actions: Dict[str, Dict[str, int]] = {}
         self._since_ts = time.time()
+        self._action_start: Dict[str, float] = {}
+        self._action_log: list[dict] = []
         self._tls = local()
 
     def inc(self, op: str, n: int = 1) -> None:
@@ -44,6 +46,8 @@ class AwsMetrics:
             self._counts = {}
             self._actions = {}
             self._since_ts = time.time()
+            self._action_start = {}
+            self._action_log = []
 
     def snapshot(self) -> Dict:
         with self._lock:
@@ -61,6 +65,7 @@ class AwsMetrics:
                 'costs': costs,
                 'total_cost_usd': round(total_cost, 6),
                 'actions': self._actions,
+                'action_log': list(self._action_log),
             }
 
     # -------- Per-action helpers --------
@@ -72,6 +77,7 @@ class AwsMetrics:
                 'SearchFacesByImage': 0,
                 'DetectFaces': 0,
             })
+            self._action_start[action] = time.time()
 
     def inc_action(self, action: str, op: str, n: int = 1) -> None:
         with self._lock:
@@ -79,8 +85,39 @@ class AwsMetrics:
             a[op] = a.get(op, 0) + n
 
     def end_action(self, action: str) -> None:
-        # No-op placeholder for future timing if needed
-        return
+        with self._lock:
+            counts = dict(self._actions.get(action, {}))
+            cost = 0.0
+            for op, c in counts.items():
+                cost += float(c) * float(self.PRICES_USD.get(op, 0.0))
+            ts = self._action_start.get(action, time.time())
+            desc = self._describe_action(action)
+            entry = {
+                'ts': ts,
+                'action': action,
+                'description': desc,
+                'counts': counts,
+                'cost_usd': round(cost, 6),
+            }
+            self._action_log.append(entry)
+            # Optionally cap log length
+            if len(self._action_log) > 500:
+                self._action_log = self._action_log[-500:]
+
+    def _describe_action(self, action: str) -> str:
+        try:
+            if action.startswith('upload_event:'):
+                eid = action.split(':', 1)[1]
+                return f"Upload de photos (événement {eid})"
+            if action.startswith('selfie_update:event:'):
+                parts = action.split(':')
+                # selfie_update:event:{event_id}:user:{user_id}
+                ev = parts[2] if len(parts) > 2 else '?'
+                uid = parts[4] if len(parts) > 4 else '?'
+                return f"Mise à jour du selfie (user {uid}, événement {ev})"
+        except Exception:
+            pass
+        return action
 
     @contextmanager
     def action_context(self, action: str):

@@ -573,6 +573,7 @@
                 const counts = data.counts || {};
                 const costs = data.costs || {};
                 const actions = data.actions || {};
+                const actionLog = data.action_log || [];
                 let rows = '';
                 const ops = Object.keys(counts).sort();
                 if (ops.length === 0) {
@@ -608,7 +609,7 @@
                                 </tr>\n\
                             </tbody>\n\
                         </table>`;
-                    // Per-action breakdown
+                    // Per-action breakdown (agrégé)
                     const UNIT = { IndexFaces: 0.001, SearchFaces: 0.001, SearchFacesByImage: 0.001, DetectFaces: 0.001 };
                     const actionKeys = Object.keys(actions).sort();
                     let actionRows = '';
@@ -649,6 +650,35 @@
                             </thead>\n\
                             <tbody>\n\
                                 ${actionRows}\n\
+                            </tbody>\n\
+                        </table>`;
+                    // Action log (ligne par action avec horodatage et coût)
+                    let logRows = '';
+                    if (!actionLog.length) {
+                        logRows = '<tr><td colspan="4" style="color:#666; text-align:center;">Aucune action tracée</td></tr>';
+                    } else {
+                        logRows = actionLog.slice().reverse().map(ent => {
+                            const when = new Date((ent.ts || 0) * 1000).toLocaleString();
+                            const d = ent.description || ent.action;
+                            const c = (ent.cost_usd || 0).toFixed(6);
+                            const ops = ent.counts || {};
+                            const opsTxt = Object.keys(ops).map(k => `${k}:${ops[k]}`).join(', ');
+                            return `<tr><td>${when}</td><td>${d}</td><td>${opsTxt}</td><td>$${c}</td></tr>`;
+                        }).join('');
+                    }
+                    html += `
+                        <h4 style=\"margin:16px 0 8px;\">Historique des actions</h4>
+                        <table style=\"width:100%; border-collapse:collapse;\">\n\
+                            <thead>\n\
+                                <tr style=\"text-align:left; border-bottom:1px solid #eee;\">\n\
+                                    <th>Horodatage</th>\n\
+                                    <th>Action</th>\n\
+                                    <th>Appels</th>\n\
+                                    <th>Coût estimé</th>\n\
+                                </tr>\n\
+                            </thead>\n\
+                            <tbody>\n\
+                                ${logRows}\n\
                             </tbody>\n\
                         </table>`;
                     usageEl.innerHTML = html;
