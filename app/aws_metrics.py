@@ -119,6 +119,12 @@ class AwsMetrics:
             pass
         return action
 
+    def current_action(self) -> str | None:
+        try:
+            return getattr(self._tls, 'action', None)
+        except Exception:
+            return None
+
     @contextmanager
     def action_context(self, action: str):
         prev = getattr(self._tls, 'action', None)
