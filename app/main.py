@@ -34,6 +34,7 @@ from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as P
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
 from recognizer_factory import get_face_recognizer
 from photo_optimizer import PhotoOptimizer
+from aws_metrics import aws_metrics
 import requests
 
 # Créer les tables au démarrage
@@ -106,6 +107,20 @@ async def get_active_provider(current_user: User = Depends(get_current_user)):
         "provider_class": type(face_recognizer).__name__,
         "FACE_RECOGNIZER_PROVIDER": os.environ.get("FACE_RECOGNIZER_PROVIDER", "(unset)")
     }
+
+@app.get("/api/admin/aws-usage")
+async def get_aws_usage(current_user: User = Depends(get_current_user)):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    snap = aws_metrics.snapshot()
+    return snap
+
+@app.post("/api/admin/aws-usage/reset")
+async def reset_aws_usage(current_user: User = Depends(get_current_user)):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    aws_metrics.reset()
+    return {"status": "ok"}
 
 @app.post("/api/admin/eval-recognition")
 async def admin_eval_recognition(

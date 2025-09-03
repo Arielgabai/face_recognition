@@ -275,6 +275,7 @@
                 <button class="tab" onclick="showTab('qr-codes')">📱 QR Codes</button>
                 <button class="tab" onclick="showTab('users')">👥 Utilisateurs</button>
                 <button class="tab" onclick="showTab('create-admin')">👤 Créer Admin</button>
+                <button class="tab" onclick="showTab('aws-usage')">💲 Coûts AWS</button>
             </div>
 
             <div id="photographers" class="tab-content active">
@@ -393,6 +394,18 @@
                         <input type="password" id="adminPassword" required>
                     </div>
                     <button onclick="createAdmin()" class="success">Créer l'admin</button>
+                </div>
+            </div>
+
+            <div id="aws-usage" class="tab-content">
+                <h3>💲 Coûts AWS Rekognition (estimation)</h3>
+                <div class="card">
+                    <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                        <button class="success" onclick="refreshAwsUsage()">Rafraîchir</button>
+                        <button class="danger" onclick="resetAwsUsage()">Réinitialiser</button>
+                        <span id="awsSince" style="color:#666;"></span>
+                    </div>
+                    <div id="awsUsageStats">Chargement...</div>
                 </div>
             </div>
         </div>
@@ -548,6 +561,65 @@
             } catch (error) {
                 console.error('Erreur lors du chargement des stats:', error);
             }
+        }
+
+        async function refreshAwsUsage() {
+            try {
+                const resp = await fetch('/api/admin/aws-usage', { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { document.getElementById('awsUsageStats').textContent = 'Erreur de chargement'; return; }
+                const data = await resp.json();
+                const since = new Date((data.since || 0) * 1000).toLocaleString();
+                const counts = data.counts || {};
+                const costs = data.costs || {};
+                let rows = '';
+                const ops = Object.keys(counts).sort();
+                if (ops.length === 0) {
+                    rows = '<tr><td colspan="3" style="color:#666; text-align:center;">Aucune donnée</td></tr>';
+                } else {
+                    rows = ops.map(op => `
+                        <tr>
+                            <td>${op}</td>
+                            <td>${counts[op]}</td>
+                            <td>$${(costs[op] || 0).toFixed(6)}</td>
+                        </tr>
+                    `).join('');
+                }
+                const usageEl = document.getElementById('awsUsageStats');
+                if (usageEl) {
+                    usageEl.innerHTML = `
+                        <table style=\"width:100%; border-collapse:collapse;\">\n\
+                            <thead>\n\
+                                <tr style=\"text-align:left; border-bottom:1px solid #eee;\">\n\
+                                    <th>Opération</th>\n\
+                                    <th>Appels</th>\n\
+                                    <th>Coût estimé</th>\n\
+                                </tr>\n\
+                            </thead>\n\
+                            <tbody>\n\
+                                ${rows}\n\
+                                <tr style=\"border-top:1px solid #eee; font-weight:bold;\">\n\
+                                    <td>Total</td>\n\
+                                    <td>${ops.reduce((s, k) => s + (counts[k] || 0), 0)}</td>\n\
+                                    <td>$${(data.total_cost_usd || 0).toFixed(6)}</td>\n\
+                                </tr>\n\
+                            </tbody>\n\
+                        </table>
+                    `;
+                }
+                const sinceEl = document.getElementById('awsSince');
+                if (sinceEl) sinceEl.textContent = `Depuis: ${since}`;
+            } catch (e) {
+                try { document.getElementById('awsUsageStats').textContent = 'Erreur de chargement'; } catch {}
+            }
+        }
+
+        async function resetAwsUsage() {
+            try {
+                const resp = await fetch('/api/admin/aws-usage/reset', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+                if (resp.ok) {
+                    refreshAwsUsage();
+                }
+            } catch (e) {}
         }
 
         async function loadPhotographers() {

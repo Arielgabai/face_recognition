@@ -8,6 +8,7 @@ from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 
 from models import User, Photo, FaceMatch, Event, UserEvent
+from aws_metrics import aws_metrics
 from photo_optimizer import PhotoOptimizer
 from io import BytesIO as _BytesIO
 from PIL import Image as _Image, ImageOps as _ImageOps
@@ -61,10 +62,12 @@ class AwsFaceRecognizer:
     def ensure_collection(self, event_id: int):
         coll_id = self._collection_id(event_id)
         try:
+            aws_metrics.inc('DescribeCollection')
             self.client.describe_collection(CollectionId=coll_id)
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code")
             if code == "ResourceNotFoundException":
+                aws_metrics.inc('CreateCollection')
                 self.client.create_collection(CollectionId=coll_id)
             else:
                 raise
@@ -97,12 +100,14 @@ class AwsFaceRecognizer:
                 kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
                 if next_token:
                     kwargs["NextToken"] = next_token
+                aws_metrics.inc('ListFaces')
                 faces = self.client.list_faces(**kwargs)
                 for f in faces.get('Faces', []):
                     # Ancien schéma (str(user.id)) et nouveau (user:{id})
                     ext = f.get('ExternalImageId')
                     if ext == str(user.id) or ext == f"user:{user.id}":
                         try:
+                            aws_metrics.inc('DeleteFaces')
                             self.client.delete_faces(CollectionId=coll_id, FaceIds=[f.get('FaceId')])
                         except ClientError:
                             pass
@@ -115,6 +120,7 @@ class AwsFaceRecognizer:
 
         # Indexer le selfie de l'utilisateur dans la collection de l'événement
         try:
+            aws_metrics.inc('IndexFaces')
             self.client.index_faces(
                 CollectionId=coll_id,
                 Image={"Bytes": image_bytes},
@@ -135,6 +141,7 @@ class AwsFaceRecognizer:
                 kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
                 if next_token:
                     kwargs["NextToken"] = next_token
+                aws_metrics.inc('ListFaces')
                 faces = self.client.list_faces(**kwargs)
                 to_delete = []
                 for f in faces.get('Faces', []) or []:
@@ -159,6 +166,7 @@ class AwsFaceRecognizer:
         # Nettoyer d'abord d'anciens visages pour ce photo_id
         self._delete_photo_faces(event_id, photo_id)
         try:
+            aws_metrics.inc('IndexFaces')
             resp = self.client.index_faces(
                 CollectionId=coll_id,
                 Image={"Bytes": image_bytes},
@@ -250,6 +258,7 @@ class AwsFaceRecognizer:
                                 stale_face_ids.append(face_id)
                 if stale_face_ids:
                     try:
+                        aws_metrics.inc('DeleteFaces')
                         self.client.delete_faces(CollectionId=coll_id, FaceIds=stale_face_ids)
                     except ClientError:
                         pass
@@ -308,6 +317,7 @@ class AwsFaceRecognizer:
     def _detect_faces_boxes(self, image_bytes: bytes) -> List[Dict]:
         """Appelle Rekognition DetectFaces et renvoie les FaceDetails filtrés par confiance."""
         try:
+            aws_metrics.inc('DetectFaces')
             resp = self.client.detect_faces(Image={"Bytes": image_bytes}, Attributes=["DEFAULT"])
             faces = resp.get("FaceDetails", []) or []
             faces = [f for f in faces if float(f.get("Confidence", 0.0)) >= AWS_DETECT_MIN_CONF]
@@ -362,6 +372,7 @@ class AwsFaceRecognizer:
         mf = int(max_faces or AWS_SEARCH_MAXFACES)
         for attempt in range(AWS_MAX_RETRIES + 1):
             try:
+                aws_metrics.inc('SearchFaces')
                 return self.client.search_faces(
                     CollectionId=collection_id,
                     FaceId=face_id,
@@ -387,6 +398,7 @@ class AwsFaceRecognizer:
         last_exc = None
         for attempt in range(AWS_MAX_RETRIES + 1):
             try:
+                aws_metrics.inc('SearchFacesByImage')
                 return self.client.search_faces_by_image(
                     CollectionId=collection_id,
                     Image={"Bytes": image_bytes},
