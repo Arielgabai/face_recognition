@@ -1,5 +1,6 @@
 from typing import Dict
-from threading import Lock
+from threading import Lock, local
+from contextlib import contextmanager
 import time
 
 
@@ -27,10 +28,16 @@ class AwsMetrics:
         self._counts: Dict[str, int] = {}
         self._actions: Dict[str, Dict[str, int]] = {}
         self._since_ts = time.time()
+        self._tls = local()
 
     def inc(self, op: str, n: int = 1) -> None:
         with self._lock:
             self._counts[op] = self._counts.get(op, 0) + n
+            # Also increment per-action bucket if a current action is active
+            cur = getattr(self._tls, 'action', None)
+            if cur:
+                a = self._actions.setdefault(cur, {})
+                a[op] = a.get(op, 0) + n
 
     def reset(self) -> None:
         with self._lock:
@@ -74,6 +81,19 @@ class AwsMetrics:
     def end_action(self, action: str) -> None:
         # No-op placeholder for future timing if needed
         return
+
+    @contextmanager
+    def action_context(self, action: str):
+        prev = getattr(self._tls, 'action', None)
+        try:
+            self.begin_action(action)
+            self._tls.action = action
+            yield
+        finally:
+            try:
+                self._tls.action = prev
+            except Exception:
+                pass
 
 
 aws_metrics = AwsMetrics()
