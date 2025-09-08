@@ -690,9 +690,8 @@ class AwsFaceRecognizer:
                 ).update({
                     Photo.expires_at: new_expiration
                 }, synchronize_session=False)
-                print(f"🔄 [AWS] Expiration reset for event {event_id} to {new_expiration}")
-            except Exception as _e:
-                print(f"⚠️  [AWS] Expiration reset failed: {_e}")
+            except Exception:
+                pass
             db.commit()
         return photo
 
@@ -781,9 +780,8 @@ class AwsFaceRecognizer:
             ).update({
                 Photo.expires_at: new_expiration
             }, synchronize_session=False)
-            print(f"🔄 [AWS] Expiration reset for event {event_id} to {new_expiration}")
-        except Exception as _e:
-            print(f"⚠️  [AWS] Expiration reset failed: {_e}")
+        except Exception:
+            pass
         db.commit()
         return photo
 
