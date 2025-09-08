@@ -410,17 +410,23 @@ async def root(request: Request):
                 payload = jwt.decode(token.split(' ')[1], SECRET_KEY, algorithms=[ALGORITHM])
                 username = payload.get("sub")
                 if username:
-                    # Rcuprer l'utilisateur depuis la base de donnes
-                    db = next(get_db())
-                    user = db.query(User).filter(User.username == username).first()
-                    if user and user.user_type == UserType.ADMIN:
-                        # Rediriger vers l'interface admin
-                        with open("static/admin.html", "r", encoding="utf-8") as f:
-                            return HTMLResponse(content=f.read())
-                    elif user and user.user_type == UserType.PHOTOGRAPHER:
-                        # Rediriger vers l'interface photographe
-                        with open("static/photographer.html", "r", encoding="utf-8") as f:
-                            return HTMLResponse(content=f.read())
+                    # R e9cup e9rer l'utilisateur depuis la base de donn e9es
+                    _db = next(get_db())
+                    try:
+                        user = _db.query(User).filter(User.username == username).first()
+                        if user and user.user_type == UserType.ADMIN:
+                            # Rediriger vers l'interface admin
+                            with open("static/admin.html", "r", encoding="utf-8") as f:
+                                return HTMLResponse(content=f.read())
+                        elif user and user.user_type == UserType.PHOTOGRAPHER:
+                            # Rediriger vers l'interface photographe
+                            with open("static/photographer.html", "r", encoding="utf-8") as f:
+                                return HTMLResponse(content=f.read())
+                    finally:
+                        try:
+                            _db.close()
+                        except Exception:
+                            pass
             except:
                 pass
         
@@ -704,16 +710,22 @@ async def register_invite_with_selfie(
     def _rematch_event_for_new_user(user_id: int, event_id: int):
         try:
             session = next(get_db())
-            user = session.query(User).filter(User.id == user_id).first()
-            if not user:
-                return
             try:
-                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                    face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
-                else:
-                    face_recognizer.match_user_selfie_with_photos(user, session)
-            except Exception:
-                pass
+                user = session.query(User).filter(User.id == user_id).first()
+                if not user:
+                    return
+                try:
+                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                        face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
+                    else:
+                        face_recognizer.match_user_selfie_with_photos(user, session)
+                except Exception:
+                    pass
+            finally:
+                try:
+                    session.close()
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[RegisterInvite][bg] error: {e}")
 
@@ -934,31 +946,37 @@ async def upload_selfie(
     def _rematch_all_events(user_id: int):
         try:
             session = next(get_db())
-            user = session.query(User).filter(User.id == user_id).first()
-            if not user:
-                return
-            events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
-            total = 0
-            for ue in events:
-                try:
-                    from aws_metrics import aws_metrics as _m
-                    with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
-                        # Ne pas pré-indexer systématiquement (déjà fait à l'upload). Recherche selfie directe.
-                        if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                            total += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
-                        else:
-                            total += face_recognizer.match_user_selfie_with_photos(user, session)
-                except Exception:
-                    continue
-            print(f"[SelfieUpdate][bg] user_id={user_id} rematch_total={total}")
             try:
-                REMATCH_STATUS[user_id] = {
-                    "status": "done",
-                    "finished_at": time.time(),
-                    "matched": int(total or 0),
-                }
-            except Exception:
-                pass
+                user = session.query(User).filter(User.id == user_id).first()
+                if not user:
+                    return
+                events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
+                total = 0
+                for ue in events:
+                    try:
+                        from aws_metrics import aws_metrics as _m
+                        with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
+                            # Ne pas pré-indexer systématiquement (déjà fait à l'upload). Recherche selfie directe.
+                            if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                                total += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
+                            else:
+                                total += face_recognizer.match_user_selfie_with_photos(user, session)
+                    except Exception:
+                        continue
+                print(f"[SelfieUpdate][bg] user_id={user_id} rematch_total={total}")
+                try:
+                    REMATCH_STATUS[user_id] = {
+                        "status": "done",
+                        "finished_at": time.time(),
+                        "matched": int(total or 0),
+                    }
+                except Exception:
+                    pass
+            finally:
+                try:
+                    session.close()
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[SelfieUpdate][bg] error: {e}")
 
@@ -1623,10 +1641,16 @@ async def generate_event_qr(event_code: str, current_user: User = Depends(get_cu
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent g+�n+�rer un QR code")
     
     # V+�rifier que l'+�v+�nement existe
-    db = next(get_db())
-    event = db.query(Event).filter(Event.event_code == event_code).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
+    _db = next(get_db())
+    try:
+        event = _db.query(Event).filter(Event.event_code == event_code).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
+    finally:
+        try:
+            _db.close()
+        except Exception:
+            pass
     
     # Gnerer l'URL d'inscription vers la page avec code dans le chemin
     url = f"https://facerecognition-d0r8.onrender.com/register-with-code/{event_code}"
@@ -2025,16 +2049,22 @@ async def register_with_event_code(
     def _rematch_event_for_new_user(user_id: int, event_id: int):
         try:
             session = next(get_db())
-            user = session.query(User).filter(User.id == user_id).first()
-            if not user:
-                return
             try:
-                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                    face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
-                else:
-                    face_recognizer.match_user_selfie_with_photos(user, session)
-            except Exception:
-                pass
+                user = session.query(User).filter(User.id == user_id).first()
+                if not user:
+                    return
+                try:
+                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                        face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
+                    else:
+                        face_recognizer.match_user_selfie_with_photos(user, session)
+                except Exception:
+                    pass
+            finally:
+                try:
+                    session.close()
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -2593,11 +2623,26 @@ async def reload_models_endpoint(current_user: User = Depends(get_current_user))
         reload_log.append("🔄 Rechargement des modèles SQLAlchemy...")
         
         # Forcer la réflexion de la table
-        db = next(get_db())
-        inspector = inspect(db.bind)
+        _db = next(get_db())
+        try:
+            inspector = inspect(_db.bind)
+        finally:
+            try:
+                _db.close()
+            except Exception:
+                pass
         
         # Vérifier que les nouvelles colonnes sont détectées
-        photo_columns = [col['name'] for col in inspector.get_columns('photos')]
+        # Réouvrir pour l'inspection car on a fermé la session précédente
+        _db2 = next(get_db())
+        try:
+            inspector2 = inspect(_db2.bind)
+            photo_columns = [col['name'] for col in inspector2.get_columns('photos')]
+        finally:
+            try:
+                _db2.close()
+            except Exception:
+                pass
         reload_log.append(f"📋 Colonnes détectées dans 'photos': {photo_columns}")
         
         # Vérifier si les attributs sont maintenant disponibles

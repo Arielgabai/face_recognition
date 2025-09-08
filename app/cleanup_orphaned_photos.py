@@ -16,7 +16,6 @@ from models import User, Photo, FaceMatch, Event, UserEvent, UserType
 def cleanup_orphaned_photos():
     """Nettoie les photos qui n'ont pas d'événement associé"""
     db = next(get_db())
-    
     try:
         # Trouver les photos sans événement
         orphaned_photos = db.query(Photo).filter(Photo.event_id.is_(None)).all()
@@ -47,11 +46,15 @@ def cleanup_orphaned_photos():
     except Exception as e:
         db.rollback()
         print(f"❌ Erreur lors du nettoyage: {e}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def fix_user_event_associations():
     """Corrige les associations utilisateur-événement"""
     db = next(get_db())
-    
     try:
         # Trouver les utilisateurs sans événement
         users_without_events = db.query(User).filter(
@@ -78,11 +81,15 @@ def fix_user_event_associations():
     except Exception as e:
         db.rollback()
         print(f"❌ Erreur lors de la correction des associations: {e}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def verify_data_integrity():
     """Vérifie l'intégrité des données"""
     db = next(get_db())
-    
     try:
         # Vérifier les photos sans fichier physique
         photos_without_file = []
@@ -125,6 +132,11 @@ def verify_data_integrity():
         
     except Exception as e:
         print(f"❌ Erreur lors de la vérification: {e}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def main():
     """Fonction principale"""
