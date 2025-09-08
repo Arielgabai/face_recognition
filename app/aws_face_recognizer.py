@@ -479,12 +479,20 @@ class AwsFaceRecognizer:
                 return []
             user_best: Dict[int, float] = {}
             for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
-                ext_id = fm.get("Face", {}).get("ExternalImageId")
+                ext_id = (fm.get("Face", {}) or {}).get("ExternalImageId") or ""
                 similarity = float(fm.get("Similarity", 0.0))
-                try:
-                    user_id = int(ext_id) if ext_id is not None else None
-                except Exception:
-                    user_id = None
+                user_id: Optional[int] = None
+                if isinstance(ext_id, str):
+                    if ext_id.startswith("user:"):
+                        try:
+                            user_id = int(ext_id.split(":", 1)[1])
+                        except Exception:
+                            user_id = None
+                    elif ext_id.isdigit():
+                        try:
+                            user_id = int(ext_id)
+                        except Exception:
+                            user_id = None
                 if user_id is None or user_id not in allowed_user_ids:
                     continue
                 if (user_id not in user_best) or (similarity > user_best[user_id]):
@@ -505,12 +513,20 @@ class AwsFaceRecognizer:
                     if not resp:
                         continue
                     for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
-                        ext_id = fm.get("Face", {}).get("ExternalImageId")
+                        ext_id = (fm.get("Face", {}) or {}).get("ExternalImageId") or ""
                         similarity = float(fm.get("Similarity", 0.0))
-                        try:
-                            user_id = int(ext_id) if ext_id is not None else None
-                        except Exception:
-                            user_id = None
+                        user_id: Optional[int] = None
+                        if isinstance(ext_id, str):
+                            if ext_id.startswith("user:"):
+                                try:
+                                    user_id = int(ext_id.split(":", 1)[1])
+                                except Exception:
+                                    user_id = None
+                            elif ext_id.isdigit():
+                                try:
+                                    user_id = int(ext_id)
+                                except Exception:
+                                    user_id = None
                         if user_id is None or user_id not in allowed_user_ids:
                             continue
                         if (user_id not in user_best) or (similarity > user_best[user_id]):
