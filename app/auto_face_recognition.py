@@ -89,6 +89,11 @@ def update_face_recognition_for_event(event_id: int):
     except Exception as e:
         db.rollback()
         print(f"❌ Erreur lors de la mise à jour: {e}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def update_face_recognition_for_user(user_id: int):
     """Met à jour la reconnaissance faciale pour un utilisateur spécifique"""
@@ -135,6 +140,11 @@ def update_face_recognition_for_user(user_id: int):
     except Exception as e:
         db.rollback()
         print(f"❌ Erreur lors de la mise à jour: {e}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def optimize_face_recognition():
     """Optimise les performances de reconnaissance faciale"""
@@ -186,6 +196,11 @@ def optimize_face_recognition():
     except Exception as e:
         db.rollback()
         print(f"❌ Erreur lors de l'optimisation: {e}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def main():
     """Fonction principale"""

@@ -11,7 +11,22 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./face_recognition.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL)
+# Options de pool pour éviter les connexions mortes et élargir la capacité
+POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10") or "10")
+MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20") or "20")
+POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "3600") or "3600")
+
+# Pour SQLite, désactiver check_same_thread pour éviter les erreurs en environnement async/multithread
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=POOL_SIZE,
+    max_overflow=MAX_OVERFLOW,
+    pool_recycle=POOL_RECYCLE,
+    connect_args=connect_args,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
