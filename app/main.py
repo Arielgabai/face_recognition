@@ -410,7 +410,7 @@ async def root(request: Request):
                 payload = jwt.decode(token.split(' ')[1], SECRET_KEY, algorithms=[ALGORITHM])
                 username = payload.get("sub")
                 if username:
-                    # R e9cup e9rer l'utilisateur depuis la base de donn e9es
+                    # Recuperer l'utilisateur depuis la base de donnees
                     _db = next(get_db())
                     try:
                         user = _db.query(User).filter(User.username == username).first()
