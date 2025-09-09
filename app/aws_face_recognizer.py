@@ -187,9 +187,10 @@ class AwsFaceRecognizer:
             return []
 
     def ensure_event_photos_indexed(self, event_id: int, db: Session):
-        """Indexe tous les visages des photos de l'événement (idempotent grâce au nettoyage par photo)."""
-        if event_id in getattr(self, "_photos_indexed_events", set()):
-            return
+        """Indexe tous les visages des photos de l'événement (idempotent grâce au nettoyage par photo).
+
+        Toujours ré-exécuter pour couvrir les nouvelles photos; le nettoyage par photo rend l'opération sûre.
+        """
         self.ensure_collection(event_id)
         photos = db.query(Photo).filter(Photo.event_id == event_id).all()
         for p in photos:
@@ -200,7 +201,7 @@ class AwsFaceRecognizer:
             if not img_bytes:
                 continue
             self._index_photo_faces_and_get_ids(event_id, p.id, img_bytes)
-        self._photos_indexed_events.add(event_id)
+        # Ne pas mémoriser pour autoriser la réindexation quand de nouvelles photos arrivent
 
     def ensure_event_users_indexed(self, event_id: int, db: Session):
         """
