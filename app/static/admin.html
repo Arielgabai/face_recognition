@@ -749,6 +749,7 @@
                             <div class="card-actions">
                                 <button onclick="editEvent(${event.id}, '${event.name}', '${event.event_code}', '${event.date || ''}', ${event.photographer_id})" class="success">Modifier</button>
                                 <button onclick="deleteEvent(${event.id}, '${event.name}')" class="danger">Supprimer</button>
+                                <button onclick="rematchEvent(${event.id})" class="success">Relancer le matching</button>
                             </div>
                         </div>
                     `).join('')}
@@ -1123,6 +1124,23 @@
                 }
             } catch (error) {
                 showAlert('Erreur lors de la modification', 'error');
+            }
+        }
+
+        async function rematchEvent(eventId) {
+            try {
+                const resp = await fetch(`/api/admin/events/${eventId}/rematch`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    showAlert(data.detail || 'Erreur lors du rematch', 'error');
+                    return;
+                }
+                showAlert('Matching relancé pour cet événement', 'success');
+            } catch (e) {
+                showAlert('Erreur lors de l\'appel rematch', 'error');
             }
         }
 
