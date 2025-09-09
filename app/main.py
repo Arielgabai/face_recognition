@@ -1007,7 +1007,8 @@ def get_rematch_status(current_user: User = Depends(get_current_user)):
 async def upload_multiple_photos(
     files: List[UploadFile] = File(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks | None = None,
 ):
     """Upload de plusieurs photos par un photographe"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
@@ -1022,7 +1023,9 @@ async def upload_multiple_photos(
     uploaded_photos = []
     
     from aws_metrics import aws_metrics
-    with aws_metrics.action_context(f"upload_event:{event_id}"):
+    # Déterminer l'événement lié au photographe si possible
+    ev = db.query(Event).filter(Event.photographer_id == current_user.id).first()
+    with aws_metrics.action_context(f"upload_event:{getattr(ev, 'id', 'unknown')}"):
         for file in files:
             if not file.content_type.startswith("image/"):
                 continue  # Ignorer les fichiers non-images
@@ -1046,6 +1049,13 @@ async def upload_multiple_photos(
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
     
+    # Lancer un rematch via selfies pour refléter 'Vos photos' après upload
+    try:
+        if background_tasks is not None and ev is not None:
+            background_tasks.add_task(_rematch_event_via_selfies, ev.id)
+    except Exception:
+        pass
+
     return {
         "message": f"{len(uploaded_photos)} photos upload+�es et trait+�es avec succ+�s",
         "uploaded_photos": uploaded_photos
@@ -1055,7 +1065,8 @@ async def upload_multiple_photos(
 async def upload_photo(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks | None = None,
 ):
     """Upload d'une photo par un photographe"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
@@ -1077,6 +1088,13 @@ async def upload_photo(
         photo = face_recognizer.process_and_save_photo(
             temp_path, file.filename, current_user.id, db
         )
+        # Planifier un rematch via selfies pour l'événement de la photo
+        try:
+            ev_id = getattr(photo, 'event_id', None)
+            if background_tasks is not None and ev_id:
+                background_tasks.add_task(_rematch_event_via_selfies, int(ev_id))
+        except Exception:
+            pass
         
         return {
             "message": "Photo upload+�e et trait+�e avec succ+�s",
@@ -1800,7 +1818,8 @@ async def upload_photos_to_event(
     event_id: int,
     files: List[UploadFile] = File(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks | None = None,
 ):
     """Upload de photos pour un événement spécifique (batch-friendly)."""
     if current_user.user_type != UserType.PHOTOGRAPHER:
@@ -1851,6 +1870,13 @@ async def upload_photos_to_event(
     
     # Après upload: inutile de relancer un matching global qui pourrait écraser l'existant.
     # Le process d'upload gère déjà l'indexation et le matching pour les nouvelles photos.
+
+    # Lancer un rematch via selfies pour refléter 'Vos photos' après upload
+    try:
+        if background_tasks is not None:
+            background_tasks.add_task(_rematch_event_via_selfies, event_id)
+    except Exception:
+        pass
 
     return {
         "message": f"{len(uploaded_photos)} photos uploadées et traitées avec succès",
