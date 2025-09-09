@@ -33,9 +33,10 @@ def update_face_recognition_for_event(event_id: int):
         user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
         user_ids = [ue.user_id for ue in user_events]
         
+        from sqlalchemy import or_ as _or
         users_with_selfies = db.query(User).filter(
             User.id.in_(user_ids),
-            User.selfie_path.isnot(None)
+            _or(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
         ).all()
         
         print(f"👥 {len(users_with_selfies)} utilisateurs avec selfie trouvés")
@@ -107,7 +108,7 @@ def update_face_recognition_for_user(user_id: int):
             print(f"❌ Utilisateur {user_id} non trouvé")
             return
         
-        if not user.selfie_path:
+        if not (getattr(user, 'selfie_path', None) or getattr(user, 'selfie_data', None)):
             print(f"⚠️  Utilisateur {user.username} n'a pas de selfie")
             return
         
