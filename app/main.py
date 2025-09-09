@@ -1178,6 +1178,44 @@ async def get_user_profile(
 
 # === REMATCH / REINDEXATION D'UN ÉVÉNEMENT ===
 
+def _rematch_event_via_selfies(event_id: int):
+    """Relance le matching d'un événement via le chemin 'selfie -> photos' pour MIMIQUER l'update selfie.
+
+    Pour chaque utilisateur inscrit à l'événement et ayant un selfie (path ou data),
+    on appelle face_recognizer.match_user_selfie_with_photos_event(user, event_id, db).
+    """
+    try:
+        session = next(get_db())
+        try:
+            # Charger tous les users de l'événement (avec ou sans selfie) puis filtrer
+            from sqlalchemy import or_ as _or
+            user_events = session.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+            user_ids = [ue.user_id for ue in user_events]
+            users = []
+            if user_ids:
+                users = session.query(User).filter(
+                    User.id.in_(user_ids),
+                    _or(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
+                ).all()
+
+            total = 0
+            for user in users:
+                try:
+                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                        total += int(face_recognizer.match_user_selfie_with_photos_event(user, event_id, session) or 0)
+                    else:
+                        total += int(face_recognizer.match_user_selfie_with_photos(user, session) or 0)
+                except Exception:
+                    continue
+            print(f"[AdminRematch][bg] event_id={event_id} rematch_total={total}")
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[AdminRematch][bg] error: {e}")
+
 @app.post("/api/admin/events/{event_id}/rematch")
 async def admin_rematch_event(
     event_id: int,
@@ -1185,14 +1223,16 @@ async def admin_rematch_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Relance le matching pour toutes les photos et utilisateurs d'un événement (admin)."""
+    """Relance le matching pour toutes les photos et utilisateurs d'un événement (admin).
+
+    Utilise le même chemin logique que l'update de selfie (selfie -> photos).
+    """
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent relancer le matching")
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
-    # Lancer en tâche de fond pour ne pas bloquer la requête
-    background_tasks.add_task(update_face_recognition_for_event, event_id)
+    background_tasks.add_task(_rematch_event_via_selfies, event_id)
     return {"scheduled": True, "event_id": event_id}
 
 @app.post("/api/photographer/events/{event_id}/rematch")
@@ -1202,7 +1242,10 @@ async def photographer_rematch_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Relance le matching pour toutes les photos et utilisateurs d'un événement (photographe propriétaire)."""
+    """Relance le matching pour toutes les photos et utilisateurs d'un événement (photographe propriétaire).
+
+    Utilise le même chemin logique que l'update de selfie (selfie -> photos).
+    """
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent relancer le matching")
     event = db.query(Event).filter(
@@ -1211,7 +1254,7 @@ async def photographer_rematch_event(
     ).first()
     if not event:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
-    background_tasks.add_task(update_face_recognition_for_event, event_id)
+    background_tasks.add_task(_rematch_event_via_selfies, event_id)
     return {"scheduled": True, "event_id": event_id}
 
 # === SERVIR LES IMAGES ===
