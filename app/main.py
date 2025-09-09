@@ -1008,7 +1008,7 @@ async def upload_multiple_photos(
     files: List[UploadFile] = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks | None = None,
+    background_tasks: BackgroundTasks = None,
 ):
     """Upload de plusieurs photos par un photographe"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
@@ -1051,7 +1051,7 @@ async def upload_multiple_photos(
     
     # Lancer un rematch via selfies pour refléter 'Vos photos' après upload
     try:
-        if background_tasks is not None and ev is not None:
+        if ev is not None and background_tasks:
             background_tasks.add_task(_rematch_event_via_selfies, ev.id)
     except Exception:
         pass
@@ -1066,7 +1066,7 @@ async def upload_photo(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks | None = None,
+    background_tasks: BackgroundTasks = None,
 ):
     """Upload d'une photo par un photographe"""
     if current_user.user_type != UserType.PHOTOGRAPHER:
@@ -1091,7 +1091,7 @@ async def upload_photo(
         # Planifier un rematch via selfies pour l'événement de la photo
         try:
             ev_id = getattr(photo, 'event_id', None)
-            if background_tasks is not None and ev_id:
+            if ev_id and background_tasks:
                 background_tasks.add_task(_rematch_event_via_selfies, int(ev_id))
         except Exception:
             pass
@@ -1819,7 +1819,7 @@ async def upload_photos_to_event(
     files: List[UploadFile] = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks | None = None,
+    background_tasks: BackgroundTasks = None,
 ):
     """Upload de photos pour un événement spécifique (batch-friendly)."""
     if current_user.user_type != UserType.PHOTOGRAPHER:
@@ -1873,7 +1873,7 @@ async def upload_photos_to_event(
 
     # Lancer un rematch via selfies pour refléter 'Vos photos' après upload
     try:
-        if background_tasks is not None:
+        if background_tasks:
             background_tasks.add_task(_rematch_event_via_selfies, event_id)
     except Exception:
         pass
