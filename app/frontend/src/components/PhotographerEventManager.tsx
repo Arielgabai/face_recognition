@@ -202,6 +202,18 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
                 >
                   Supprimer sélection ({selectedIds.length})
                 </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={async () => {
+                    if (!currentEventId) return;
+                    try {
+                      await photoService.rematchEventAsPhotographer(currentEventId);
+                    } catch {}
+                  }}
+                >
+                  Relancer le matching de l'événement
+                </Button>
               </Box>
             )}
             

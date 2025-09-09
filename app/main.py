@@ -36,6 +36,7 @@ from recognizer_factory import get_face_recognizer
 from photo_optimizer import PhotoOptimizer
 from aws_metrics import aws_metrics
 import requests
+from auto_face_recognition import update_face_recognition_for_event
 
 # Créer les tables au démarrage
 create_tables()
@@ -1174,6 +1175,44 @@ async def get_user_profile(
         total_photos=len(all_photos),
         photos_with_face=len(photos_with_face)
     )
+
+# === REMATCH / REINDEXATION D'UN ÉVÉNEMENT ===
+
+@app.post("/api/admin/events/{event_id}/rematch")
+async def admin_rematch_event(
+    event_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Relance le matching pour toutes les photos et utilisateurs d'un événement (admin)."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent relancer le matching")
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    # Lancer en tâche de fond pour ne pas bloquer la requête
+    background_tasks.add_task(update_face_recognition_for_event, event_id)
+    return {"scheduled": True, "event_id": event_id}
+
+@app.post("/api/photographer/events/{event_id}/rematch")
+async def photographer_rematch_event(
+    event_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Relance le matching pour toutes les photos et utilisateurs d'un événement (photographe propriétaire)."""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent relancer le matching")
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.photographer_id == current_user.id
+    ).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    background_tasks.add_task(update_face_recognition_for_event, event_id)
+    return {"scheduled": True, "event_id": event_id}
 
 # === SERVIR LES IMAGES ===
 

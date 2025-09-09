@@ -560,11 +560,10 @@ const Dashboard: React.FC = () => {
           <TabPanel value={tabValue} index={3}>
             <PhotoUpload onSuccess={async () => {
               // Recharger toutes les photos + mes photos, attendre images
+              const baselineMyLen = myPhotos.length;
+              const baselineMatches = profile?.photos_with_face ?? baselineMyLen;
               await loadDashboardData();
-              const myUrls = myPhotos.map((p) => photoService.getImage(p.filename));
-              const allUrls = allPhotos.map((p) => photoService.getImage(p.filename));
-              await preloadImages([...myUrls, ...allUrls]);
-              await new Promise((r) => setTimeout(r, 150));
+              await waitForDashboardGrowthAndImages(baselineMyLen, baselineMatches);
             }} eventId={currentEventId ?? undefined} />
           </TabPanel>
         )}

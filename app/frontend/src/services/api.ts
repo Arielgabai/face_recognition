@@ -93,6 +93,8 @@ export const photoService = {
   joinEvent: (eventCode: string) => api.post('/join-event', { event_code: eventCode }),
   registerWithEventCode: (userData: any, eventCode: string) => 
     api.post('/register-with-event-code', { user_data: userData, event_code: eventCode }),
+  rematchEventAsAdmin: (eventId: number) => api.post(`/admin/events/${eventId}/rematch`),
+  rematchEventAsPhotographer: (eventId: number) => api.post(`/photographer/events/${eventId}/rematch`),
 };
 
 // Validation / helpers
