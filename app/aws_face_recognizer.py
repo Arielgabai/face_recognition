@@ -745,6 +745,7 @@ class AwsFaceRecognizer:
         # IMPORTANT: indexer aussi les selfies des users de l'événement avant de matcher
         self.ensure_event_users_indexed(event_id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+        user_best: Dict[int, int] = {}
         if not face_ids:
             # Si aucun visage détecté/indexé, tenter une recherche directe par image complète (fallback)
             resp = self._search_faces_by_image_retry(self._collection_id(event_id), image_bytes)
@@ -761,7 +762,6 @@ class AwsFaceRecognizer:
                     prev = user_best.get(uid)
                     if prev is None or sim > prev:
                         user_best[uid] = sim
-        user_best: Dict[int, int] = {}
         if face_ids:
             coll_id = self._collection_id(event_id)
             with ThreadPoolExecutor(max_workers=MAX_PARALLEL_PER_REQUEST) as ex:
