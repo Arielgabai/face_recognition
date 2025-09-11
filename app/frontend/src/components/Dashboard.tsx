@@ -14,11 +14,15 @@ import {
   IconButton,
   Fade,
   Backdrop,
+  Chip,
+  Badge,
 } from '@mui/material';
 import { 
   Close as CloseIcon, 
   ArrowBack as ArrowBackIcon, 
-  ArrowForward as ArrowForwardIcon 
+  ArrowForward as ArrowForwardIcon,
+  Face as FaceIcon,
+  CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
 import PhotoAlbum from 'react-photo-album';
 import { useAuth } from '../contexts/AuthContext';
@@ -111,9 +115,8 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
     };
   }, [selectedPhoto]);
 
-  // Convertir les photos au format react-photo-album avec dimensions variées
-  const albumPhotos = photos.map((photo, index) => {
-    // Simuler des dimensions variées pour un rendu plus naturel
+  // Simuler des dimensions variées pour un rendu plus naturel
+  const getAspectRatio = (index: number) => {
     const aspectRatios = [
       { width: 800, height: 600 },   // 4:3 paysage
       { width: 600, height: 800 },   // 3:4 portrait
@@ -122,16 +125,8 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
       { width: 600, height: 900 },   // 2:3 portrait
       { width: 900, height: 600 },   // 3:2 paysage
     ];
-    
-    const ratio = aspectRatios[index % aspectRatios.length];
-    
-    return {
-      src: photoService.getImage(photo.filename),
-      width: ratio.width,
-      height: ratio.height,
-      alt: photo.original_filename || 'Photo'
-    };
-  });
+    return aspectRatios[index % aspectRatios.length];
+  };
 
   if (loading) {
     return (
@@ -175,20 +170,81 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
         </Typography>
       )}
 
-      {/* Galerie avec react-photo-album - Layout masonry Google Photos */}
-      <PhotoAlbum
-        layout="masonry"
-        photos={albumPhotos}
-        onClick={({ index }) => openLightbox(index)}
-        spacing={6}
-        padding={0}
-        columns={(containerWidth) => {
-          if (containerWidth < 480) return 1;
-          if (containerWidth < 768) return 2;
-          if (containerWidth < 1024) return 3;
-          return 4;
+      {/* Galerie avec grille personnalisée pour afficher les tags */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: 'repeat(auto-fill, minmax(200px, 1fr))',
+            sm: 'repeat(auto-fill, minmax(250px, 1fr))',
+            md: 'repeat(auto-fill, minmax(300px, 1fr))',
+            lg: 'repeat(auto-fill, minmax(320px, 1fr))',
+          },
+          gap: 2,
+          gridAutoRows: 'minmax(200px, auto)',
         }}
-      />
+      >
+        {photos.map((photo, index) => {
+          const aspectRatio = getAspectRatio(index);
+          const isPortrait = aspectRatio.height > aspectRatio.width;
+          const isPanorama = aspectRatio.width / aspectRatio.height > 1.8;
+          
+          return (
+            <Box
+              key={photo.id}
+              sx={{
+                gridRowEnd: isPortrait ? 'span 2' : 'span 1',
+                gridColumnEnd: isPanorama ? 'span 2' : 'span 1',
+                position: 'relative',
+                cursor: 'pointer',
+                borderRadius: 2,
+                overflow: 'hidden',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 25px rgba(0,0,0,0.2)',
+                },
+              }}
+              onClick={() => openLightbox(index)}
+            >
+              {/* Tag de matching */}
+              {photo.has_face_match && (
+                <Chip
+                  icon={<FaceIcon />}
+                  label="Match"
+                  size="small"
+                  sx={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    zIndex: 2,
+                    backgroundColor: 'success.main',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    '& .MuiChip-icon': {
+                      color: 'white',
+                    },
+                  }}
+                />
+              )}
+              
+              {/* Image */}
+              <Box
+                component="img"
+                src={photoService.getImage(photo.filename)}
+                alt={photo.original_filename || 'Photo'}
+                sx={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
+              />
+            </Box>
+          );
+        })}
+      </Box>
 
       {/* Lightbox Modal */}
       <Dialog
@@ -286,7 +342,7 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
               <Fade in={true} timeout={300}>
                 <Box
                   component="img"
-                  src={`/api/photo/${photos[selectedPhoto].id}`}
+                  src={photoService.getImage(photos[selectedPhoto].filename)}
                   alt={photos[selectedPhoto].original_filename}
                   sx={{
                     maxWidth: '100%',

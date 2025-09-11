@@ -17,6 +17,7 @@ export interface Photo {
   user_id?: number;
   photographer_id?: number;
   uploaded_at: string;
+  has_face_match?: boolean;
 }
 
 export interface FaceMatch {

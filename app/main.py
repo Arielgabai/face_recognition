@@ -380,9 +380,9 @@ def parse_user_type(user_type_str: str) -> UserType:
     }
     return mapping.get(value, UserType.USER)
 
-def photo_to_dict(photo: Photo) -> dict:
-    """Convertit un objet Photo en dictionnaire sans les donn+�es binaires"""
-    return {
+def photo_to_dict(photo: Photo, user_id: int = None) -> dict:
+    """Convertit un objet Photo en dictionnaire sans les données binaires"""
+    result = {
         "id": photo.id,
         "filename": photo.filename,
         "original_filename": photo.original_filename,
@@ -392,8 +392,15 @@ def photo_to_dict(photo: Photo) -> dict:
         "user_id": photo.user_id,
         "photographer_id": photo.photographer_id,
         "uploaded_at": photo.uploaded_at,
-        "event_id": photo.event_id
+        "event_id": photo.event_id,
+        "has_face_match": False  # Valeur par défaut
     }
+    
+    # Si un user_id est fourni, vérifier s'il y a un match de visage
+    if user_id is not None and photo.face_matches:
+        result["has_face_match"] = any(match.user_id == user_id for match in photo.face_matches)
+    
+    return result
 
 # Cr+�er les dossiers n+�cessaires
 os.makedirs("static/uploads/selfies", exist_ok=True)
@@ -1144,8 +1151,8 @@ async def get_all_photos(
     event_id = user_event.event_id
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     
-    # Retourner seulement les m+�tadonn+�es, pas les donn+�es binaires
-    return [photo_to_dict(photo) for photo in photos]
+    # Retourner seulement les métadonnées, pas les données binaires
+    return [photo_to_dict(photo, current_user.id) for photo in photos]
 
 @app.get("/api/my-uploaded-photos", response_model=List[PhotoSchema])
 async def get_my_uploaded_photos(
@@ -1970,26 +1977,11 @@ async def get_all_event_photos(
     if not user_event:
         raise HTTPException(status_code=403, detail="Vous n'+�tes pas inscrit +� cet +�v+�nement")
     
-    # R+�cup+�rer toutes les photos de l'+�v+�nement
+    # Récupérer toutes les photos de l'événement
     photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     
-    # Retourner seulement les m+�tadonn+�es, pas les donn+�es binaires
-    photo_list = []
-    for photo in photos:
-        photo_list.append({
-            "id": photo.id,
-            "filename": photo.filename,
-            "original_filename": photo.original_filename,
-            "file_path": photo.file_path,
-            "content_type": photo.content_type,
-            "photo_type": photo.photo_type,
-            "user_id": photo.user_id,
-            "photographer_id": photo.photographer_id,
-            "uploaded_at": photo.uploaded_at,
-            "event_id": photo.event_id
-        })
-    
-    return photo_list
+    # Retourner seulement les métadonnées, pas les données binaires
+    return [photo_to_dict(photo, current_user.id) for photo in photos]
 
 # === ROUTES POUR LES CODES +�V+�NEMENT MANUELS ===
 
