@@ -2484,6 +2484,8 @@
                         console.log('Photos (all):', photos);
                         console.log('First photo complète (all):', photos[0]);
                         console.log('First photo event_name (all):', photos[0]?.event_name);
+                        console.log('First photo has_face_match (all):', photos[0]?.has_face_match);
+                        console.log('Photos with face match (all):', photos.filter(p => p.has_face_match).length);
                         
                         if (photos.length > 0 && photos[0].event_name) {
                             eventTitle.textContent = photos[0].event_name;
@@ -2504,7 +2506,14 @@
                             container.innerHTML = `
                                 <div class="masonry">
                                     ${photos.map(photo => `
-                                        <div class="masonry-item"><img src="/api/photo/${photo.id}" alt="Photo"></div>
+                                        <div class="masonry-item" style="position: relative;">
+                                            <img src="/api/photo/${photo.id}" alt="Photo">
+                                            ${photo.has_face_match ? `
+                                                <div style="position: absolute; top: 8px; right: 8px; background: #4caf50; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 4px; z-index: 10;">
+                                                    <span>👤</span> Match
+                                                </div>
+                                            ` : ''}
+                                        </div>
                                     `).join('')}
                                 </div>
                             `;
@@ -3664,7 +3673,14 @@
                     container.innerHTML = `
                         <div class="masonry">
                             ${photos.map(photo => `
-                                <div class="masonry-item"><img src="/api/photo/${photo.id}?t=${Date.now()}" alt="Photo"></div>
+                                <div class="masonry-item" style="position: relative;">
+                                    <img src="/api/photo/${photo.id}?t=${Date.now()}" alt="Photo">
+                                    ${photo.has_face_match ? `
+                                        <div style="position: absolute; top: 8px; right: 8px; background: #4caf50; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 4px; z-index: 10;">
+                                            <span>👤</span> Match
+                                        </div>
+                                    ` : ''}
+                                </div>
                             `).join('')}
                         </div>
                     `;
