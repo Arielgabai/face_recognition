@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List
 from typing import Dict, Any
@@ -159,7 +159,7 @@ async def admin_eval_recognition(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
     if photos is None:
         photos = []
 
@@ -398,7 +398,11 @@ def photo_to_dict(photo: Photo, user_id: int = None) -> dict:
     
     # Si un user_id est fourni, vérifier s'il y a un match de visage
     if user_id is not None and photo.face_matches:
-        result["has_face_match"] = any(match.user_id == user_id for match in photo.face_matches)
+        has_match = any(match.user_id == user_id for match in photo.face_matches)
+        result["has_face_match"] = has_match
+        # Debug log
+        if has_match:
+            print(f"[DEBUG] Photo {photo.id} has face match for user {user_id}")
     
     return result
 
@@ -1149,10 +1153,18 @@ async def get_all_photos(
     if not user_event:
         raise HTTPException(status_code=404, detail="Aucun +�v+�nement associ+� +� cet utilisateur")
     event_id = user_event.event_id
-    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
+    
+    # Debug
+    print(f"[DEBUG] Found {len(photos)} photos for event {event_id}, user {current_user.id}")
+    for photo in photos:
+        print(f"[DEBUG] Photo {photo.id} has {len(photo.face_matches)} face matches")
     
     # Retourner seulement les métadonnées, pas les données binaires
-    return [photo_to_dict(photo, current_user.id) for photo in photos]
+    result = [photo_to_dict(photo, current_user.id) for photo in photos]
+    matches_count = sum(1 for r in result if r.get('has_face_match', False))
+    print(f"[DEBUG] Returning {len(result)} photos, {matches_count} with face matches")
+    return result
 
 @app.get("/api/my-uploaded-photos", response_model=List[PhotoSchema])
 async def get_my_uploaded_photos(
@@ -1800,7 +1812,7 @@ async def get_event_photos(
     if not event:
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
     
-    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
     
     # Retourner seulement les m+�tadonn+�es, pas les donn+�es binaires
     photo_list = []
@@ -1978,7 +1990,7 @@ async def get_all_event_photos(
         raise HTTPException(status_code=403, detail="Vous n'+�tes pas inscrit +� cet +�v+�nement")
     
     # Récupérer toutes les photos de l'événement
-    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
     
     # Retourner seulement les métadonnées, pas les données binaires
     return [photo_to_dict(photo, current_user.id) for photo in photos]
@@ -2008,7 +2020,7 @@ async def get_user_event_expiration(
         raise HTTPException(status_code=404, detail="Aucun événement associé à cet utilisateur")
 
     event_id = user_event.event_id
-    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
     if not photos:
         return {"event_id": event_id, "expires_at": None, "seconds_remaining": None, "photos_count": 0}
 
@@ -2279,7 +2291,7 @@ async def delete_event(
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
     
     # Supprimer les photos associ+�es +� cet +�v+�nement
-    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
     for photo in photos:
         # Supprimer le fichier physique
         try:
@@ -2360,7 +2372,7 @@ async def admin_delete_event(
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
     
     # Supprimer toutes les photos associ+�es +� cet +�v+�nement
-    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
     for photo in photos:
         # Supprimer les correspondances de visages
         db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()

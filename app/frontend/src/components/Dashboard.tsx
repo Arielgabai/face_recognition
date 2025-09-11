@@ -189,6 +189,11 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
           const isPortrait = aspectRatio.height > aspectRatio.width;
           const isPanorama = aspectRatio.width / aspectRatio.height > 1.8;
           
+          // Debug pour le premier rendu
+          if (index === 0) {
+            console.log('[DEBUG] Rendering photos, first photo has_face_match:', photo.has_face_match);
+          }
+          
           return (
             <Box
               key={photo.id}
@@ -408,6 +413,8 @@ const Dashboard: React.FC = () => {
         setProfile(profileData.data);
         setMyPhotos(myPhotosData.data);
         setAllPhotos(allPhotosData.data);
+        console.log('[DEBUG] All photos loaded (event):', allPhotosData.data.length);
+        console.log('[DEBUG] Photos with face match (event):', allPhotosData.data.filter(p => p.has_face_match).length);
       } else {
         // Chargement normal pour les photographes ou sans événement sélectionné
         const [profileData, myPhotosData, allPhotosData] = await Promise.all([
@@ -419,6 +426,8 @@ const Dashboard: React.FC = () => {
         setProfile(profileData.data);
         setMyPhotos(myPhotosData.data);
         setAllPhotos(allPhotosData.data);
+        console.log('[DEBUG] All photos loaded (normal):', allPhotosData.data.length);
+        console.log('[DEBUG] Photos with face match (normal):', allPhotosData.data.filter(p => p.has_face_match).length);
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Erreur lors du chargement des données');
@@ -577,7 +586,7 @@ const Dashboard: React.FC = () => {
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={tabValue} onChange={handleTabChange}>
             <Tab label="Mes Photos" />
-            <Tab label="Toutes les Photos" />
+            <Tab label="Général" />
             <Tab label="Upload Selfie" />
             {user?.user_type === 'photographer' && (
               <Tab label="Upload Photo" />
