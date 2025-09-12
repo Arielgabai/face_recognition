@@ -73,6 +73,8 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
   const [selectedPhoto, setSelectedPhoto] = useState<number | null>(null);
   const [faceBoxes, setFaceBoxes] = useState<Array<{ top: number; left: number; width: number; height: number; matched?: boolean; confidence?: number }>>([]);
   const [facesLoading, setFacesLoading] = useState(false);
+  const imgRef = React.useRef<HTMLImageElement | null>(null);
+  const [overlaySize, setOverlaySize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
   const openLightbox = (index: number) => {
     setSelectedPhoto(index);
@@ -115,6 +117,22 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
+  }, [selectedPhoto]);
+
+  // Mesurer l'image affichée pour calibrer les overlays
+  const measureOverlay = () => {
+    const img = imgRef.current;
+    if (!img) return;
+    const w = img.clientWidth || img.naturalWidth || 0;
+    const h = img.clientHeight || img.naturalHeight || 0;
+    if (w && h) setOverlaySize({ width: w, height: h });
+  };
+
+  useEffect(() => {
+    measureOverlay();
+    const onResize = () => measureOverlay();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, [selectedPhoto]);
 
   // Charger les cadres de visages pour la photo sélectionnée
@@ -380,6 +398,8 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
                 <Box sx={{ position: 'relative', maxWidth: '100%', maxHeight: '100%' }}>
                   <Box
                     component="img"
+                    ref={imgRef}
+                    onLoad={measureOverlay}
                     src={photoService.getImage(photos[selectedPhoto].filename)}
                     alt={photos[selectedPhoto].original_filename}
                     sx={{
@@ -390,41 +410,50 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
                       display: 'block',
                     }}
                   />
-                  {/* Overlays de visages */}
-                  {faceBoxes && faceBoxes.map((b, i) => (
-                    <Box
-                      key={`face-${i}`}
-                      sx={{
-                        position: 'absolute',
-                        top: `${b.top * 100}%`,
-                        left: `${b.left * 100}%`,
-                        width: `${b.width * 100}%`,
-                        height: `${b.height * 100}%`,
-                        border: b.matched ? '3px solid #4caf50' : '2px solid rgba(255,255,255,0.9)',
-                        borderRadius: '6px',
-                        boxShadow: b.matched ? '0 0 12px rgba(76,175,80,0.8)' : '0 0 8px rgba(0,0,0,0.6)',
-                        pointerEvents: 'none',
-                        zIndex: 2,
-                      }}
-                    >
-                      {(b.matched || (typeof b.confidence === 'number')) && (
-                        <Box sx={{
+                  {/* Container centré de la taille exacte de l'image affichée */}
+                  <Box sx={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: `${overlaySize.width}px`,
+                    height: `${overlaySize.height}px`,
+                    pointerEvents: 'none',
+                    zIndex: 2,
+                  }}>
+                    {faceBoxes && faceBoxes.map((b, i) => (
+                      <Box
+                        key={`face-${i}`}
+                        sx={{
                           position: 'absolute',
-                          top: '-28px',
-                          left: 0,
-                          backgroundColor: b.matched ? 'success.main' : 'rgba(0,0,0,0.7)',
-                          color: 'white',
-                          px: 1,
-                          py: 0.5,
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                        }}>
-                          {b.matched ? 'Match' : 'Visage'}{typeof b.confidence === 'number' ? ` · ${b.confidence}%` : ''}
-                        </Box>
-                      )}
-                    </Box>
-                  ))}
+                          top: `${b.top * overlaySize.height}px`,
+                          left: `${b.left * overlaySize.width}px`,
+                          width: `${b.width * overlaySize.width}px`,
+                          height: `${b.height * overlaySize.height}px`,
+                          border: b.matched ? '3px solid #4caf50' : '2px solid rgba(255,255,255,0.9)',
+                          borderRadius: '6px',
+                          boxShadow: b.matched ? '0 0 12px rgba(76,175,80,0.8)' : '0 0 8px rgba(0,0,0,0.6)',
+                        }}
+                      >
+                        {(b.matched || (typeof b.confidence === 'number')) && (
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '-28px',
+                            left: 0,
+                            backgroundColor: b.matched ? 'success.main' : 'rgba(0,0,0,0.7)',
+                            color: 'white',
+                            px: 1,
+                            py: 0.5,
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                          }}>
+                            {b.matched ? 'Match' : 'Visage'}{typeof b.confidence === 'number' ? ` · ${b.confidence}%` : ''}
+                          </Box>
+                        )}
+                      </Box>
+                    ))}
+                  </Box>
                   {facesLoading && (
                     <Box sx={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', px: 1, py: 0.5, borderRadius: '4px', zIndex: 3, fontSize: '12px' }}>
                       Détection des visages…

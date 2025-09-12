@@ -786,8 +786,9 @@ class ModernGallery {
         // Focus pour l'accessibilité
         this.lightboxElement.focus();
 
-        // Charger et afficher les boxes de visages si l'API est disponible
-        try {
+        // Charger et afficher les boxes de visages après le chargement effectif de l'image
+        const drawFaces = async () => {
+          try {
             const photoId = image.id || (image.data && image.data.id);
             if (!photoId) return;
             const token = localStorage.getItem('token');
@@ -849,8 +850,14 @@ class ModernGallery {
 
                 overlay.appendChild(box);
             });
-        } catch (e) {
+          } catch (e) {
             // ignore soft failures
+          }
+        };
+        if (img && !(img.complete && img.naturalHeight > 0)) {
+          img.addEventListener('load', drawFaces, { once: true });
+        } else {
+          drawFaces();
         }
     }
     
