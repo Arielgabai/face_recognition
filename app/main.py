@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
+from sqlalchemy import text as _text
 from typing import List
 from typing import Dict, Any
 import time
@@ -1343,6 +1344,53 @@ async def admin_rematch_event(
         raise HTTPException(status_code=404, detail="Événement non trouvé")
     background_tasks.add_task(_rematch_event_via_selfies, event_id)
     return {"scheduled": True, "event_id": event_id}
+
+@app.post("/api/admin/dedupe-face-matches")
+async def admin_dedupe_face_matches(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Supprime les doublons dans face_matches (conserve le meilleur score par (photo_id,user_id)). Admin uniquement."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    try:
+        # Stratégie: créer une table temporaire des meilleurs scores, supprimer puis réinsérer les meilleurs pour les couples manquants
+        # Plus simple: supprimer toutes les lignes dont id n'est pas la max pour (photo_id,user_id)
+        # et mettre à jour les scores au meilleur pour les restants.
+        # 1) Calculer les meilleurs scores par couple
+        best = db.execute(_text(
+            """
+            SELECT photo_id, user_id, MAX(confidence_score) AS best_score
+            FROM face_matches
+            GROUP BY photo_id, user_id
+            """
+        )).fetchall()
+        best_map = {(row[0], row[1]): int(row[2] or 0) for row in best}
+
+        # 2) Supprimer tout sauf une ligne par couple (garder l'id MIN pour stabilité)
+        # Supprimer via requête SQL directe pour efficacité
+        db.execute(_text(
+            """
+            DELETE FROM face_matches
+            WHERE rowid NOT IN (
+              SELECT MIN(rowid)
+              FROM face_matches
+              GROUP BY photo_id, user_id
+            )
+            """
+        ))
+        db.commit()
+
+        # 3) Mettre à jour les scores des lignes restantes avec le best_score
+        for (photo_id, user_id), score in best_map.items():
+            db.execute(_text(
+                "UPDATE face_matches SET confidence_score = :score WHERE photo_id = :pid AND user_id = :uid"
+            ), {"score": score, "pid": photo_id, "uid": user_id})
+        db.commit()
+        return {"deduped": True, "unique_pairs": len(best_map)}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/photographer/events/{event_id}/rematch")
 async def photographer_rematch_event(

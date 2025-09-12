@@ -698,8 +698,20 @@ class AwsFaceRecognizer:
         allowed_ids = set(pid for (pid,) in db.query(Photo.id).filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys()))).all())
         count_matches = 0
         for pid in allowed_ids:
-            db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=int(matched_photo_ids.get(pid) or 0)))
-            count_matches += 1
+            score = int(matched_photo_ids.get(pid) or 0)
+            # Éviter les doublons; mettre à jour si meilleur score
+            try:
+                existing = db.query(FaceMatch).filter(FaceMatch.photo_id == pid, FaceMatch.user_id == user.id).first()
+                if existing:
+                    if score > int(existing.confidence_score or 0):
+                        existing.confidence_score = score
+                else:
+                    db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
+                    count_matches += 1
+            except Exception:
+                # fallback: ajouter si problème de lecture
+                db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
+                count_matches += 1
         db.commit()
         return count_matches
 
@@ -790,7 +802,15 @@ class AwsFaceRecognizer:
             allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
             for uid, score in user_best.items():
                 if uid in allowed_user_ids:
-                    db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+                    try:
+                        existing = db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id, FaceMatch.user_id == uid).first()
+                        if existing:
+                            if int(score) > int(existing.confidence_score or 0):
+                                existing.confidence_score = int(score)
+                        else:
+                            db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+                    except Exception:
+                        db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
             # Réinitialiser l'expiration pour harmoniser (30 jours)
             try:
                 from datetime import datetime, timedelta
@@ -881,7 +901,15 @@ class AwsFaceRecognizer:
         allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
         for uid, score in user_best.items():
             if uid in allowed_user_ids:
-                db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+                try:
+                    existing = db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id, FaceMatch.user_id == uid).first()
+                    if existing:
+                        if int(score) > int(existing.confidence_score or 0):
+                            existing.confidence_score = int(score)
+                    else:
+                        db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+                except Exception:
+                    db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
         # Réinitialiser la date d'expiration de toutes les photos de l'événement (compte à rebours commun)
         try:
             from datetime import datetime, timedelta
