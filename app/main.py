@@ -1354,40 +1354,53 @@ async def admin_dedupe_face_matches(
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
     try:
-        # Stratégie: créer une table temporaire des meilleurs scores, supprimer puis réinsérer les meilleurs pour les couples manquants
-        # Plus simple: supprimer toutes les lignes dont id n'est pas la max pour (photo_id,user_id)
-        # et mettre à jour les scores au meilleur pour les restants.
-        # 1) Calculer les meilleurs scores par couple
-        best = db.execute(_text(
-            """
-            SELECT photo_id, user_id, MAX(confidence_score) AS best_score
-            FROM face_matches
-            GROUP BY photo_id, user_id
-            """
-        )).fetchall()
-        best_map = {(row[0], row[1]): int(row[2] or 0) for row in best}
+        # Adapter la requête de déduplication au dialecte
+        dialect = (db.bind and db.bind.dialect and db.bind.dialect.name) or ""
 
-        # 2) Supprimer tout sauf une ligne par couple (garder l'id MIN pour stabilité)
-        # Supprimer via requête SQL directe pour efficacité
+        # 1) Mettre à jour le score des lignes restantes à la meilleure valeur par couple
+        # Version générique (SQLite/Postgres): sous-requêtes corrélées
         db.execute(_text(
             """
-            DELETE FROM face_matches
-            WHERE rowid NOT IN (
-              SELECT MIN(rowid)
-              FROM face_matches
-              GROUP BY photo_id, user_id
+            UPDATE face_matches AS fm
+            SET confidence_score = (
+              SELECT MAX(confidence_score)
+              FROM face_matches fm2
+              WHERE fm2.photo_id = fm.photo_id AND fm2.user_id = fm.user_id
             )
             """
         ))
         db.commit()
 
-        # 3) Mettre à jour les scores des lignes restantes avec le best_score
-        for (photo_id, user_id), score in best_map.items():
+        # 2) Supprimer les doublons et ne garder qu'une ligne (id minimal) par (photo_id, user_id)
+        if dialect == "postgresql":
+            # Approche performante Postgres
             db.execute(_text(
-                "UPDATE face_matches SET confidence_score = :score WHERE photo_id = :pid AND user_id = :uid"
-            ), {"score": score, "pid": photo_id, "uid": user_id})
+                """
+                DELETE FROM face_matches a
+                USING face_matches b
+                WHERE a.photo_id = b.photo_id
+                  AND a.user_id = b.user_id
+                  AND a.id > b.id
+                """
+            ))
+        else:
+            # Fallback générique (peut être plus lent mais portable)
+            db.execute(_text(
+                """
+                DELETE FROM face_matches
+                WHERE id NOT IN (
+                  SELECT MIN(id) FROM face_matches GROUP BY photo_id, user_id
+                )
+                """
+            ))
         db.commit()
-        return {"deduped": True, "unique_pairs": len(best_map)}
+
+        # 3) Retourner le nombre de paires uniques
+        unique_cnt = db.execute(_text(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM face_matches GROUP BY photo_id, user_id) t"
+        )).scalar() or 0
+
+        return {"deduped": True, "unique_pairs": int(unique_cnt)}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
