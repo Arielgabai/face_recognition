@@ -436,6 +436,31 @@ async def root(request: Request):
                             # Rediriger vers l'interface photographe
                             with open("static/photographer.html", "r", encoding="utf-8") as f:
                                 return HTMLResponse(content=f.read())
+                        elif user and user.user_type == UserType.USER:
+                            # Afficher la galerie Jinja pour les utilisateurs
+                            from sqlalchemy.orm import joinedload as _joinedload
+                            # Trouver l'événement principal de l'utilisateur
+                            user_event = _db.query(UserEvent).filter_by(user_id=user.id).first()
+                            if user_event:
+                                event_id = user_event.event_id
+                                photos = _db.query(Photo).options(_joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
+                                photos_all = [{
+                                    "id": p.id,
+                                    "original_filename": p.original_filename or p.filename,
+                                } for p in (photos or [])]
+                                photos_match = []
+                                for p in (photos or []):
+                                    if any(m.user_id == user.id for m in (p.face_matches or [])):
+                                        photos_match.append({
+                                            "id": p.id,
+                                            "original_filename": p.original_filename or p.filename,
+                                        })
+                                return templates.TemplateResponse("gallery_modern.html", {
+                                    "request": request,
+                                    "username": user.username,
+                                    "photos_match": photos_match,
+                                    "photos_all": photos_all,
+                                })
                     finally:
                         try:
                             _db.close()
@@ -489,6 +514,11 @@ async def jinja_gallery(request: Request, current_user: User = Depends(get_curre
         "photos_all": photos_all,
     }
     return templates.TemplateResponse("gallery_modern.html", context)
+
+@app.get("/galerie", response_class=HTMLResponse)
+async def jinja_galerie_alias(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Alias FR vers la même galerie
+    return await jinja_gallery(request, current_user, db)
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_interface():
