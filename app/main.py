@@ -2345,6 +2345,8 @@ async def reset_event_expiration(
 async def admin_debug_user_matching(
     event_id: int,
     user_id: int,
+    max: int = 60,           # nombre max de photos échantillonnées
+    fast: bool = True,       # si True: ne fait que DetectFaces (plus rapide)
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -2397,8 +2399,9 @@ async def admin_debug_user_matching(
     aws = face_recognizer
     from math import isfinite as _isfinite
 
-    # Limiter la passe à 200 photos max pour ce diagnostic
-    sample_photos = photos[:200]
+    # Limiter l'échantillon selon le paramètre max (par défaut 60)
+    max = max if isinstance(max, int) and max > 0 else 60
+    sample_photos = photos[:max]
     allowed_ids = set(p.id for p in sample_photos)
 
     for p in sample_photos:
@@ -2425,29 +2428,30 @@ async def admin_debug_user_matching(
                         if area < 0.02:  # visages très petits (<2% de la surface)
                             small_faces += 1
 
-            # Ad-hoc SearchFacesByImage sur crops (si selfie indexé côté collection)
-            crops = aws._crop_face_regions(ib, fds or [])  # type: ignore
-            matched_this_photo = False
-            if crops and user_fid:
-                coll = aws._collection_id(event_id)  # type: ignore
-                for c in crops:
-                    resp = aws._search_faces_by_image_retry(coll, c)  # type: ignore
-                    if not resp:
-                        continue
-                    for fm in resp.get("FaceMatches", []) or []:
-                        ext = ((fm.get("Face") or {}).get("ExternalImageId") or "").strip()
-                        if ext.startswith('user:'):
-                            try:
-                                uid = int(ext.split(':', 1)[1])
-                            except Exception:
-                                uid = None
-                            if uid == user_id:
-                                matched_this_photo = True
-                                break
-                    if matched_this_photo:
-                        break
-            if matched_this_photo:
-                ad_hoc_matches_sfi += 1
+            # Ad-hoc SearchFacesByImage sur crops (si non-fast et selfie indexé)
+            if not fast:
+                crops = aws._crop_face_regions(ib, fds or [])  # type: ignore
+                matched_this_photo = False
+                if crops and user_fid:
+                    coll = aws._collection_id(event_id)  # type: ignore
+                    for c in crops:
+                        resp = aws._search_faces_by_image_retry(coll, c)  # type: ignore
+                        if not resp:
+                            continue
+                        for fm in resp.get("FaceMatches", []) or []:
+                            ext = ((fm.get("Face") or {}).get("ExternalImageId") or "").strip()
+                            if ext.startswith('user:'):
+                                try:
+                                    uid = int(ext.split(':', 1)[1])
+                                except Exception:
+                                    uid = None
+                                if uid == user_id:
+                                    matched_this_photo = True
+                                    break
+                        if matched_this_photo:
+                            break
+                if matched_this_photo:
+                    ad_hoc_matches_sfi += 1
 
             # Ad-hoc SearchFaces(FaceId photo -> users)
             # On réutilise l'indexation existante: retrouver les FaceId déjà indexés pour cette photo
@@ -2468,11 +2472,12 @@ async def admin_debug_user_matching(
         "diagnostic": {
             "sampled": len(sample_photos),
             "detect_ok_count": detect_ok,
-            "ad_hoc_matches_by_image": ad_hoc_matches_sfi,
+            "ad_hoc_matches_by_image": ad_hoc_matches_sfi if not fast else None,
             "small_faces_count": small_faces,
             "faces_total_count": faces_total,
             "avg_face_area_ratio": avg_face_area,
             "elapsed_sec": round(_t.time() - started, 2),
+            "fast_mode": fast,
         }
     }
 
