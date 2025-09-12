@@ -178,30 +178,60 @@ class AwsFaceRecognizer:
             pass
 
     def _index_photo_faces_and_get_ids(self, event_id: int, photo_id: int, image_bytes: bytes) -> List[str]:
-        """Indexe les visages d'une photo et retourne la liste des FaceId créés."""
+        """Indexe les visages d'une photo (crops carrés) et retourne la liste des FaceId créés."""
         coll_id = self._collection_id(event_id)
         # Nettoyer d'abord d'anciens visages pour ce photo_id
         self._delete_photo_faces(event_id, photo_id)
+        # Détecter et recadrer tous les visages puis indexer par crop pour une meilleure qualité
         try:
-            aws_metrics.inc('IndexFaces')
-            resp = self.client.index_faces(
-                CollectionId=coll_id,
-                Image={"Bytes": image_bytes},
-                ExternalImageId=f"photo:{photo_id}",
-                DetectionAttributes=[],
-                QualityFilter="AUTO",
-                MaxFaces=50,
-            )
-            face_ids: List[str] = []
-            for rec in (resp.get('FaceRecords') or []):
-                face = rec.get('Face') or {}
-                fid = face.get('FaceId')
-                if fid:
-                    face_ids.append(fid)
-            return face_ids
-        except ClientError as e:
-            print(f"❌ AWS IndexFaces error for photo {photo_id}: {e}")
-            return []
+            faces = self._detect_faces_boxes(image_bytes)
+            crops = self._crop_face_regions(image_bytes, faces) if faces else []
+        except Exception:
+            crops = []
+
+        face_ids: List[str] = []
+        if crops:
+            for crop_bytes in crops:
+                try:
+                    aws_metrics.inc('IndexFaces')
+                    resp = self.client.index_faces(
+                        CollectionId=coll_id,
+                        Image={"Bytes": crop_bytes},
+                        ExternalImageId=f"photo:{photo_id}",
+                        DetectionAttributes=[],
+                        QualityFilter="AUTO",
+                        MaxFaces=1,
+                    )
+                    for rec in (resp.get('FaceRecords') or []):
+                        face = rec.get('Face') or {}
+                        fid = face.get('FaceId')
+                        if fid:
+                            face_ids.append(fid)
+                except ClientError as e:
+                    print(f"❌ AWS IndexFaces error (crop) for photo {photo_id}: {e}")
+                    continue
+        else:
+            # Fallback: indexation sur l'image entière (comportement historique)
+            try:
+                aws_metrics.inc('IndexFaces')
+                resp = self.client.index_faces(
+                    CollectionId=coll_id,
+                    Image={"Bytes": image_bytes},
+                    ExternalImageId=f"photo:{photo_id}",
+                    DetectionAttributes=[],
+                    QualityFilter="AUTO",
+                    MaxFaces=50,
+                )
+                for rec in (resp.get('FaceRecords') or []):
+                    face = rec.get('Face') or {}
+                    fid = face.get('FaceId')
+                    if fid:
+                        face_ids.append(fid)
+            except ClientError as e:
+                print(f"❌ AWS IndexFaces error for photo {photo_id}: {e}")
+                return []
+
+        return face_ids
 
     def ensure_event_photos_indexed(self, event_id: int, db: Session):
         """Indexe tous les visages des photos de l'événement (idempotent grâce au nettoyage par photo).
