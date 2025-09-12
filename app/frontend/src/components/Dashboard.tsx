@@ -71,10 +71,7 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
   error 
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<number | null>(null);
-  const [faceBoxes, setFaceBoxes] = useState<Array<{ top: number; left: number; width: number; height: number; matched?: boolean; confidence?: number }>>([]);
-  const [facesLoading, setFacesLoading] = useState(false);
-  const imgRef = React.useRef<HTMLImageElement | null>(null);
-  const [overlaySize, setOverlaySize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  
 
   const openLightbox = (index: number) => {
     setSelectedPhoto(index);
@@ -119,53 +116,10 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
     };
   }, [selectedPhoto]);
 
-  // Mesurer l'image affichée pour calibrer les overlays
-  const measureOverlay = () => {
-    const img = imgRef.current;
-    if (!img) return;
-    const w = img.clientWidth || img.naturalWidth || 0;
-    const h = img.clientHeight || img.naturalHeight || 0;
-    if (w && h) setOverlaySize({ width: w, height: h });
-  };
-
-  useEffect(() => {
-    measureOverlay();
-    const onResize = () => measureOverlay();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [selectedPhoto]);
+  
 
   // Charger les cadres de visages pour la photo sélectionnée
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    const loadFaces = async () => {
-      if (selectedPhoto === null) { setFaceBoxes([]); return; }
-      try {
-        setFacesLoading(true);
-        const photo = photos[selectedPhoto];
-        if (!photo) return;
-        const res = await photoService.getPhotoFaces(photo.id);
-        if (cancelled) return;
-        const boxes = (res.data?.boxes || []) as Array<any>;
-        const norm = boxes.map((b) => ({
-          top: Math.min(1, Math.max(0, Number(b.top) || 0)),
-          left: Math.min(1, Math.max(0, Number(b.left) || 0)),
-          width: Math.min(1, Math.max(0, Number(b.width) || 0)),
-          height: Math.min(1, Math.max(0, Number(b.height) || 0)),
-          matched: Boolean(b.matched),
-          confidence: Number.isFinite(b.confidence) ? Number(b.confidence) : undefined,
-        })).filter((b) => b.width > 0 && b.height > 0);
-        setFaceBoxes(norm);
-      } catch {
-        if (!cancelled) setFaceBoxes([]);
-      } finally {
-        if (!cancelled) setFacesLoading(false);
-      }
-    };
-    loadFaces();
-    return () => { cancelled = true; controller.abort(); };
-  }, [selectedPhoto, photos]);
+  
 
   // Simuler des dimensions variées pour un rendu plus naturel
   const getAspectRatio = (index: number) => {
@@ -397,71 +351,17 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
 
               {/* Image principale + overlays */}
               <Fade in={true} timeout={300}>
-                <Box sx={{ position: 'relative', maxWidth: '100%', maxHeight: '100%' }}>
-                  <Box
-                    component="img"
-                    ref={imgRef}
-                    onLoad={measureOverlay}
-                    src={photoService.getImage(photos[selectedPhoto].filename)}
-                    alt={photos[selectedPhoto].original_filename}
-                    sx={{
-                      maxWidth: '100%',
-                      maxHeight: '100%',
-                      objectFit: 'contain',
-                      borderRadius: 1,
-                      display: 'block',
-                    }}
-                  />
-                  {/* Container centré de la taille exacte de l'image affichée */}
-                  <Box sx={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: `${overlaySize.width}px`,
-                    height: `${overlaySize.height}px`,
-                    pointerEvents: 'none',
-                    zIndex: 2,
-                  }}>
-                    {faceBoxes && faceBoxes.map((b, i) => (
-                      <Box
-                        key={`face-${i}`}
-                        sx={{
-                          position: 'absolute',
-                          top: `${b.top * overlaySize.height}px`,
-                          left: `${b.left * overlaySize.width}px`,
-                          width: `${b.width * overlaySize.width}px`,
-                          height: `${b.height * overlaySize.height}px`,
-                          border: b.matched ? '3px solid #4caf50' : '2px solid rgba(255,255,255,0.9)',
-                          borderRadius: '6px',
-                          boxShadow: b.matched ? '0 0 12px rgba(76,175,80,0.8)' : '0 0 8px rgba(0,0,0,0.6)',
-                        }}
-                      >
-                        {(b.matched || (typeof b.confidence === 'number')) && (
-                          <Box sx={{
-                            position: 'absolute',
-                            top: '-28px',
-                            left: 0,
-                            backgroundColor: b.matched ? 'success.main' : 'rgba(0,0,0,0.7)',
-                            color: 'white',
-                            px: 1,
-                            py: 0.5,
-                            borderRadius: '4px',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                          }}>
-                            {b.matched ? 'Match' : 'Visage'}{typeof b.confidence === 'number' ? ` · ${b.confidence}%` : ''}
-                          </Box>
-                        )}
-                      </Box>
-                    ))}
-                  </Box>
-                  {facesLoading && (
-                    <Box sx={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', px: 1, py: 0.5, borderRadius: '4px', zIndex: 3, fontSize: '12px' }}>
-                      Détection des visages…
-                    </Box>
-                  )}
-                </Box>
+                <Box
+                  component="img"
+                  src={photoService.getImage(photos[selectedPhoto].filename)}
+                  alt={photos[selectedPhoto].original_filename}
+                  sx={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain',
+                    borderRadius: 1,
+                  }}
+                />
               </Fade>
 
               {/* Compteur de photos */}
