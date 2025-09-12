@@ -2372,6 +2372,7 @@
                 const target = (typeof container === 'string') ? document.querySelector(container) : container;
                 if (!target) return;
                 const images = photos.map((p, idx) => ({
+                    id: p.id,
                     src: `/api/photo/${p.id}`,
                     alt: p.original_filename || `Photo ${idx + 1}`,
                     hasFaceMatch: !!(p.has_face_match || p.hasFaceMatch)
