@@ -749,7 +749,8 @@ class AwsFaceRecognizer:
         db.refresh(photo)
         if event_id:
             # Indexer les faces de la photo et rechercher des correspondances côté utilisateurs (selfies)
-            image_bytes = optimization_result['compressed_data']
+            # Utiliser les octets originaux (préparés) pour une meilleure empreinte faciale
+            image_bytes = self._prepare_image_bytes(original_data)
             self.ensure_collection(event_id)
             self.ensure_event_users_indexed(event_id, db)
             face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
@@ -826,7 +827,8 @@ class AwsFaceRecognizer:
         db.commit()
         db.refresh(photo)
         # Indexer les faces de la photo et rechercher des correspondances côté utilisateurs
-        image_bytes = optimization_result['compressed_data']
+        # Utiliser les octets originaux (préparés) pour une meilleure empreinte faciale
+        image_bytes = self._prepare_image_bytes(original_data)
         self.ensure_collection(event_id)
         # IMPORTANT: indexer aussi les selfies des users de l'événement avant de matcher
         self.ensure_event_users_indexed(event_id, db)
