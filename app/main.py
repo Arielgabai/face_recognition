@@ -165,7 +165,7 @@ async def admin_eval_recognition(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
     if photos is None:
         photos = []
 
@@ -1225,7 +1225,7 @@ async def get_all_photos(
     if not user_event:
         raise HTTPException(status_code=404, detail="Aucun +�v+�nement associ+� +� cet utilisateur")
     event_id = user_event.event_id
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
     
     # Debug
     print(f"[DEBUG] Found {len(photos)} photos for event {event_id}, user {current_user.id}")
@@ -1250,7 +1250,7 @@ async def get_my_uploaded_photos(
     photos = db.query(Photo).filter(
         Photo.photographer_id == current_user.id,
         Photo.photo_type == "uploaded"
-    ).all()
+    ).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
     
     # Retourner seulement les m+�tadonn+�es, pas les donn+�es binaires
     photo_list = []
