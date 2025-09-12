@@ -124,6 +124,28 @@
             opacity: 1;
         }
 
+        .match-badge {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            background: rgba(25, 118, 210, 0.92);
+            color: #fff;
+            border-radius: 999px;
+            padding: 6px 8px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 2;
+        }
+        .match-badge .icon {
+            width: 14px;
+            height: 14px;
+            display: inline-block;
+        }
+
         /* Styles pour différentes proportions d'images */
         .photo-card.portrait {
             grid-row-end: span 2;
@@ -329,6 +351,7 @@
         {% endif %}
 
         {% if photos_all %}
+        {% set match_set = photos_match | list if photos_match else [] %}
         <div class="section">
             <h2 class="section-title">🖼 Toutes les photos</h2>
             <div class="gallery" id="all-gallery" data-section="all" data-count="{{ photos_all|length }}">
@@ -341,6 +364,12 @@
                     <div class="photo-overlay">
                         <span>Voir en grand</span>
                     </div>
+                    {% if photo in match_set %}
+                    <div class="match-badge" title="Aussi dans vos photos">
+                        <span class="icon">✅</span>
+                        <span>Vos photos</span>
+                    </div>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>

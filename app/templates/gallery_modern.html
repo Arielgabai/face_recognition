@@ -167,6 +167,28 @@
             opacity: 1;
         }
 
+        .match-badge {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            background: rgba(25, 118, 210, 0.92);
+            color: #fff;
+            border-radius: 999px;
+            padding: 6px 8px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 2;
+        }
+        .match-badge .icon {
+            width: 14px;
+            height: 14px;
+            display: inline-block;
+        }
+
         /* Lightbox */
         .lightbox {
             display: none;
@@ -410,6 +432,7 @@
         </div>
 
         <!-- Section Toutes les photos -->
+        {% set match_ids = (photos_match | map(attribute='id') | list) if photos_match else [] %}
         <div class="section" id="section-1">
             <h2 class="section-title">🖼 Toutes les photos disponibles</h2>
             {% if photos_all %}
@@ -422,6 +445,12 @@
                     <div class="photo-overlay">
                         <span>Voir en grand</span>
                     </div>
+                    {% if photo.id in match_ids %}
+                    <div class="match-badge" title="Aussi dans vos photos">
+                        <span class="icon">✅</span>
+                        <span>Vos photos</span>
+                    </div>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>
