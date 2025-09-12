@@ -479,6 +479,7 @@
             'match': [
                 {% for photo in photos_match %}
                 {
+                    id: {{ photo.id }},
                     src: "/api/photo/{{ photo.id }}",
                     alt: "{{ photo.original_filename }}"
                 }{% if not loop.last %},{% endif %}
@@ -487,6 +488,7 @@
             'all': [
                 {% for photo in photos_all %}
                 {
+                    id: {{ photo.id }},
                     src: "/api/photo/{{ photo.id }}",
                     alt: "{{ photo.original_filename }}"
                 }{% if not loop.last %},{% endif %}
@@ -532,6 +534,79 @@
                 lightbox.dataset.index = String(currentImageIndex);
                 lightbox.classList.add('active');
                 document.body.style.overflow = 'hidden';
+
+                // Dessiner les cadres de visages après chargement de l'image
+                const drawFaces = async () => {
+                    try {
+                        const current = images[currentImageIndex];
+                        if (!current || !current.id) return;
+                        const token = localStorage.getItem('token');
+                        const resp = await fetch(`/api/photo/${current.id}/faces`, {
+                            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                        });
+                        if (!resp.ok) return;
+                        const data = await resp.json();
+                        const boxes = Array.isArray(data.boxes) ? data.boxes : [];
+
+                        let overlay = document.querySelector('.lightbox .face-overlays');
+                        if (!overlay) {
+                            overlay = document.createElement('div');
+                            overlay.className = 'face-overlays';
+                            overlay.style.position = 'absolute';
+                            overlay.style.left = '50%';
+                            overlay.style.top = '50%';
+                            overlay.style.transform = 'translate(-50%, -50%)';
+                            overlay.style.pointerEvents = 'none';
+                            overlay.style.maxWidth = '95%';
+                            overlay.style.maxHeight = '95%';
+                            lightbox.appendChild(overlay);
+                        } else {
+                            overlay.innerHTML = '';
+                        }
+
+                        const displayedWidth = img.clientWidth || img.naturalWidth;
+                        const displayedHeight = img.clientHeight || img.naturalHeight;
+                        overlay.style.width = displayedWidth + 'px';
+                        overlay.style.height = displayedHeight + 'px';
+
+                        boxes.forEach((b) => {
+                            const box = document.createElement('div');
+                            box.style.position = 'absolute';
+                            box.style.left = `${Math.max(0, Math.min(1, b.left || 0)) * displayedWidth}px`;
+                            box.style.top = `${Math.max(0, Math.min(1, b.top || 0)) * displayedHeight}px`;
+                            box.style.width = `${Math.max(0, Math.min(1, b.width || 0)) * displayedWidth}px`;
+                            box.style.height = `${Math.max(0, Math.min(1, b.height || 0)) * displayedHeight}px`;
+                            box.style.border = b.matched ? '3px solid #4caf50' : '2px solid rgba(255,255,255,0.9)';
+                            box.style.borderRadius = '6px';
+                            box.style.boxShadow = b.matched ? '0 0 12px rgba(76,175,80,0.8)' : '0 0 8px rgba(0,0,0,0.6)';
+                            box.style.zIndex = 1002;
+
+                            if (b.matched || (typeof b.confidence === 'number')) {
+                                const label = document.createElement('div');
+                                label.textContent = (b.matched ? 'Match' : 'Visage') + (typeof b.confidence === 'number' ? ` · ${b.confidence}%` : '');
+                                label.style.position = 'absolute';
+                                label.style.left = '0';
+                                label.style.top = '-24px';
+                                label.style.padding = '2px 6px';
+                                label.style.fontSize = '12px';
+                                label.style.fontWeight = '700';
+                                label.style.color = '#fff';
+                                label.style.borderRadius = '4px';
+                                label.style.background = b.matched ? 'rgba(76,175,80,0.95)' : 'rgba(0,0,0,0.7)';
+                                box.appendChild(label);
+                            }
+
+                            overlay.appendChild(box);
+                        });
+                    } catch (e) {
+                        // silencieux
+                    }
+                };
+                if (!(img.complete && img.naturalHeight > 0)) {
+                    img.addEventListener('load', drawFaces, { once: true });
+                } else {
+                    drawFaces();
+                }
             }
         }
 
