@@ -42,6 +42,7 @@ from auto_face_recognition import update_face_recognition_for_event
 create_tables()
 
 app = FastAPI(title="Face Recognition API", version="1.0.0")
+templates = Jinja2Templates(directory="templates")
 
 # État en mémoire pour suivre l'avancement du rematching de selfie par utilisateur
 REMATCH_STATUS: Dict[int, Dict[str, Any]] = {}
@@ -453,6 +454,41 @@ async def root(request: Request):
 async def api_root():
     """Point d'entr+�e de l'API"""
     return {"message": "Face Recognition API"}
+
+# === PAGES JINJA ===
+@app.get("/gallery", response_class=HTMLResponse)
+async def jinja_gallery(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Galerie Jinja moderne pour l'utilisateur connecté (événement principal)."""
+    # Trouver l'événement principal de l'utilisateur
+    user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
+    if not user_event:
+        return HTMLResponse(content="<h1>Galerie</h1><p>Aucun événement associé à cet utilisateur.</p>", status_code=404)
+    event_id = user_event.event_id
+
+    # Charger les photos de l'événement
+    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
+
+    # Construire les listes pour le template
+    photos_all = [{
+        "id": p.id,
+        "original_filename": p.original_filename or p.filename,
+    } for p in photos]
+
+    photos_match = []
+    for p in photos:
+        if any(m.user_id == current_user.id for m in (p.face_matches or [])):
+            photos_match.append({
+                "id": p.id,
+                "original_filename": p.original_filename or p.filename,
+            })
+
+    context = {
+        "request": request,
+        "username": current_user.username,
+        "photos_match": photos_match,
+        "photos_all": photos_all,
+    }
+    return templates.TemplateResponse("gallery_modern.html", context)
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_interface():
