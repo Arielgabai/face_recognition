@@ -57,6 +57,11 @@ class Photo(PhotoBase):
     user_id: Optional[int] = None
     photographer_id: Optional[int] = None
     uploaded_at: datetime
+    # Champs additionnels renvoyés par l'API
+    content_type: Optional[str] = None
+    event_id: Optional[int] = None
+    event_name: Optional[str] = None
+    has_face_match: Optional[bool] = False
 
     class Config:
         from_attributes = True
