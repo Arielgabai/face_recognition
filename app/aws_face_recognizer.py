@@ -55,6 +55,8 @@ class AwsFaceRecognizer:
         # Cache simple en mémoire pour éviter de réindexer à chaque photo
         self._indexed_events: Set[int] = set()
         self._photos_indexed_events: Set[int] = set()
+        # Cache FaceId par (event_id, user_id) pour accélérer les recherches
+        self._user_faceid_cache: Dict[Tuple[int, int], str] = {}
 
     def _collection_id(self, event_id: int) -> str:
         return f"{COLL_PREFIX}{event_id}"
@@ -118,17 +120,32 @@ class AwsFaceRecognizer:
             # On ignore les erreurs de suppression pour ne pas bloquer l'indexation
             pass
 
+        # Préparer l'image (EXIF, RGB, dimension) et recadrer le meilleur visage
+        prepared = self._prepare_image_bytes(image_bytes)
+        if not prepared:
+            return
+        best_crop = self._best_face_crop_or_image(prepared)
+
         # Indexer le selfie de l'utilisateur dans la collection de l'événement
         try:
             aws_metrics.inc('IndexFaces')
-            self.client.index_faces(
+            resp = self.client.index_faces(
                 CollectionId=coll_id,
-                Image={"Bytes": image_bytes},
+                Image={"Bytes": best_crop},
                 ExternalImageId=f"user:{user.id}",
                 DetectionAttributes=[],
                 QualityFilter="AUTO",
                 MaxFaces=1,
             )
+            # Mémoriser le FaceId pour accélérer les prochaines recherches
+            try:
+                for rec in (resp.get('FaceRecords') or []):
+                    fid = ((rec or {}).get('Face') or {}).get('FaceId')
+                    if fid:
+                        self._user_faceid_cache[(event_id, user.id)] = fid
+                        break
+            except Exception:
+                pass
         except ClientError:
             # Si l'indexation échoue, on laisse la fonction silencieuse pour ne pas interrompre le flux
             pass
@@ -319,7 +336,8 @@ class AwsFaceRecognizer:
         """Appelle Rekognition DetectFaces et renvoie les FaceDetails filtrés par confiance."""
         try:
             aws_metrics.inc('DetectFaces')
-            resp = self.client.detect_faces(Image={"Bytes": image_bytes}, Attributes=["DEFAULT"])
+            # Utiliser ALL pour récupérer la qualité (sharpness/brightness) et améliorer le choix des crops
+            resp = self.client.detect_faces(Image={"Bytes": image_bytes}, Attributes=["ALL"])
             faces = resp.get("FaceDetails", []) or []
             faces = [f for f in faces if float(f.get("Confidence", 0.0)) >= AWS_DETECT_MIN_CONF]
             return faces
@@ -344,20 +362,28 @@ class AwsFaceRecognizer:
                 top = float(bb.get("Top", 0.0))
                 width = float(bb.get("Width", 0.0))
                 height = float(bb.get("Height", 0.0))
+                # Rectangle initial
                 x1 = int(max(0, left * W))
                 y1 = int(max(0, top * H))
                 x2 = int(min(W, (left + width) * W))
                 y2 = int(min(H, (top + height) * H))
-                # Padding
-                pad = int(max(x2 - x1, y2 - y1) * AWS_CROP_PADDING)
-                x1p = max(0, x1 - pad)
-                y1p = max(0, y1 - pad)
-                x2p = min(W, x2 + pad)
-                y2p = min(H, y2 + pad)
-                if (x2p - x1p) < AWS_MIN_CROP_SIDE or (y2p - y1p) < AWS_MIN_CROP_SIDE:
+                # Padding proportionnel
+                base_side = max(x2 - x1, y2 - y1)
+                pad = int(base_side * AWS_CROP_PADDING)
+                cx = (x1 + x2) // 2
+                cy = (y1 + y2) // 2
+                half = (base_side // 2) + pad
+                # Carré centré
+                x1p = max(0, cx - half)
+                y1p = max(0, cy - half)
+                x2p = min(W, cx + half)
+                y2p = min(H, cy + half)
+                # Ajuster si on a été coupé par les bords (recentrer si possible)
+                side = min(x2p - x1p, y2p - y1p)
+                if side < AWS_MIN_CROP_SIDE:
                     continue
                 try:
-                    crop = im.crop((x1p, y1p, x2p, y2p))
+                    crop = im.crop((x1p, y1p, x1p + side, y1p + side))
                     out = _BytesIO()
                     crop.save(out, format="JPEG", quality=92, optimize=True)
                     crops.append(out.getvalue())
@@ -366,6 +392,29 @@ class AwsFaceRecognizer:
         except Exception as e:
             print(f"⚠️  Crop error: {e}")
         return crops
+
+    def _best_face_crop_or_image(self, image_bytes: bytes) -> bytes:
+        """Retourne le meilleur crop visage (carré + padding) si détecté, sinon l'image telle quelle.
+
+        Critère: priorité à Quality.Sharpness puis à l'aire du bounding box.
+        """
+        try:
+            faces = self._detect_faces_boxes(image_bytes)
+            if not faces:
+                return image_bytes
+            # Sélection du meilleur visage
+            def score_face(fd: Dict) -> Tuple[float, float]:
+                qual = (fd.get('Quality') or {})
+                sharp = float(qual.get('Sharpness', 0.0))
+                bb = (fd.get('BoundingBox') or {})
+                area = float(bb.get('Width', 0.0)) * float(bb.get('Height', 0.0))
+                return (sharp, area)
+            best = max(faces, key=score_face)
+            # Recadrer uniquement ce visage
+            crops = self._crop_face_regions(image_bytes, [best])
+            return crops[0] if crops else image_bytes
+        except Exception:
+            return image_bytes
 
     # ---------- Helpers AWS avec retry ----------
     def _search_faces_retry(self, collection_id: str, face_id: str, max_faces: Optional[int] = None):
@@ -424,6 +473,10 @@ class AwsFaceRecognizer:
 
     def _find_user_face_id(self, event_id: int, user_id: int) -> Optional[str]:
         coll_id = self._collection_id(event_id)
+        # Cache rapide
+        fid_cached = self._user_faceid_cache.get((event_id, user_id))
+        if fid_cached:
+            return fid_cached
         next_token = None
         target_exts = {str(user_id), f"user:{user_id}"}
         try:
@@ -437,6 +490,8 @@ class AwsFaceRecognizer:
                     if ext in target_exts:
                         fid = f.get('FaceId')
                         if fid:
+                            # Mémoriser en cache et retourner
+                            self._user_faceid_cache[(event_id, user_id)] = fid
                             return fid
                 next_token = resp.get('NextToken')
                 if not next_token:
