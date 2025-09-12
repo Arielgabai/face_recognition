@@ -2373,7 +2373,8 @@
                 if (!target) return;
                 const images = photos.map((p, idx) => ({
                     src: `/api/photo/${p.id}`,
-                    alt: p.original_filename || `Photo ${idx + 1}`
+                    alt: p.original_filename || `Photo ${idx + 1}`,
+                    hasFaceMatch: !!p.has_face_match
                 }));
                 const gid = galleryId || `modern_${Math.random().toString(36).slice(2)}`;
                 target.innerHTML = `<div id="${gid}"></div>`;

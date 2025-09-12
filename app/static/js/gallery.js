@@ -597,6 +597,39 @@ class ModernGallery {
         
         card.appendChild(img);
         card.appendChild(overlay);
+
+        // Badge "Vos photos" si l'image a un match facial
+        try {
+            if (image && (image.hasFaceMatch === true || image.has_face_match === true)) {
+                const badge = document.createElement('div');
+                badge.className = 'gallery-match-badge';
+                badge.title = 'Aussi dans vos photos';
+                badge.style.cssText = [
+                    'position: absolute',
+                    'top: 8px',
+                    'right: 8px',
+                    'background: rgba(76, 175, 80, 0.95)',
+                    'color: #fff',
+                    'padding: 4px 8px',
+                    'border-radius: 12px',
+                    'font-size: 12px',
+                    'font-weight: 700',
+                    'display: inline-flex',
+                    'align-items: center',
+                    'gap: 6px',
+                    'z-index: 10',
+                    'box-shadow: 0 2px 8px rgba(0,0,0,0.2)'
+                ].join(';');
+                const icon = document.createElement('span');
+                icon.textContent = '✅';
+                const txt = document.createElement('span');
+                txt.textContent = 'Vos photos';
+                badge.appendChild(icon);
+                badge.appendChild(txt);
+                card.appendChild(badge);
+                card.setAttribute('data-has-match', '1');
+            }
+        } catch (e) {}
         
         // Event listeners
         if (this.options.lightbox) {
