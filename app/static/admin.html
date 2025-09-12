@@ -243,6 +243,18 @@
     </style>
 </head>
 <body>
+    <div id="perf-metrics" style="position:absolute;left:-9999px;top:-9999px;" aria-hidden="true"
+         data-aws-count-indexfaces="0"
+         data-aws-count-searchfaces="0"
+         data-aws-count-searchfacesbyimage="0"
+         data-aws-count-detectfaces="0"
+         data-aws-cost-indexfaces="0"
+         data-aws-cost-searchfaces="0"
+         data-aws-cost-searchfacesbyimage="0"
+         data-aws-cost-detectfaces="0"
+         data-aws-total-cost="0"
+         data-aws-since="">
+    </div>
     <div class="container">
         <h1>👑 Administration - Face Recognition App</h1>
         
@@ -523,6 +535,15 @@
                     document.getElementById('dashboard').style.display = 'block';
                     
                     loadStats();
+                    // Fetch and expose recognizer provider to data attribute for QA
+                    try {
+                        const provResp = await fetch('/api/admin/provider', { headers: { 'Authorization': `Bearer ${token}` } });
+                        if (provResp.ok) {
+                            const prov = await provResp.json();
+                            window.__REC_PROVIDER__ = prov.FACE_RECOGNIZER_PROVIDER || prov.provider_class || 'unknown';
+                            document.documentElement.setAttribute('data-rec-provider', window.__REC_PROVIDER__);
+                        }
+                    } catch (e) {}
                     loadPhotographers();
                     loadEvents();
                 } else {
@@ -574,6 +595,22 @@
                 const costs = data.costs || {};
                 const actions = data.actions || {};
                 const actionLog = data.action_log || [];
+                // Expose metrics as data-* tags for QA
+                try {
+                    const perf = document.getElementById('perf-metrics');
+                    if (perf) {
+                        perf.dataset.awsCountIndexfaces = String(counts.IndexFaces || 0);
+                        perf.dataset.awsCountSearchfaces = String(counts.SearchFaces || 0);
+                        perf.dataset.awsCountSearchfacesbyimage = String(counts.SearchFacesByImage || 0);
+                        perf.dataset.awsCountDetectfaces = String(counts.DetectFaces || 0);
+                        perf.dataset.awsCostIndexfaces = String(costs.IndexFaces || 0);
+                        perf.dataset.awsCostSearchfaces = String(costs.SearchFaces || 0);
+                        perf.dataset.awsCostSearchfacesbyimage = String(costs.SearchFacesByImage || 0);
+                        perf.dataset.awsCostDetectfaces = String(costs.DetectFaces || 0);
+                        perf.dataset.awsTotalCost = String(data.total_cost_usd || 0);
+                        perf.dataset.awsSince = String(data.since || '');
+                    }
+                } catch (e) {}
                 let rows = '';
                 const ops = Object.keys(counts).sort();
                 if (ops.length === 0) {

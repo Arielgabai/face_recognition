@@ -364,7 +364,7 @@
         }
     </style>
 </head>
-<body>
+<body data-gallery-username="{{ username }}">
     <a href="/static/index.html" class="back-btn">← Retour au Dashboard</a>
     
     <div class="container">
@@ -389,9 +389,9 @@
         <div class="section active" id="section-0">
             <h2 class="section-title">📸 Photos où vous apparaissez</h2>
             {% if photos_match %}
-            <div class="gallery" id="match-gallery">
+            <div class="gallery" id="match-gallery" data-section="match" data-count="{{ photos_match|length }}">
                 {% for photo in photos_match %}
-                <div class="photo-card" onclick="openLightbox({{ loop.index0 }}, 'match')">
+                <div class="photo-card" data-index="{{ loop.index0 }}" onclick="openLightbox({{ loop.index0 }}, 'match')">
                     <img src="/api/photo/{{ photo.id }}" 
                          alt="{{ photo.original_filename }}" 
                          loading="lazy">
@@ -413,9 +413,9 @@
         <div class="section" id="section-1">
             <h2 class="section-title">🖼 Toutes les photos disponibles</h2>
             {% if photos_all %}
-            <div class="gallery" id="all-gallery">
+            <div class="gallery" id="all-gallery" data-section="all" data-count="{{ photos_all|length }}">
                 {% for photo in photos_all %}
-                <div class="photo-card" onclick="openLightbox({{ loop.index0 }}, 'all')">
+                <div class="photo-card" data-index="{{ loop.index0 }}" onclick="openLightbox({{ loop.index0 }}, 'all')">
                     <img src="/api/photo/{{ photo.id }}" 
                          alt="{{ photo.original_filename }}" 
                          loading="lazy">
@@ -435,7 +435,7 @@
     </div>
 
     <!-- Lightbox -->
-    <div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+    <div class="lightbox" id="lightbox" onclick="closeLightbox(event)" data-opened-at="" data-gallery="" data-index="">
         <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
         <div class="lightbox-nav lightbox-prev" onclick="previousImage()" id="prev-btn">‹</div>
         <div class="lightbox-nav lightbox-next" onclick="nextImage()" id="next-btn">›</div>
@@ -498,6 +498,9 @@
                 document.getElementById('prev-btn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
                 document.getElementById('next-btn').style.display = currentImageIndex < images.length - 1 ? 'flex' : 'none';
                 
+                lightbox.dataset.openedAt = String(Date.now());
+                lightbox.dataset.gallery = String(gallery);
+                lightbox.dataset.index = String(currentImageIndex);
                 lightbox.classList.add('active');
                 document.body.style.overflow = 'hidden';
             }

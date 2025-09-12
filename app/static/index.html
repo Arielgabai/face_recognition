@@ -1920,8 +1920,43 @@
     </style>
 </head>
 <body>
+    <div id="perf-global" style="position:absolute;left:-9999px;top:-9999px;" aria-hidden="true"
+         data-rec-provider=""
+         data-selfie-validate-ms=""
+         data-upload-photo-ms=""
+         data-face-match-count=""
+         data-last-action="">
+    </div>
     <script src="/static/js/gallery.js"></script>
     <script>
+        (function(){
+            try {
+                const perf = document.getElementById('perf-global');
+                async function exposeProviderIfLogged() {
+                    const token = localStorage.getItem('token');
+                    if (!token) return;
+                    try {
+                        const resp = await fetch('/api/admin/provider', { headers: { 'Authorization': `Bearer ${token}` } });
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            const prov = data.FACE_RECOGNIZER_PROVIDER || data.provider_class || '';
+                            if (perf) perf.dataset.recProvider = prov;
+                            document.documentElement.setAttribute('data-rec-provider', prov);
+                        }
+                    } catch (e) {}
+                }
+                exposeProviderIfLogged();
+                window.__perfMark = function(name, ms) {
+                    if (!perf) return;
+                    if (name === 'selfie-validate') perf.dataset.selfieValidateMs = String(ms);
+                    if (name === 'upload-photo') perf.dataset.uploadPhotoMs = String(ms);
+                    perf.dataset.lastAction = name;
+                };
+                window.__setFaceMatchCount = function(n) {
+                    if (perf) perf.dataset.faceMatchCount = String(n);
+                };
+            } catch (e) {}
+        })();
         // Sécurise l'état si des interactions externes modifient la lightbox
         function syncHamburgerVisibility() {
             const menu = document.getElementById('hamburgerMenu');

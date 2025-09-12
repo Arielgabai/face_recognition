@@ -299,7 +299,7 @@
         }
     </style>
 </head>
-<body>
+<body data-gallery-user="{{ user_id }}">
     <div class="container">
         <div class="brand-header">
             <img src="/static/img/findme-logo.png" alt="FindMe" class="brand-logo" />
@@ -312,9 +312,9 @@
         {% if photos_match %}
         <div class="section">
             <h2 class="section-title">📸 Photos où vous apparaissez</h2>
-            <div class="gallery" id="match-gallery">
+            <div class="gallery" id="match-gallery" data-section="match" data-count="{{ photos_match|length }}">
                 {% for photo in photos_match %}
-                <div class="photo-card" onclick="openLightbox('{{ loop.index0 }}', 'match')">
+                <div class="photo-card" data-index="{{ loop.index0 }}" onclick="openLightbox('{{ loop.index0 }}', 'match')">
                     <img src="/static/uploads/sorted/{{ user_id }}/match/{{ photo }}" 
                          alt="Photo {{ loop.index }}" 
                          loading="lazy"
@@ -331,9 +331,9 @@
         {% if photos_all %}
         <div class="section">
             <h2 class="section-title">🖼 Toutes les photos</h2>
-            <div class="gallery" id="all-gallery">
+            <div class="gallery" id="all-gallery" data-section="all" data-count="{{ photos_all|length }}">
                 {% for photo in photos_all %}
-                <div class="photo-card" onclick="openLightbox('{{ loop.index0 }}', 'all')">
+                <div class="photo-card" data-index="{{ loop.index0 }}" onclick="openLightbox('{{ loop.index0 }}', 'all')">
                     <img src="/static/uploads/groupes/{{ photo }}" 
                          alt="Photo {{ loop.index }}" 
                          loading="lazy"
@@ -356,7 +356,7 @@
     </div>
 
     <!-- Lightbox -->
-    <div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+    <div class="lightbox" id="lightbox" onclick="closeLightbox(event)" data-opened-at="" data-gallery="" data-index="">
         <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
         <div class="lightbox-nav lightbox-prev" onclick="previousImage()" id="prev-btn">‹</div>
         <div class="lightbox-nav lightbox-next" onclick="nextImage()" id="next-btn">›</div>
@@ -418,6 +418,9 @@
                 document.getElementById('prev-btn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
                 document.getElementById('next-btn').style.display = currentImageIndex < images.length - 1 ? 'flex' : 'none';
                 
+                lightbox.dataset.openedAt = String(Date.now());
+                lightbox.dataset.gallery = String(gallery);
+                lightbox.dataset.index = String(currentImageIndex);
                 lightbox.classList.add('active');
                 document.body.style.overflow = 'hidden';
             }
