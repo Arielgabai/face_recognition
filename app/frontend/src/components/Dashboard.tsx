@@ -137,16 +137,17 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
 
   // Charger les cadres de visages pour la photo sélectionnée
   useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
     const loadFaces = async () => {
       if (selectedPhoto === null) { setFaceBoxes([]); return; }
       try {
         setFacesLoading(true);
-        setFaceBoxes([]);
         const photo = photos[selectedPhoto];
         if (!photo) return;
         const res = await photoService.getPhotoFaces(photo.id);
+        if (cancelled) return;
         const boxes = (res.data?.boxes || []) as Array<any>;
-        // Normaliser les valeurs et filtrer les incohérences
         const norm = boxes.map((b) => ({
           top: Math.min(1, Math.max(0, Number(b.top) || 0)),
           left: Math.min(1, Math.max(0, Number(b.left) || 0)),
@@ -157,12 +158,13 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
         })).filter((b) => b.width > 0 && b.height > 0);
         setFaceBoxes(norm);
       } catch {
-        setFaceBoxes([]);
+        if (!cancelled) setFaceBoxes([]);
       } finally {
-        setFacesLoading(false);
+        if (!cancelled) setFacesLoading(false);
       }
     };
     loadFaces();
+    return () => { cancelled = true; controller.abort(); };
   }, [selectedPhoto, photos]);
 
   // Simuler des dimensions variées pour un rendu plus naturel

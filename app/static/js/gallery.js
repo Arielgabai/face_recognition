@@ -835,7 +835,8 @@ class ModernGallery {
 
                 if (b.matched || (typeof b.confidence === 'number')) {
                     const label = document.createElement('div');
-                    label.textContent = (b.matched ? 'Match' : 'Visage') + (typeof b.confidence === 'number' ? ` · ${b.confidence}%` : '');
+                    const conf = (typeof b.confidence === 'number') ? Math.max(0, Math.min(100, Math.round(b.confidence))) : null;
+                    label.textContent = (b.matched ? 'Match' : 'Visage') + (conf !== null ? ` · ${conf}%` : '');
                     label.style.position = 'absolute';
                     label.style.left = '0';
                     label.style.top = '-24px';

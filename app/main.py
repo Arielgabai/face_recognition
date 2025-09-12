@@ -37,6 +37,7 @@ from photo_optimizer import PhotoOptimizer
 from aws_metrics import aws_metrics
 import requests
 from auto_face_recognition import update_face_recognition_for_event
+from collections import OrderedDict
 
 # Créer les tables au démarrage
 create_tables()
@@ -99,6 +100,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Initialiser le recognizer (local ou Azure selon FACE_RECOGNIZER_PROVIDER)
 face_recognizer = get_face_recognizer()
 print(f"[FaceRecognition] Provider actif: {type(face_recognizer).__name__}")
+
+# Cache léger en mémoire pour les cadres/encodages par photo (LRU ~128 entrées)
+PHOTO_FACES_CACHE: "OrderedDict[int, Dict[str, Any]]" = OrderedDict()
+PHOTO_FACES_CACHE_MAX = 128
 
 @app.get("/api/admin/provider")
 async def get_active_provider(current_user: User = Depends(get_current_user)):
@@ -1424,6 +1429,15 @@ async def get_photo_faces(
     if not photo:
         raise HTTPException(status_code=404, detail="Photo non trouvée")
 
+    # Cache LRU: retourner si déjà calculé récemment
+    try:
+        if photo_id in PHOTO_FACES_CACHE:
+            entry = PHOTO_FACES_CACHE.pop(photo_id)
+            PHOTO_FACES_CACHE[photo_id] = entry
+            return entry
+    except Exception:
+        pass
+
     # Charger les octets de l'image depuis la base ou le chemin de fichier
     image_bytes: bytes | None = None
     if getattr(photo, "photo_data", None):
@@ -1544,11 +1558,18 @@ async def get_photo_faces(
 
             boxes.append(box)
 
-        return {
+        result = {
             "image_width": work_w,
             "image_height": work_h,
             "boxes": boxes,
         }
+        try:
+            PHOTO_FACES_CACHE[photo_id] = result
+            if len(PHOTO_FACES_CACHE) > PHOTO_FACES_CACHE_MAX:
+                PHOTO_FACES_CACHE.popitem(last=False)
+        except Exception:
+            pass
+        return result
     except HTTPException:
         raise
     except Exception as e:
