@@ -31,6 +31,8 @@ AWS_DETECT_MIN_CONF = float(os.environ.get("AWS_REKOGNITION_DETECT_MIN_CONF", "7
 AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "2048") or "2048")
 AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.2") or "0.2")  # 20% padding
 AWS_MIN_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_CROP_SIDE", "36") or "36")
+# Dimension minimale de sortie pour un crop visage (on upsample si nécessaire)
+AWS_MIN_OUTPUT_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_OUTPUT_CROP_SIDE", "320") or "320")
 
 # Parallélisation bornée (bornes codées simplement; pas d'arrière-plan)
 MAX_PARALLEL_PER_REQUEST = 4
@@ -414,6 +416,12 @@ class AwsFaceRecognizer:
                     continue
                 try:
                     crop = im.crop((x1p, y1p, x1p + side, y1p + side))
+                    # Upscale si le crop est trop petit pour une bonne empreinte
+                    if side < AWS_MIN_OUTPUT_CROP_SIDE:
+                        try:
+                            crop = crop.resize((AWS_MIN_OUTPUT_CROP_SIDE, AWS_MIN_OUTPUT_CROP_SIDE), _Image.Resampling.LANCZOS)
+                        except Exception:
+                            pass
                     out = _BytesIO()
                     crop.save(out, format="JPEG", quality=92, optimize=True)
                     crops.append(out.getvalue())
