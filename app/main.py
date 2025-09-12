@@ -2339,6 +2339,143 @@ async def reset_event_expiration(
         "photos_updated": updated_count
     }
 
+# === DEBUG/DIAGNOSTIC REKOGNITION (ADMIN) ===
+
+@app.get("/api/admin/events/{event_id}/debug-user/{user_id}")
+async def admin_debug_user_matching(
+    event_id: int,
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Diagnostic détaillé du pipeline de reconnaissance pour un utilisateur sur un événement.
+
+    Retourne des compteurs et causes probables: selfie indexé, détection de visages,
+    ratios de match ad-hoc vs persistés, distribution de tailles de visages.
+    (Admin uniquement)
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+
+    # Vérifier provider
+    provider_name = type(face_recognizer).__name__
+    if provider_name != 'AwsFaceRecognizer':
+        return {
+            "provider": provider_name,
+            "detail": "Diagnostic spécifique AWS uniquement",
+        }
+
+    # Charger données
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+    photos = db.query(Photo).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
+    total_photos = len(photos)
+    persisted = db.query(FaceMatch).filter(FaceMatch.user_id == user_id, FaceMatch.photo_id.in_([p.id for p in photos])).count()
+
+    # Vérifier selfie indexé côté collection
+    try:
+        user_fid = None
+        if hasattr(face_recognizer, '_find_user_face_id'):
+            user_fid = face_recognizer._find_user_face_id(event_id, user_id)  # type: ignore
+    except Exception:
+        user_fid = None
+
+    # Échantillonner diagnostic par lot (pour ne pas exploser la latence)
+    import time as _t
+    started = _t.time()
+    detect_ok = 0
+    ad_hoc_matches_sfi = 0  # SearchFacesByImage(crops)
+    ad_hoc_matches_fid = 0  # SearchFaces(FaceId des photos indexées)
+    small_faces = 0
+    faces_total = 0
+    face_area_sum = 0.0
+    tried = 0
+
+    # Utiliser helpers du provider AWS
+    aws = face_recognizer
+    from math import isfinite as _isfinite
+
+    # Limiter la passe à 200 photos max pour ce diagnostic
+    sample_photos = photos[:200]
+    allowed_ids = set(p.id for p in sample_photos)
+
+    for p in sample_photos:
+        tried += 1
+        # Préparer bytes originaux (meilleure qualité)
+        photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
+        if not photo_input:
+            continue
+        try:
+            ib = aws._prepare_image_bytes(photo_input)  # type: ignore
+            if not ib:
+                continue
+            # DetectFaces pour stats
+            fds = aws._detect_faces_boxes(ib)  # type: ignore
+            if fds:
+                detect_ok += 1
+                # Stats taille des visages
+                for fd in fds:
+                    bb = (fd.get('BoundingBox') or {})
+                    area = float(bb.get('Width', 0.0)) * float(bb.get('Height', 0.0))
+                    if _isfinite(area):
+                        faces_total += 1
+                        face_area_sum += area
+                        if area < 0.02:  # visages très petits (<2% de la surface)
+                            small_faces += 1
+
+            # Ad-hoc SearchFacesByImage sur crops (si selfie indexé côté collection)
+            crops = aws._crop_face_regions(ib, fds or [])  # type: ignore
+            matched_this_photo = False
+            if crops and user_fid:
+                coll = aws._collection_id(event_id)  # type: ignore
+                for c in crops:
+                    resp = aws._search_faces_by_image_retry(coll, c)  # type: ignore
+                    if not resp:
+                        continue
+                    for fm in resp.get("FaceMatches", []) or []:
+                        ext = ((fm.get("Face") or {}).get("ExternalImageId") or "").strip()
+                        if ext.startswith('user:'):
+                            try:
+                                uid = int(ext.split(':', 1)[1])
+                            except Exception:
+                                uid = None
+                            if uid == user_id:
+                                matched_this_photo = True
+                                break
+                    if matched_this_photo:
+                        break
+            if matched_this_photo:
+                ad_hoc_matches_sfi += 1
+
+            # Ad-hoc SearchFaces(FaceId photo -> users)
+            # On réutilise l'indexation existante: retrouver les FaceId déjà indexés pour cette photo
+            # Pour rester léger, on s'abstient si la collection est très grande: cette passe est indicative
+            # et suffisante avec SearchFacesByImage ci-dessus.
+        except Exception:
+            continue
+
+    avg_face_area = (face_area_sum / faces_total) if faces_total > 0 else None
+
+    return {
+        "provider": provider_name,
+        "event_id": event_id,
+        "user_id": user_id,
+        "photos_total": total_photos,
+        "persisted_matches": persisted,
+        "selfie_indexed": bool(user_fid),
+        "diagnostic": {
+            "sampled": len(sample_photos),
+            "detect_ok_count": detect_ok,
+            "ad_hoc_matches_by_image": ad_hoc_matches_sfi,
+            "small_faces_count": small_faces,
+            "faces_total_count": faces_total,
+            "avg_face_area_ratio": avg_face_area,
+            "elapsed_sec": round(_t.time() - started, 2),
+        }
+    }
+
 @app.post("/api/register-with-event-code")
 async def register_with_event_code(
     user_data: UserCreate = Body(...),
