@@ -548,6 +548,7 @@ class ModernGallery {
         const card = document.createElement('div');
         card.className = 'gallery-photo-card';
         card.setAttribute('data-index', index);
+        try { card.style.position = 'relative'; } catch {}
         
         const img = document.createElement('img');
         img.alt = image.alt || `Image ${index + 1}`;
