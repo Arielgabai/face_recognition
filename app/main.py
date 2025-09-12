@@ -1401,6 +1401,134 @@ async def get_photo_by_id(
         headers={"Cache-Control": "public, max-age=31536000"}  # Cache pour 1 an
     )
 
+@app.get("/api/photo/{photo_id}/faces")
+async def get_photo_faces(
+    photo_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retourne les cadres des visages détectés pour une photo, et indique si l'un matche l'utilisateur courant.
+
+    Réponse:
+    {
+      "image_width": int,
+      "image_height": int,
+      "boxes": [
+        {"top": float, "left": float, "width": float, "height": float, "matched": bool, "confidence": int}
+      ]
+    }
+    Toutes les positions sont normalisées entre 0 et 1 par rapport à l'image analysée.
+    """
+    # Récupérer la photo
+    photo = db.query(Photo).filter(Photo.id == photo_id).first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo non trouvée")
+
+    # Charger les octets de l'image depuis la base ou le chemin de fichier
+    image_bytes: bytes | None = None
+    if getattr(photo, "photo_data", None):
+        try:
+            image_bytes = bytes(photo.photo_data)
+        except Exception:
+            image_bytes = None
+    if image_bytes is None and getattr(photo, "file_path", None):
+        try:
+            fp = photo.file_path
+            if fp and os.path.exists(fp):
+                with open(fp, "rb") as f:
+                    image_bytes = f.read()
+        except Exception:
+            image_bytes = None
+    if not image_bytes:
+        raise HTTPException(status_code=404, detail="Données d'image non disponibles")
+
+    # Préparer l'image (respecter l'EXIF et limiter la taille pour la détection)
+    try:
+        from PIL import Image, ImageOps
+        import numpy as _np
+        import face_recognition as _fr
+    except Exception:
+        # Dépendances manquantes
+        raise HTTPException(status_code=500, detail="Dépendances de reconnaissance non disponibles")
+
+    try:
+        pil_img = Image.open(BytesIO(image_bytes))
+        pil_img = ImageOps.exif_transpose(pil_img)
+        if pil_img.mode not in ("RGB", "L"):
+            pil_img = pil_img.convert("RGB")
+        orig_w, orig_h = pil_img.size
+
+        # Downscale agressif pour stabilité (aligné avec FaceRecognizer.detect_faces)
+        max_dim = 1280
+        scale = min(1.0, max_dim / float(max(orig_w, orig_h))) if max(orig_w, orig_h) > 0 else 1.0
+        work_img = pil_img
+        if scale < 1.0:
+            work_img = pil_img.resize((int(orig_w * scale), int(orig_h * scale)), Image.Resampling.LANCZOS)
+        work_w, work_h = work_img.size
+
+        np_img = _np.array(work_img)
+
+        # Détection multi-pass légère
+        face_locations = _fr.face_locations(np_img, model="hog", number_of_times_to_upsample=0) or []
+        if len(face_locations) == 0:
+            try:
+                face_locations = _fr.face_locations(np_img, model="hog", number_of_times_to_upsample=1) or []
+            except Exception:
+                face_locations = []
+
+        # Encodages pour matching utilisateur si applicable
+        user_encoding = None
+        try:
+            if current_user and getattr(current_user, "user_type", None) == UserType.USER:
+                user_encoding = face_recognizer.load_user_encoding(current_user)
+        except Exception:
+            user_encoding = None
+
+        encodings = []
+        if face_locations:
+            try:
+                encodings = _fr.face_encodings(np_img, face_locations) or []
+            except Exception:
+                encodings = []
+
+        boxes: List[Dict[str, Any]] = []
+        for idx, loc in enumerate(face_locations):
+            (top, right, bottom, left) = loc
+            w = max(1, right - left)
+            h = max(1, bottom - top)
+            # Normaliser par rapport à l'image de travail
+            box = {
+                "top": max(0.0, float(top) / float(work_h)),
+                "left": max(0.0, float(left) / float(work_w)),
+                "width": min(1.0, float(w) / float(work_w)),
+                "height": min(1.0, float(h) / float(work_h)),
+                "matched": False,
+                "confidence": 0,
+            }
+
+            if user_encoding is not None and idx < len(encodings):
+                try:
+                    dist = float(_fr.face_distance([user_encoding], encodings[idx])[0])
+                    matched = dist <= getattr(face_recognizer, "tolerance", 0.7)
+                    score = max(0, int((1.0 - dist) * 100))
+                    box["matched"] = bool(matched)
+                    box["confidence"] = int(score)
+                except Exception:
+                    pass
+
+            boxes.append(box)
+
+        return {
+            "image_width": work_w,
+            "image_height": work_h,
+            "boxes": boxes,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[get_photo_faces] error: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la détection des visages")
+
 @app.get("/api/selfie/{user_id}")
 async def get_selfie_by_user_id(
     user_id: int,
