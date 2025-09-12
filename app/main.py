@@ -1476,11 +1476,37 @@ async def get_photo_faces(
             except Exception:
                 face_locations = []
 
-        # Encodages pour matching utilisateur si applicable
+        # Encodage du selfie de l'utilisateur (provider-agnostic): depuis selfie_data ou selfie_path
         user_encoding = None
         try:
             if current_user and getattr(current_user, "user_type", None) == UserType.USER:
-                user_encoding = face_recognizer.load_user_encoding(current_user)
+                selfie_bytes = None
+                if getattr(current_user, "selfie_data", None):
+                    try:
+                        selfie_bytes = bytes(current_user.selfie_data)
+                    except Exception:
+                        selfie_bytes = None
+                if selfie_bytes is None and getattr(current_user, "selfie_path", None):
+                    try:
+                        sp = current_user.selfie_path
+                        if sp and os.path.exists(sp):
+                            with open(sp, "rb") as f:
+                                selfie_bytes = f.read()
+                    except Exception:
+                        selfie_bytes = None
+
+                if selfie_bytes:
+                    try:
+                        _pil = Image.open(BytesIO(selfie_bytes))
+                        _pil = ImageOps.exif_transpose(_pil)
+                        if _pil.mode not in ("RGB", "L"):
+                            _pil = _pil.convert("RGB")
+                        _np_selfie = _np.array(_pil)
+                        _encs = _fr.face_encodings(_np_selfie)
+                        if _encs:
+                            user_encoding = _encs[0]
+                    except Exception:
+                        user_encoding = None
         except Exception:
             user_encoding = None
 
@@ -1503,7 +1529,7 @@ async def get_photo_faces(
                 "width": min(1.0, float(w) / float(work_w)),
                 "height": min(1.0, float(h) / float(work_h)),
                 "matched": False,
-                "confidence": 0,
+                "confidence": None,
             }
 
             if user_encoding is not None and idx < len(encodings):
