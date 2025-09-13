@@ -821,7 +821,7 @@ class AwsFaceRecognizer:
                         CollectionId=self._collection_id(event_id),
                         FaceId=fid,
                         MaxFaces=AWS_SEARCH_MAXFACES,
-                        FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                        FaceMatchThreshold=self.search_threshold,
                     )
                 except ClientError as e:
                     print(f"❌ AWS SearchFaces (photoFace->{photo.id}): {e}")
