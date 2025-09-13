@@ -761,14 +761,14 @@
         }
 
         // Hook l’ouverture d’onglet pour charger les réglages
-        const originalShowTab = window.showTab || function(name) {
+        window.__origShowTabSettings = window.__origShowTabSettings || (window.showTab || function(name) {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             const tgt = document.getElementById(name);
             if (tgt) tgt.classList.add('active');
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        };
+        });
         window.showTab = function(tabName) {
-            originalShowTab(tabName);
+            window.__origShowTabSettings(tabName);
             if (tabName === 'rekog-settings') {
                 loadRekogThreshold();
             }
@@ -1537,9 +1537,9 @@
         }
 
         // Charger les statistiques automatiquement quand on ouvre l'onglet optimisation
-        const originalShowTab = showTab;
+        window.__origShowTabOptimization = window.__origShowTabOptimization || showTab;
         showTab = function(tabName) {
-            originalShowTab(tabName);
+            window.__origShowTabOptimization(tabName);
             if (tabName === 'optimization') {
                 loadOptimizationStats();
             }
