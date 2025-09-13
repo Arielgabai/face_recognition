@@ -268,7 +268,7 @@
                 <label for="password">Mot de passe:</label>
                 <input type="password" id="password" required>
             </div>
-            <button onclick="login()">Se connecter</button>
+            <button type="button" onclick="login(event)">Se connecter</button>
         </div>
 
         <div id="dashboard" style="display: none;">
@@ -478,7 +478,8 @@
             attachPasswordToggle('adminPassword');
         });
 
-        async function login() {
+        async function login(e) {
+            try { if (e && typeof e.preventDefault === 'function') e.preventDefault(); } catch {}
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
@@ -496,7 +497,8 @@
                 if (response.ok) {
                     localStorage.setItem('token', data.access_token);
                     token = data.access_token;
-                    loadDashboard();
+                    try { await loadDashboard(); } catch {}
+                    try { history.replaceState(null, '', location.pathname); } catch {}
                 } else {
                     showAlert(data.detail || 'Erreur de connexion', 'error');
                 }
