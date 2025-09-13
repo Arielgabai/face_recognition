@@ -505,6 +505,9 @@
             }
         }
 
+        // Exposer la fonction au scope global pour le bouton onclick
+        try { window.login = login; } catch (e) {}
+
         async function loadDashboard() {
             // Empêche tout chargement si pas de token ou déconnexion en cours
             if (!localStorage.getItem('token') || !token || isLoggingOut) {
