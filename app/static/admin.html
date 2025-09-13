@@ -268,7 +268,7 @@
                 <label for="password">Mot de passe:</label>
                 <input type="password" id="password" required>
             </div>
-            <button type="button" onclick="login(event)">Se connecter</button>
+            <button type="button" id="loginButton">Se connecter</button>
         </div>
 
         <div id="dashboard" style="display: none;">
@@ -476,6 +476,18 @@
             attachPasswordToggle('password');
             attachPasswordToggle('photographerPassword');
             attachPasswordToggle('adminPassword');
+            try {
+                const btn = document.getElementById('loginButton');
+                if (btn && !btn.dataset.bound) {
+                    btn.addEventListener('click', (e) => login(e));
+                    btn.dataset.bound = '1';
+                }
+                const form = document.getElementById('loginForm');
+                if (form && !form.dataset.bound) {
+                    form.addEventListener('submit', (e) => login(e));
+                    form.dataset.bound = '1';
+                }
+            } catch (e) {}
         });
 
         async function login(e) {
