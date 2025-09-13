@@ -61,6 +61,11 @@ class AwsFaceRecognizer:
         self._photos_indexed_events: Set[int] = set()
         # Cache FaceId par (event_id, user_id) pour accélérer les recherches
         self._user_faceid_cache: Dict[Tuple[int, int], str] = {}
+        # Seuil Rekognition (0-100) configurable à chaud
+        try:
+            self.search_threshold: float = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", str(AWS_SEARCH_THRESHOLD)) or AWS_SEARCH_THRESHOLD)
+        except Exception:
+            self.search_threshold = AWS_SEARCH_THRESHOLD
 
     def _collection_id(self, event_id: int) -> str:
         return f"{COLL_PREFIX}{event_id}"
@@ -499,7 +504,7 @@ class AwsFaceRecognizer:
                     CollectionId=collection_id,
                     FaceId=face_id,
                     MaxFaces=mf,
-                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    FaceMatchThreshold=self.search_threshold,
                 )
             except ClientError as e:
                 code = e.response.get("Error", {}).get("Code", "")
@@ -525,7 +530,7 @@ class AwsFaceRecognizer:
                     CollectionId=collection_id,
                     Image={"Bytes": image_bytes},
                     MaxFaces=AWS_SEARCH_MAXFACES,
-                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    FaceMatchThreshold=self.search_threshold,
                     QualityFilter=AWS_SEARCH_QUALITY_FILTER,
                 )
             except ClientError as e:
@@ -599,7 +604,7 @@ class AwsFaceRecognizer:
                     CollectionId=self._collection_id(event_id),
                     Image={"Bytes": image_bytes},
                     MaxFaces=AWS_SEARCH_MAXFACES,
-                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    FaceMatchThreshold=self.search_threshold,
                     QualityFilter=AWS_SEARCH_QUALITY_FILTER,
                 )
             except ClientError as e:
@@ -703,7 +708,7 @@ class AwsFaceRecognizer:
                     CollectionId=self._collection_id(event_id),
                     Image={"Bytes": image_bytes},
                     MaxFaces=AWS_SELFIE_SEARCH_MAXFACES,
-                    FaceMatchThreshold=AWS_SEARCH_THRESHOLD,
+                    FaceMatchThreshold=self.search_threshold,
                     QualityFilter=AWS_SEARCH_QUALITY_FILTER,
                 )
             except ClientError as e:
