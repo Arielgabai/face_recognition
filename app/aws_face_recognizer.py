@@ -28,11 +28,13 @@ AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTE
 AWS_DETECT_MIN_CONF = float(os.environ.get("AWS_REKOGNITION_DETECT_MIN_CONF", "70") or "70")
 
 # Préparation image / crop
-AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "2048") or "2048")
-AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.2") or "0.2")  # 20% padding
+AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "3072") or "3072")
+AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.3") or "0.3")  # 30% padding
 AWS_MIN_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_CROP_SIDE", "36") or "36")
 # Dimension minimale de sortie pour un crop visage (on upsample si nécessaire)
-AWS_MIN_OUTPUT_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_OUTPUT_CROP_SIDE", "320") or "320")
+AWS_MIN_OUTPUT_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_OUTPUT_CROP_SIDE", "448") or "448")
+# Seuil d'aire relative (Width*Height) sous lequel on tente une détection upscalée
+AWS_TINY_FACE_AREA_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_TINY_FACE_AREA", "0.015") or "0.015")
 
 # Parallélisation bornée (bornes codées simplement; pas d'arrière-plan)
 MAX_PARALLEL_PER_REQUEST = 4
@@ -365,13 +367,45 @@ class AwsFaceRecognizer:
                 return None
 
     def _detect_faces_boxes(self, image_bytes: bytes) -> List[Dict]:
-        """Appelle Rekognition DetectFaces et renvoie les FaceDetails filtrés par confiance."""
+        """Appelle Rekognition DetectFaces (Attributes=ALL), filtre par confiance,
+        et tente une deuxième passe upscalée si tous les visages détectés sont très petits.
+        """
         try:
             aws_metrics.inc('DetectFaces')
-            # Utiliser ALL pour récupérer la qualité (sharpness/brightness) et améliorer le choix des crops
             resp = self.client.detect_faces(Image={"Bytes": image_bytes}, Attributes=["ALL"])
-            faces = resp.get("FaceDetails", []) or []
+            faces = (resp.get("FaceDetails", []) or [])
             faces = [f for f in faces if float(f.get("Confidence", 0.0)) >= AWS_DETECT_MIN_CONF]
+            if not faces:
+                return []
+            # Vérifier la taille relative des visages; si trop petits, retenter avec image upscalée
+            try:
+                # Ouvrir pour récupérer dimensions
+                im = _Image.open(_BytesIO(image_bytes))
+                W, H = im.size
+                max_area = 0.0
+                for f in faces:
+                    bb = (f.get('BoundingBox') or {})
+                    area = float(bb.get('Width', 0.0)) * float(bb.get('Height', 0.0))
+                    if area > max_area:
+                        max_area = area
+                if max_area < AWS_TINY_FACE_AREA_THRESHOLD:
+                    # Upscale x2 (borné par une limite raisonnable)
+                    try:
+                        up = im.resize((min(W * 2, AWS_IMAGE_MAX_DIM), min(H * 2, AWS_IMAGE_MAX_DIM)), _Image.Resampling.LANCZOS)
+                        out = _BytesIO()
+                        up.save(out, format="JPEG", quality=92, optimize=True)
+                        up_bytes = out.getvalue()
+                        aws_metrics.inc('DetectFaces')
+                        resp2 = self.client.detect_faces(Image={"Bytes": up_bytes}, Attributes=["ALL"])
+                        faces2 = (resp2.get("FaceDetails", []) or [])
+                        faces2 = [f for f in faces2 if float(f.get("Confidence", 0.0)) >= AWS_DETECT_MIN_CONF]
+                        # Garder la passe qui retourne le plus de visages
+                        if len(faces2) >= len(faces):
+                            return faces2
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             return faces
         except ClientError as e:
             print(f"❌ AWS DetectFaces error: {e}")
