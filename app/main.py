@@ -130,6 +130,27 @@ async def reset_aws_usage(current_user: User = Depends(get_current_user)):
     aws_metrics.reset()
     return {"status": "ok"}
 
+@app.get("/api/admin/rekognition/threshold")
+async def get_rekognition_threshold(current_user: User = Depends(get_current_user)):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    try:
+        value = float(getattr(face_recognizer, 'search_threshold', 50.0))
+    except Exception:
+        value = 50.0
+    return {"threshold": value}
+
+@app.post("/api/admin/rekognition/threshold")
+async def set_rekognition_threshold(value: float = Body(..., embed=True), current_user: User = Depends(get_current_user)):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    try:
+        v = max(0.0, min(100.0, float(value)))
+        setattr(face_recognizer, 'search_threshold', v)
+        return {"threshold": v}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/api/admin/eval-recognition")
 async def admin_eval_recognition(
     payload: dict = Body(...),

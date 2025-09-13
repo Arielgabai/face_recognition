@@ -288,6 +288,7 @@
                 <button class="tab" onclick="showTab('users')">👥 Utilisateurs</button>
                 <button class="tab" onclick="showTab('create-admin')">👤 Créer Admin</button>
                 <button class="tab" onclick="showTab('aws-usage')">💲 Coûts AWS</button>
+                <button class="tab" onclick="showTab('rekog-settings')">⚙️ Réglages Rekognition</button>
             </div>
 
             <div id="photographers" class="tab-content active">
@@ -419,6 +420,11 @@
                     </div>
                     <div id="awsUsageStats">Chargement...</div>
                 </div>
+            </div>
+
+            <div id="rekog-settings" class="tab-content">
+                <h3>⚙️ Réglages Rekognition</h3>
+                <div id="rekogSettingsCard" class="card">Chargement…</div>
             </div>
         </div>
 
@@ -693,6 +699,63 @@
                 }
             } catch (e) {}
         }
+
+        // === Réglages Rekognition ===
+        function rekogSettingsTemplate(current) {
+            return `
+              <div>
+                <p>Seuil de similarité (0–100). Plus bas = plus de matches (risque de faux positifs).</p>
+                <div class="form-group">
+                  <label for="rkInput">Seuil actuel: <strong>${current}</strong></label>
+                  <input type="number" id="rkInput" min="0" max="100" step="1" value="${current}">
+                </div>
+                <div class="card-actions">
+                  <button class="success" onclick="saveRekogThreshold()">Enregistrer</button>
+                  <button onclick="loadRekogThreshold()">Rafraîchir</button>
+                </div>
+              </div>
+            `;
+        }
+
+        async function loadRekogThreshold() {
+            const el = document.getElementById('rekogSettingsCard');
+            try {
+                const resp = await fetch('/api/admin/rekognition/threshold', { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { el.textContent = 'Erreur de chargement'; return; }
+                const data = await resp.json();
+                el.innerHTML = rekogSettingsTemplate(Number(data.threshold ?? 50));
+            } catch (e) { el.textContent = 'Erreur de chargement'; }
+        }
+
+        async function saveRekogThreshold() {
+            const val = Number(document.getElementById('rkInput').value);
+            const el = document.getElementById('rekogSettingsCard');
+            try {
+                const resp = await fetch('/api/admin/rekognition/threshold', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: val })
+                });
+                if (!resp.ok) { showAlert('Erreur de sauvegarde', 'error'); return; }
+                const data = await resp.json();
+                el.innerHTML = rekogSettingsTemplate(Number(data.threshold ?? val));
+                showAlert('Seuil mis à jour');
+            } catch (e) { showAlert('Erreur de sauvegarde', 'error'); }
+        }
+
+        // Hook l’ouverture d’onglet pour charger les réglages
+        const originalShowTab = window.showTab || function(name) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            const tgt = document.getElementById(name);
+            if (tgt) tgt.classList.add('active');
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        };
+        window.showTab = function(tabName) {
+            originalShowTab(tabName);
+            if (tabName === 'rekog-settings') {
+                loadRekogThreshold();
+            }
+        };
 
         async function loadPhotographers() {
             try {
