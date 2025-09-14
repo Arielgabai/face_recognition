@@ -135,19 +135,74 @@ async def get_rekognition_threshold(current_user: User = Depends(get_current_use
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
     try:
-        value = float(getattr(face_recognizer, 'search_threshold', 50.0))
+        # Mapper selon le provider actif
+        value: float
+        if hasattr(face_recognizer, 'search_threshold'):
+            # AWS: 0-100
+            value = float(getattr(face_recognizer, 'search_threshold', 50.0))
+        elif hasattr(face_recognizer, 'tolerance'):
+            # Local: tolerance est une distance (0-1) -> convertir en pourcentage de similarité
+            try:
+                tol = float(getattr(face_recognizer, 'tolerance', 0.7))
+            except Exception:
+                tol = 0.7
+            value = max(0.0, min(100.0, (1.0 - tol) * 100.0))
+        elif hasattr(face_recognizer, 'confidence_threshold'):
+            # Azure: 0-1 -> 0-100
+            try:
+                ct = float(getattr(face_recognizer, 'confidence_threshold', 0.5))
+            except Exception:
+                ct = 0.5
+            value = max(0.0, min(100.0, ct * 100.0))
+        else:
+            value = 50.0
     except Exception:
         value = 50.0
     return {"threshold": value}
 
 @app.post("/api/admin/rekognition/threshold")
-async def set_rekognition_threshold(value: float = Body(..., embed=True), current_user: User = Depends(get_current_user)):
+async def set_rekognition_threshold(
+    value: float = Body(..., embed=True),
+    background_tasks: BackgroundTasks = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
     try:
         v = max(0.0, min(100.0, float(value)))
-        setattr(face_recognizer, 'search_threshold', v)
-        return {"threshold": v}
+        # Appliquer en fonction du provider
+        if hasattr(face_recognizer, 'search_threshold'):
+            # AWS: seuil direct 0-100
+            setattr(face_recognizer, 'search_threshold', v)
+            print(f"[AdminSettings] AWS search_threshold set to {v}")
+        elif hasattr(face_recognizer, 'tolerance'):
+            # Local: convertir similarité(%) -> distance tolérée
+            tol = 1.0 - (v / 100.0)
+            tol = max(0.0, min(1.0, float(tol)))
+            setattr(face_recognizer, 'tolerance', tol)
+            print(f"[AdminSettings] Local tolerance set to {tol} (from {v}%)")
+        elif hasattr(face_recognizer, 'confidence_threshold'):
+            # Azure: 0-1
+            ct = max(0.0, min(1.0, float(v) / 100.0))
+            setattr(face_recognizer, 'confidence_threshold', ct)
+            print(f"[AdminSettings] Azure confidence_threshold set to {ct} (from {v}%)")
+        else:
+            # Fallback: exposer au moins une valeur lisible par GET
+            setattr(face_recognizer, 'search_threshold', v)
+            print(f"[AdminSettings] Generic provider: search_threshold set to {v}")
+        # Déclencher un rematch en arrière-plan pour tous les événements afin d'appliquer le nouveau seuil
+        scheduled = 0
+        try:
+            from models import Event as _Ev
+            events = db.query(_Ev).all()
+            for ev in events:
+                if background_tasks is not None:
+                    background_tasks.add_task(_rematch_event_via_selfies, ev.id)
+                    scheduled += 1
+        except Exception as _e:
+            pass
+        return {"threshold": v, "rematch_scheduled": scheduled}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

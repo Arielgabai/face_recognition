@@ -211,7 +211,9 @@ class AzureFaceRecognizer:
         if not face_ids:
             return []
 
-        results = self.identify(event_id, face_ids, max_candidates=1)
+        # Appliquer un éventuel seuil configuré dynamiquement (0-1)
+        ct = getattr(self, 'confidence_threshold', None)
+        results = self.identify(event_id, face_ids, max_candidates=1, confidence_threshold=ct)
         matches: List[Dict] = []
         for res in results:
             candidates = res.get("candidates", [])
@@ -265,7 +267,8 @@ class AzureFaceRecognizer:
                 face_ids = self.detect_faces_from_path(photo_input)
             if not face_ids:
                 continue
-            res = self.identify(event_id, face_ids, max_candidates=1)
+            ct = getattr(self, 'confidence_threshold', None)
+            res = self.identify(event_id, face_ids, max_candidates=1, confidence_threshold=ct)
             for r in res:
                 cand = (r.get("candidates") or [None])[0]
                 if not cand:
