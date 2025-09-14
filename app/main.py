@@ -146,7 +146,14 @@ async def set_rekognition_threshold(value: float = Body(..., embed=True), curren
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
     try:
         v = max(0.0, min(100.0, float(value)))
-        setattr(face_recognizer, 'search_threshold', v)
+        provider = type(face_recognizer).__name__.lower()
+        # Pour le provider local, on met à jour tolerance
+        if provider == "facerecognizer":
+            face_recognizer.tolerance = v / 100 if v > 1 else v  # conversion 0-100 vers 0-1 si besoin
+        # Pour AWS, on met à jour search_threshold
+        if hasattr(face_recognizer, "search_threshold"):
+            face_recognizer.search_threshold = v
+        setattr(face_recognizer, 'search_threshold', v)  # compatibilité
         return {"threshold": v}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
