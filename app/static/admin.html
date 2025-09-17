@@ -446,7 +446,11 @@
                 </div>
                 <div class="card">
                     <h4>Snapshot Collection Provider</h4>
-                    <pre id="snapshotContainer" style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto;">—</pre>
+                    <div class="card-actions">
+                        <button onclick="renderSnapshotGraph()">Rafraîchir la visualisation</button>
+                    </div>
+                    <div id="snapshotGraph" class="grid"></div>
+                    <pre id="snapshotContainer" style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto; margin-top:10px;">—</pre>
                 </div>
                 <div class="card">
                     <h4>🔎 Chercher par FaceId (AWS)</h4>
@@ -1379,15 +1383,66 @@
                         </div>`;
                 }
 
-                // Render snapshot
+                // Render snapshot (JSON) + visual graph refresh
                 try {
                     snapshotContainer.textContent = JSON.stringify(data.provider_snapshot || { note: 'Pas de snapshot disponible' }, null, 2);
                 } catch (e) {
                     snapshotContainer.textContent = 'Erreur de rendu du snapshot';
                 }
+                try { await renderSnapshotGraph(); } catch (e) {}
             } catch (e) {
                 groupsContainer.textContent = 'Erreur lors du chargement des groupes.';
                 try { snapshotContainer.textContent = '—'; } catch {}
+            }
+        }
+
+        async function renderSnapshotGraph() {
+            const groupsEventSelect = document.getElementById('groupsEventSelect');
+            const eventCode = groupsEventSelect?.value;
+            const graphEl = document.getElementById('snapshotGraph');
+            if (!graphEl) return;
+            if (!eventCode) { graphEl.innerHTML = '<div style="color:#666;">Sélectionnez un événement.</div>'; return; }
+            try {
+                const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                const events = eventsResp.ok ? await eventsResp.json() : [];
+                const ev = events.find(e => e.event_code === eventCode);
+                if (!ev) { graphEl.innerHTML = '<div style="color:#666;">Événement introuvable.</div>'; return; }
+                const resp = await fetch(`/api/admin/events/${ev.id}/snapshot-graph`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { graphEl.innerHTML = '<div style="color:#666;">Erreur chargement snapshot.</div>'; return; }
+                const graph = await resp.json();
+                const users = graph.users || [];
+                if (!users.length) { graphEl.innerHTML = '<div style="color:#666;">Aucun utilisateur.</div>'; return; }
+                graphEl.innerHTML = `
+                  ${users.map(u => {
+                    const faces = u.faces || [];
+                    const cards = faces.map(item => {
+                        const pid = item.photo_id;
+                        const bb = item.box || {Left:0,Top:0,Width:0,Height:0};
+                        const left = (bb.Left * 100).toFixed(2);
+                        const top = (bb.Top * 100).toFixed(2);
+                        const width = (bb.Width * 100).toFixed(2);
+                        const height = (bb.Height * 100).toFixed(2);
+                        return `
+                          <div class=\"card\" style=\"position:relative;\">
+                            <div style=\"position:relative; display:inline-block; max-width:100%;\">
+                              <img src=\"/api/photo/${pid}\" alt=\"photo ${pid}\" style=\"max-width:100%; border-radius:6px; border:1px solid #eee;\" />
+                              <div style=\"position:absolute; left:${left}%; top:${top}%; width:${width}%; height:${height}%; border:3px solid #22c55e; box-shadow:0 0 0 2px rgba(34,197,94,0.3) inset; border-radius:4px; pointer-events:none;\"></div>
+                            </div>
+                            <div style=\"margin-top:8px; color:#555;\">
+                              <div><strong>Photo #${pid}</strong></div>
+                              ${typeof item.similarity === 'number' ? `<div>Similitude: ${item.similarity}%</div>` : ''}
+                            </div>
+                          </div>`;
+                    }).join('');
+                    return `
+                      <div class=\"card\">
+                        <h4>User #${u.user_id} ${u.selfie_available ? '📸' : ''}</h4>
+                        <div class=\"grid\">${cards || ''}</div>
+                      </div>`;
+                  }).join('')}
+                `;
+            } catch (e) {
+                graphEl.innerHTML = '<div style="color:#666;">Erreur chargement snapshot.</div>';
             }
         }
 

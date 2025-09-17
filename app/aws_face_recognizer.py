@@ -1263,3 +1263,45 @@ class AwsFaceRecognizer:
 
         return results
 
+    def build_snapshot_graph(self, event_id: int, db: Session, per_user_limit: int = 10) -> Dict:
+        """Construit un snapshot visuel groupé par utilisateur pour un événement.
+
+        Retourne:
+        {
+          "event_id": int,
+          "users": [
+            {
+              "user_id": int,
+              "selfie_available": bool,
+              "faces": [ { "photo_id": int, "similarity": int, "box": {Left,Top,Width,Height} } ]
+            }, ...
+          ]
+        }
+        """
+        self.ensure_collection(event_id)
+        # Récupérer les utilisateurs de l'événement
+        user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+        user_ids = [ue.user_id for ue in user_events]
+        # Statut selfie
+        users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
+        selfie_map: Dict[int, bool] = {}
+        for u in users:
+            selfie_map[int(u.id)] = bool(getattr(u, 'selfie_data', None) or getattr(u, 'selfie_path', None))
+
+        graph_users = []
+        for uid in user_ids:
+            try:
+                faces = self.get_user_group_faces_with_boxes(event_id, uid, db, limit=per_user_limit)
+            except Exception:
+                faces = []
+            graph_users.append({
+                'user_id': int(uid),
+                'selfie_available': bool(selfie_map.get(int(uid), False)),
+                'faces': faces,
+            })
+
+        return {
+            'event_id': int(event_id),
+            'users': graph_users,
+        }
+

@@ -249,6 +249,34 @@ async def admin_user_group_faces(
         "results": results,
     }
 
+@app.get("/api/admin/events/{event_id}/snapshot-graph")
+async def admin_snapshot_graph(
+    event_id: int,
+    per_user_limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retourne un graphe visuel (groupé par utilisateur) pour l'événement.
+    AWS uniquement.
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    from aws_face_recognizer import AwsFaceRecognizer as _Aws
+    if not isinstance(face_recognizer, _Aws):
+        raise HTTPException(status_code=400, detail="Endpoint disponible uniquement avec le provider AWS")
+
+    try:
+        graph = face_recognizer.build_snapshot_graph(event_id, db, per_user_limit=per_user_limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la construction du snapshot: {e}")
+
+    return graph
+
 @app.get("/api/admin/aws-usage")
 async def get_aws_usage(current_user: User = Depends(get_current_user)):
     if current_user.user_type != UserType.ADMIN:
