@@ -965,3 +965,80 @@ class AwsFaceRecognizer:
         return photo
 
 
+    def get_collection_snapshot(self, event_id: int) -> Dict:
+        """Retourne un instantané de la collection Rekognition pour un événement.
+
+        Structure:
+        {
+          "collection_id": str,
+          "total_faces": int,
+          "users": { user_id: { "count": int, "face_ids": [str, ...] } },
+          "photos": { photo_id: { "count": int, "face_ids": [str, ...] } },
+          "others": [ { "external_image_id": str, "face_id": str } ]
+        }
+        """
+        coll_id = self._collection_id(event_id)
+        try:
+            self.ensure_collection(event_id)
+        except Exception:
+            # Si la collection n'existe pas et ne peut pas être créée, retourner vide
+            return {
+                "collection_id": coll_id,
+                "total_faces": 0,
+                "users": {},
+                "photos": {},
+                "others": []
+            }
+
+        users: Dict[str, Dict[str, object]] = {}
+        photos: Dict[str, Dict[str, object]] = {}
+        others: List[Dict[str, str]] = []
+        total = 0
+
+        next_token = None
+        try:
+            while True:
+                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
+                if next_token:
+                    kwargs["NextToken"] = next_token
+                aws_metrics.inc('ListFaces')
+                resp = self.client.list_faces(**kwargs)
+                for f in (resp.get('Faces') or []):
+                    total += 1
+                    face_id = f.get('FaceId') or ''
+                    ext = (f.get('ExternalImageId') or '').strip()
+                    if ext.startswith('user:'):
+                        key = ext.split(':', 1)[1]
+                        if key not in users:
+                            users[key] = {"count": 0, "face_ids": []}
+                        users[key]["count"] = int(users[key]["count"]) + 1
+                        users[key]["face_ids"].append(face_id)
+                    elif ext.startswith('photo:'):
+                        key = ext.split(':', 1)[1]
+                        if key not in photos:
+                            photos[key] = {"count": 0, "face_ids": []}
+                        photos[key]["count"] = int(photos[key]["count"]) + 1
+                        photos[key]["face_ids"].append(face_id)
+                    elif ext.isdigit():
+                        # Legacy user id stocké en clair
+                        key = ext
+                        if key not in users:
+                            users[key] = {"count": 0, "face_ids": []}
+                        users[key]["count"] = int(users[key]["count"]) + 1
+                        users[key]["face_ids"].append(face_id)
+                    else:
+                        others.append({"external_image_id": ext, "face_id": face_id})
+                next_token = resp.get('NextToken')
+                if not next_token:
+                    break
+        except ClientError as e:
+            print(f"⚠️  list_faces error in snapshot: {e}")
+
+        return {
+            "collection_id": coll_id,
+            "total_faces": total,
+            "users": users,
+            "photos": photos,
+            "others": others,
+        }
+

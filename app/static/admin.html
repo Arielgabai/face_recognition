@@ -289,6 +289,7 @@
                 <button class="tab" onclick="showTab('create-admin')">👤 Créer Admin</button>
                 <button class="tab" onclick="showTab('aws-usage')">💲 Coûts AWS</button>
                 <button class="tab" onclick="showTab('rekog-settings')">⚙️ Réglages Rekognition</button>
+                <button class="tab" onclick="showTab('face-groups')">🧩 Groupes de visages</button>
             </div>
 
             <div id="photographers" class="tab-content active">
@@ -425,6 +426,50 @@
             <div id="rekog-settings" class="tab-content">
                 <h3>⚙️ Réglages Rekognition</h3>
                 <div id="rekogSettingsCard" class="card">Chargement…</div>
+            </div>
+
+            <div id="face-groups" class="tab-content">
+                <h3>🧩 Visualisation des groupes par événement</h3>
+                <div class="card">
+                    <h4>Sélectionner un événement</h4>
+                    <div class="form-group">
+                        <label for="groupsEventSelect">Événement:</label>
+                        <select id="groupsEventSelect"></select>
+                    </div>
+                    <div class="card-actions">
+                        <button class="success" onclick="loadFaceGroups()">Charger les groupes</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h4>Groupes (DB FaceMatch)</h4>
+                    <div id="groupsContainer">Sélectionnez un événement puis chargez les groupes.</div>
+                </div>
+                <div class="card">
+                    <h4>Snapshot Collection Provider</h4>
+                    <pre id="snapshotContainer" style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto;">—</pre>
+                </div>
+            </div>
+
+            <div id="face-groups" class="tab-content">
+                <h3>🧩 Visualisation des groupes par événement</h3>
+                <div class="card">
+                    <h4>Sélectionner un événement</h4>
+                    <div class="form-group">
+                        <label for="groupsEventSelect">Événement:</label>
+                        <select id="groupsEventSelect"></select>
+                    </div>
+                    <div class="card-actions">
+                        <button class="success" onclick="loadFaceGroups()">Charger les groupes</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h4>Groupes (DB FaceMatch)</h4>
+                    <div id="groupsContainer">Sélectionnez un événement puis chargez les groupes.</div>
+                </div>
+                <div class="card">
+                    <h4>Snapshot Collection Provider</h4>
+                    <pre id="snapshotContainer" style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto;">—</pre>
+                </div>
             </div>
         </div>
 
@@ -772,6 +817,9 @@
             if (tabName === 'rekog-settings') {
                 loadRekogThreshold();
             }
+            if (tabName === 'face-groups') {
+                try { if (!document.getElementById('groupsEventSelect').options.length) loadEvents(); } catch (e) {}
+            }
         };
 
         async function loadPhotographers() {
@@ -883,6 +931,10 @@
             if (usersEventSelect) {
                 usersEventSelect.innerHTML = '<option value="">Sélectionner un événement</option>';
             }
+            const groupsEventSelect = document.getElementById('groupsEventSelect');
+            if (groupsEventSelect) {
+                groupsEventSelect.innerHTML = '<option value="">Sélectionner un événement</option>';
+            }
             
             events.forEach(event => {
                 const option = document.createElement('option');
@@ -890,6 +942,7 @@
                 option.textContent = `${event.name} (${event.event_code})`;
                 if (qrEventSelect) qrEventSelect.appendChild(option.cloneNode(true));
                 if (usersEventSelect) usersEventSelect.appendChild(option);
+                if (groupsEventSelect) groupsEventSelect.appendChild(option.cloneNode(true));
             });
         }
 
@@ -1258,6 +1311,62 @@
                 showAlert('Matching relancé pour cet événement', 'success');
             } catch (e) {
                 showAlert('Erreur lors de l\'appel rematch', 'error');
+            }
+        }
+
+        async function loadFaceGroups() {
+            const groupsEventSelect = document.getElementById('groupsEventSelect');
+            const groupsContainer = document.getElementById('groupsContainer');
+            const snapshotContainer = document.getElementById('snapshotContainer');
+            if (!groupsEventSelect) return;
+            const eventCode = groupsEventSelect.value;
+            if (!eventCode) { groupsContainer.textContent = 'Veuillez sélectionner un événement.'; return; }
+            try {
+                const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                const events = eventsResp.ok ? await eventsResp.json() : [];
+                const ev = events.find(e => e.event_code === eventCode);
+                if (!ev) { groupsContainer.textContent = 'Événement introuvable.'; return; }
+                const resp = await fetch(`/api/admin/events/${ev.id}/face-groups`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { groupsContainer.textContent = 'Erreur lors du chargement des groupes.'; return; }
+                const data = await resp.json();
+
+                // Render DB groups
+                const groups = data.groups || {};
+                const samples = data.samples || {};
+                const userIds = Object.keys(groups).sort((a,b)=>Number(a)-Number(b));
+                if (!userIds.length) {
+                    groupsContainer.innerHTML = '<div style="color:#666;">Aucun groupe trouvé (FaceMatch vide).</div>';
+                } else {
+                    groupsContainer.innerHTML = `
+                        <div class="grid">
+                            ${userIds.map(uid => {
+                                const g = groups[uid] || {}; 
+                                const best = g.best_score || 0;
+                                const photoIds = (samples[uid] || []).map(pid => `<img src="/api/photo/${pid}" alt="${pid}" style="width:100%; max-width:160px; border-radius:6px; border:1px solid #eee; margin:4px;">`).join('');
+                                return `
+                                  <div class="card">
+                                    <h4>User #${uid}</h4>
+                                    <p><strong>Taille groupe:</strong> ${g.count || 0}</p>
+                                    <p><strong>Meilleur score:</strong> ${best}</p>
+                                    <div style="display:flex; flex-wrap:wrap; gap:8px;">${photoIds}</div>
+                                    <div style="margin-top:10px;">
+                                      <span style="color:#666;">Selfie:</span><br/>
+                                      <img src="/api/selfie/${uid}" onerror="this.style.display='none'" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid #eee;" />
+                                    </div>
+                                  </div>`;
+                            }).join('')}
+                        </div>`;
+                }
+
+                // Render snapshot
+                try {
+                    snapshotContainer.textContent = JSON.stringify(data.provider_snapshot || { note: 'Pas de snapshot disponible' }, null, 2);
+                } catch (e) {
+                    snapshotContainer.textContent = 'Erreur de rendu du snapshot';
+                }
+            } catch (e) {
+                groupsContainer.textContent = 'Erreur lors du chargement des groupes.';
+                try { snapshotContainer.textContent = '—'; } catch {}
             }
         }
 

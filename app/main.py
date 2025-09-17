@@ -116,6 +116,69 @@ async def get_active_provider(current_user: User = Depends(get_current_user)):
         "FACE_RECOGNIZER_PROVIDER": os.environ.get("FACE_RECOGNIZER_PROVIDER", "(unset)")
     }
 
+@app.get("/api/admin/events/{event_id}/face-groups")
+async def admin_face_groups(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retourne un aperçu des groupes de visages pour un événement.
+
+    - Regroupement DB: FaceMatch par user_id -> liste de photo_ids (et meilleurs scores)
+    - Snapshot provider (si AWS): contenu de la collection (users vs photos)
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+
+    # Vérifier l'événement
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    # Regroupement FaceMatch par utilisateur
+    groups: Dict[int, Dict[str, object]] = {}
+    try:
+        matches = db.query(FaceMatch).join(Photo, Photo.id == FaceMatch.photo_id).filter(Photo.event_id == event_id).all()
+        for m in matches:
+            uid = int(m.user_id)
+            if uid not in groups:
+                groups[uid] = {"count": 0, "photos": [], "best_score": 0}
+            groups[uid]["count"] = int(groups[uid]["count"]) + 1
+            groups[uid]["photos"].append({
+                "photo_id": int(m.photo_id),
+                "score": int(m.confidence_score or 0)
+            })
+            if int(m.confidence_score or 0) > int(groups[uid]["best_score"]):
+                groups[uid]["best_score"] = int(m.confidence_score or 0)
+    except Exception:
+        groups = {}
+
+    # Provider snapshot si disponible
+    snapshot = None
+    try:
+        from aws_face_recognizer import AwsFaceRecognizer as _Aws
+        if isinstance(face_recognizer, _Aws):
+            snapshot = face_recognizer.get_collection_snapshot(event_id)
+    except Exception:
+        snapshot = None
+
+    # Retourner également un échantillon de photos par groupe (max 4) pour l'UI
+    samples: Dict[int, List[int]] = {}
+    try:
+        for uid, data in groups.items():
+            phs = sorted((data.get("photos") or []), key=lambda x: -int(x.get("score") or 0))
+            samples[uid] = [int(p.get("photo_id")) for p in phs[:4]]
+    except Exception:
+        samples = {}
+
+    return {
+        "event_id": event_id,
+        "event_name": event.name,
+        "groups": groups,
+        "samples": samples,
+        "provider_snapshot": snapshot,
+    }
+
 @app.get("/api/admin/aws-usage")
 async def get_aws_usage(current_user: User = Depends(get_current_user)):
     if current_user.user_type != UserType.ADMIN:
