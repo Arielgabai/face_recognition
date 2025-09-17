@@ -448,6 +448,23 @@
                     <h4>Snapshot Collection Provider</h4>
                     <pre id="snapshotContainer" style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto;">—</pre>
                 </div>
+                <div class="card">
+                    <h4>🔎 Chercher par FaceId (AWS)</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="faceIdInput">FaceId source (ex: d2b4...)</label>
+                            <input id="faceIdInput" type="text" placeholder="FaceId AWS" />
+                        </div>
+                        <div class="form-group">
+                            <label for="faceIdLimit">Nombre de résultats</label>
+                            <input id="faceIdLimit" type="number" min="1" max="50" value="10" />
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <button class="success" onclick="lookupFaceIdMatches()">Voir les correspondances avec cadres</button>
+                    </div>
+                    <div id="faceIdResults">—</div>
+                </div>
             </div>
 
             <div id="face-groups" class="tab-content">
@@ -1367,6 +1384,52 @@
             } catch (e) {
                 groupsContainer.textContent = 'Erreur lors du chargement des groupes.';
                 try { snapshotContainer.textContent = '—'; } catch {}
+            }
+        }
+
+        async function lookupFaceIdMatches() {
+            const faceId = (document.getElementById('faceIdInput')?.value || '').trim();
+            const limit = Number(document.getElementById('faceIdLimit')?.value || 10) || 10;
+            const resultsEl = document.getElementById('faceIdResults');
+            const groupsEventSelect = document.getElementById('groupsEventSelect');
+            if (!faceId) { if (resultsEl) resultsEl.textContent = 'Veuillez saisir un FaceId.'; return; }
+            const eventCode = groupsEventSelect?.value;
+            if (!eventCode) { if (resultsEl) resultsEl.textContent = 'Veuillez sélectionner un événement.'; return; }
+            try {
+                const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                const events = eventsResp.ok ? await eventsResp.json() : [];
+                const ev = events.find(e => e.event_code === eventCode);
+                if (!ev) { resultsEl.textContent = 'Événement introuvable.'; return; }
+                const resp = await fetch(`/api/admin/events/${ev.id}/face-matches?face_id=${encodeURIComponent(faceId)}&limit=${limit}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { resultsEl.textContent = 'Erreur lors de la recherche.'; return; }
+                const data = await resp.json();
+                const list = data.results || [];
+                if (!list.length) { resultsEl.textContent = 'Aucun résultat.'; return; }
+                resultsEl.innerHTML = `
+                  <div class="grid">
+                    ${list.map(item => {
+                        const pid = item.photo_id;
+                        const bb = item.box || {Left:0,Top:0,Width:0,Height:0};
+                        const left = (bb.Left * 100).toFixed(2);
+                        const top = (bb.Top * 100).toFixed(2);
+                        const width = (bb.Width * 100).toFixed(2);
+                        const height = (bb.Height * 100).toFixed(2);
+                        return `
+                          <div class="card" style="position:relative;">
+                            <div style="position:relative; display:inline-block; max-width:100%;">
+                              <img src="/api/photo/${pid}" alt="photo ${pid}" style="max-width:100%; border-radius:6px; border:1px solid #eee;" />
+                              <div style="position:absolute; left:${left}%; top:${top}%; width:${width}%; height:${height}%; border:3px solid #ff3b30; box-shadow:0 0 0 2px rgba(255,59,48,0.3) inset; border-radius:4px; pointer-events:none;"></div>
+                            </div>
+                            <div style="margin-top:8px; color:#555;">
+                              <div><strong>Photo #${pid}</strong></div>
+                              <div>Similitude: ${item.similarity}%</div>
+                              <div>FaceId(photo): ${item.face_id_photo}</div>
+                            </div>
+                          </div>`;
+                    }).join('')}
+                  </div>`;
+            } catch (e) {
+                if (resultsEl) resultsEl.textContent = 'Erreur lors de la recherche.';
             }
         }
 

@@ -1042,3 +1042,97 @@ class AwsFaceRecognizer:
             "others": others,
         }
 
+    def find_photo_matches_with_boxes(self, event_id: int, source_face_id: str, db: Session, limit: int = 10) -> List[Dict]:
+        """Pour un FaceId donné (souvent un face utilisateur), retourne jusqu'à N photos
+        correspondantes avec la bounding box exacte sur l'image originale.
+
+        Retourne: [ { "photo_id": int, "face_id_photo": str, "similarity": int,
+                       "box": {Left, Top, Width, Height} (normalisés 0..1) } ]
+        """
+        self.ensure_collection(event_id)
+        coll_id = self._collection_id(event_id)
+
+        # 1) Rechercher les matches du FaceId source
+        try:
+            resp = self._search_faces_retry(coll_id, source_face_id, max_faces=max(limit * 5, AWS_SEARCH_MAXFACES))
+        except Exception:
+            resp = None
+        if not resp:
+            return []
+
+        # 2) Extraire les faces "photo:{pid}" avec leur FaceId et similarité
+        photo_matches: List[Tuple[int, str, int]] = []  # (photo_id, photo_face_id, similarity)
+        seen_photos: set[int] = set()
+        for fm in resp.get("FaceMatches", []) or []:
+            face = fm.get("Face") or {}
+            ext = (face.get("ExternalImageId") or "").strip()
+            if not ext.startswith("photo:"):
+                continue
+            try:
+                pid = int(ext.split(":", 1)[1])
+            except Exception:
+                continue
+            if pid in seen_photos:
+                continue
+            pfid = face.get("FaceId") or ""
+            sim = int(float(fm.get("Similarity", 0.0)))
+            photo_matches.append((pid, pfid, sim))
+            seen_photos.add(pid)
+            if len(photo_matches) >= limit:
+                break
+
+        if not photo_matches:
+            return []
+
+        # 3) Pour chaque photo, détecter les visages et identifier la box correspondant au photo_face_id
+        results: List[Dict] = []
+        for pid, pfid, sim in photo_matches:
+            try:
+                p = db.query(Photo).filter(Photo.id == pid).first()
+                if not p:
+                    continue
+                # Charger bytes image
+                photo_input = p.file_path if (getattr(p, 'file_path', None) and os.path.exists(p.file_path)) else p.photo_data
+                if not photo_input:
+                    continue
+                img_bytes = self._prepare_image_bytes(photo_input)
+                if not img_bytes:
+                    continue
+                # Détecter boxes (sur original) puis match par crop vers pfid
+                boxes = self._detect_faces_boxes(img_bytes)
+                if not boxes:
+                    continue
+                matching_box = None
+                crops = self._crop_face_regions(img_bytes, boxes)
+                for idx, crop_bytes in enumerate(crops):
+                    r = self._search_faces_by_image_retry(coll_id, crop_bytes)
+                    if not r:
+                        continue
+                    found = False
+                    for m in r.get("FaceMatches", []) or []:
+                        face = m.get("Face") or {}
+                        if (face.get("FaceId") or "") == pfid:
+                            found = True
+                            break
+                    if found:
+                        bb = (boxes[idx].get('BoundingBox') or {})
+                        matching_box = {
+                            'Left': float(bb.get('Left', 0.0)),
+                            'Top': float(bb.get('Top', 0.0)),
+                            'Width': float(bb.get('Width', 0.0)),
+                            'Height': float(bb.get('Height', 0.0)),
+                        }
+                        break
+                if matching_box:
+                    results.append({
+                        'photo_id': pid,
+                        'face_id_photo': pfid,
+                        'similarity': sim,
+                        'box': matching_box,
+                    })
+            except Exception as e:
+                print(f"⚠️  find_photo_matches_with_boxes error for photo {pid}: {e}")
+                continue
+
+        return results
+
