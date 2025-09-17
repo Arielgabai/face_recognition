@@ -1365,7 +1365,11 @@
                                     <h4>User #${uid}</h4>
                                     <p><strong>Taille groupe:</strong> ${g.count || 0}</p>
                                     <p><strong>Meilleur score:</strong> ${best}</p>
+                                    <div class="card-actions">
+                                      <button class="success" onclick="loadUserGroupBoxes(${uid})">Afficher les cadres sur toutes les photos</button>
+                                    </div>
                                     <div style="display:flex; flex-wrap:wrap; gap:8px;">${photoIds}</div>
+                                    <div id="userGroupBoxes_${uid}"></div>
                                     <div style="margin-top:10px;">
                                       <span style="color:#666;">Selfie:</span><br/>
                                       <img src="/api/selfie/${uid}" onerror="this.style.display='none'" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid #eee;" />
@@ -1430,6 +1434,49 @@
                   </div>`;
             } catch (e) {
                 if (resultsEl) resultsEl.textContent = 'Erreur lors de la recherche.';
+            }
+        }
+
+        async function loadUserGroupBoxes(uid) {
+            const groupsEventSelect = document.getElementById('groupsEventSelect');
+            const eventCode = groupsEventSelect?.value;
+            const container = document.getElementById(`userGroupBoxes_${uid}`);
+            if (!container) return;
+            if (!eventCode) { container.textContent = 'Veuillez sélectionner un événement.'; return; }
+            try {
+                const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                const events = eventsResp.ok ? await eventsResp.json() : [];
+                const ev = events.find(e => e.event_code === eventCode);
+                if (!ev) { container.textContent = 'Événement introuvable.'; return; }
+                container.textContent = 'Chargement…';
+                const resp = await fetch(`/api/admin/events/${ev.id}/users/${uid}/group-faces`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { container.textContent = 'Erreur lors du chargement.'; return; }
+                const data = await resp.json();
+                const list = data.results || [];
+                if (!list.length) { container.textContent = 'Aucune photo dans ce groupe.'; return; }
+                container.innerHTML = `
+                  <div class="grid">
+                    ${list.map(item => {
+                        const pid = item.photo_id;
+                        const bb = item.box || {Left:0,Top:0,Width:0,Height:0};
+                        const left = (bb.Left * 100).toFixed(2);
+                        const top = (bb.Top * 100).toFixed(2);
+                        const width = (bb.Width * 100).toFixed(2);
+                        const height = (bb.Height * 100).toFixed(2);
+                        return `
+                          <div class="card" style="position:relative;">
+                            <div style="position:relative; display:inline-block; max-width:100%;">
+                              <img src="/api/photo/${pid}" alt="photo ${pid}" style="max-width:100%; border-radius:6px; border:1px solid #eee;" />
+                              <div style="position:absolute; left:${left}%; top:${top}%; width:${width}%; height:${height}%; border:3px solid #007bff; box-shadow:0 0 0 2px rgba(0,123,255,0.3) inset; border-radius:4px; pointer-events:none;"></div>
+                            </div>
+                            <div style="margin-top:8px; color:#555;">
+                              <div><strong>Photo #${pid}</strong></div>
+                            </div>
+                          </div>`;
+                    }).join('')}
+                  </div>`;
+            } catch (e) {
+                container.textContent = 'Erreur lors du chargement.';
             }
         }
 

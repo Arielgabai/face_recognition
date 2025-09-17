@@ -214,6 +214,41 @@ async def admin_face_matches_for_faceid(
         "results": matches,
     }
 
+@app.get("/api/admin/events/{event_id}/users/{user_id}/group-faces")
+async def admin_user_group_faces(
+    event_id: int,
+    user_id: int,
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retourne les photos du groupe pour un utilisateur avec les boîtes visage.
+
+    Disponible uniquement avec provider AWS (basé sur la collection).
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    from aws_face_recognizer import AwsFaceRecognizer as _Aws
+    if not isinstance(face_recognizer, _Aws):
+        raise HTTPException(status_code=400, detail="Endpoint disponible uniquement avec le provider AWS")
+
+    try:
+        results = face_recognizer.get_user_group_faces_with_boxes(event_id, user_id, db, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération des boîtes: {e}")
+
+    return {
+        "event_id": event_id,
+        "user_id": user_id,
+        "count": len(results or []),
+        "results": results,
+    }
+
 @app.get("/api/admin/aws-usage")
 async def get_aws_usage(current_user: User = Depends(get_current_user)):
     if current_user.user_type != UserType.ADMIN:
