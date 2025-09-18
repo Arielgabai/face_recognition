@@ -1440,8 +1440,10 @@
                         <div class=\"grid\">${cards || ''}</div>
                         <div class=\"card-actions\">
                           <button onclick=\"renderFacesSimilarities(${u.user_id})\">Voir toutes les similarités (toutes faces)</button>
+                          <button onclick=\"renderDiagnosis(${u.user_id})\">Diagnostiquer (AWS vs DB)</button>
                         </div>
                         <div id=\"facesSimilarities_${u.user_id}\"></div>
+                        <div id=\"diagnosis_${u.user_id}\"></div>
                       </div>`;
                   }).join('')}
                 `;
@@ -1496,6 +1498,38 @@
                   </div>`;
             } catch (e) {
                 container.textContent = 'Erreur de calcul.';
+            }
+        }
+
+        async function renderDiagnosis(uid) {
+            const groupsEventSelect = document.getElementById('groupsEventSelect');
+            const eventCode = groupsEventSelect?.value;
+            const container = document.getElementById(`diagnosis_${uid}`);
+            if (!container) return;
+            if (!eventCode) { container.textContent = 'Sélectionnez un événement.'; return; }
+            try {
+                const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                const events = eventsResp.ok ? await eventsResp.json() : [];
+                const ev = events.find(e => e.event_code === eventCode);
+                if (!ev) { container.textContent = 'Événement introuvable.'; return; }
+                container.textContent = 'Diagnostic en cours…';
+                const resp = await fetch(`/api/admin/events/${ev.id}/diagnose-matching?user_id=${uid}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { container.textContent = 'Erreur de diagnostic.'; return; }
+                const data = await resp.json();
+                const cm = data.collection_matches || [];
+                const dbm = data.db_matches || [];
+                const miss = data.missing_in_db || [];
+                const filt = data.filtered_out || [];
+                container.innerHTML = `
+                  <div style=\"margin-top:8px;\">
+                    <div style=\"font-size:14px;\"><strong>Résultats AWS (collection)</strong>: ${cm.length}</div>
+                    <div style=\"font-size:14px;\"><strong>En DB (face_matches)</strong>: ${dbm.length}</div>
+                    <div style=\"font-size:14px; color:${miss.length?'#e11d48':'#16a34a'};\"><strong>Manquants en DB</strong>: ${miss.length}</div>
+                    ${miss.length ? `<div style=\"margin:6px 0; font-size:13px;\">${miss.map(m => `#${m.photo_id} (${(m.similarity??0).toFixed ? m.similarity.toFixed(2) : m.similarity}%)`).join(', ')}</div>` : ''}
+                    ${filt.length ? `<div style=\"font-size:13px; color:#6b7280;\"><strong>Filtrés</strong>: ${filt.map(f => `#${f.photo_id} [${f.reason}]`).join(', ')}</div>` : ''}
+                  </div>`;
+            } catch (e) {
+                container.textContent = 'Erreur de diagnostic.';
             }
         }
 
