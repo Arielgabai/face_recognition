@@ -28,7 +28,7 @@ AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTE
 AWS_DETECT_MIN_CONF = float(os.environ.get("AWS_REKOGNITION_DETECT_MIN_CONF", "70") or "70")
 
 # Préparation image / crop
-AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "3072") or "3072")
+AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "2048") or "2048")
 AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.3") or "0.3")  # 30% padding
 AWS_MIN_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_CROP_SIDE", "36") or "36")
 # Dimension minimale de sortie pour un crop visage (on upsample si nécessaire)
@@ -326,6 +326,15 @@ class AwsFaceRecognizer:
             pass
 
         self._indexed_events.add(event_id)
+
+    def prepare_event_for_batch(self, event_id: int, db: Session) -> None:
+        """Prépare une fois la collection pour un batch d'uploads: ensure + purge + index users."""
+        self.ensure_collection(event_id)
+        try:
+            self._maybe_purge_collection(event_id, db)
+        except Exception:
+            pass
+        self.ensure_event_users_indexed(event_id, db)
 
     def _get_allowed_event_user_ids(self, event_id: int, db: Session) -> set[int]:
         """Renvoie l'ensemble des user_id associés à l'événement et existant dans la table users."""

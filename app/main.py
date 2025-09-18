@@ -2531,7 +2531,13 @@ async def upload_photos_to_event(
     # Traquer l'action d'upload par événement (pour l'affichage des coûts)
     from aws_metrics import aws_metrics
     with aws_metrics.action_context(f"upload_event:{event_id}"):
-        # Traiter séquentiellement pour limiter la mémoire (le client enverra par batch)
+        # Préparer une fois la collection pour le batch (purge conditionnelle + index users)
+        try:
+            if hasattr(face_recognizer, 'prepare_event_for_batch'):
+                face_recognizer.prepare_event_for_batch(event_id, db)
+        except Exception:
+            pass
+        # Traiter séquentiellement (le client envoie par batch)
         for file in files:
             if not file.content_type.startswith("image/"):
                 continue
