@@ -1648,15 +1648,29 @@ async def get_photo_by_id(
     
     if not photo:
         raise HTTPException(status_code=404, detail="Photo non trouv+�e")
-    
-    if not photo.photo_data:
-        raise HTTPException(status_code=404, detail="Donn+�es de photo non disponibles")
-    
-    # Retourner les donn+�es binaires avec le bon type MIME
+
+    # Préférer les données DB, sinon fallback file_path si disponible
+    content_bytes: bytes | None = None
+    if getattr(photo, "photo_data", None):
+        try:
+            content_bytes = bytes(photo.photo_data)
+        except Exception:
+            content_bytes = None
+    if content_bytes is None and getattr(photo, "file_path", None):
+        try:
+            fp = photo.file_path
+            if fp and os.path.exists(fp):
+                with open(fp, "rb") as f:
+                    content_bytes = f.read()
+        except Exception:
+            content_bytes = None
+    if not content_bytes:
+        raise HTTPException(status_code=404, detail="Données de photo non disponibles")
+
     return Response(
-        content=photo.photo_data,
+        content=content_bytes,
         media_type=photo.content_type or "image/jpeg",
-        headers={"Cache-Control": "public, max-age=31536000"}  # Cache pour 1 an
+        headers={"Cache-Control": "public, max-age=31536000"}
     )
 
 @app.get("/api/photo/{photo_id}/faces")

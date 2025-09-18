@@ -1170,8 +1170,20 @@ class AwsFaceRecognizer:
                 pid = int(ext.split(':', 1)[1])
             except Exception:
                 continue
+            # Filtrer par appartenance stricte à l'événement et existence en DB
+            try:
+                exists = db.query(Photo.id).filter(Photo.id == pid, Photo.event_id == event_id).first()
+                if not exists:
+                    continue
+            except Exception:
+                continue
             pfid = face.get('FaceId') or ''
-            sim = int(float(fm.get('Similarity', 0.0)))
+            # Similarity sur 1 décimale et bornée [0,100]
+            try:
+                sim_f = float(fm.get('Similarity', 0.0))
+            except Exception:
+                sim_f = 0.0
+            sim = int(round(max(0.0, min(100.0, sim_f))))
             keep = best_for_photo.get(pid)
             if keep is None or sim > keep[1]:
                 best_for_photo[pid] = (pfid, sim)
@@ -1223,6 +1235,9 @@ class AwsFaceRecognizer:
                 try:
                     p = db.query(Photo).filter(Photo.id == pid).first()
                     if not p:
+                        continue
+                    # sécuriser: garantir que la photo appartient bien à l'événement
+                    if int(getattr(p, 'event_id', 0) or 0) != int(event_id):
                         continue
                     photo_input = p.file_path if (getattr(p, 'file_path', None) and os.path.exists(p.file_path)) else p.photo_data
                     if not photo_input:

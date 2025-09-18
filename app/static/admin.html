@@ -1410,11 +1410,11 @@
                 const resp = await fetch(`/api/admin/events/${ev.id}/snapshot-graph`, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (!resp.ok) { graphEl.innerHTML = '<div style="color:#666;">Erreur chargement snapshot.</div>'; return; }
                 const graph = await resp.json();
-                const users = graph.users || [];
+                const users = (graph.users || []).slice().sort((a,b)=>a.user_id - b.user_id);
                 if (!users.length) { graphEl.innerHTML = '<div style="color:#666;">Aucun utilisateur.</div>'; return; }
                 graphEl.innerHTML = `
                   ${users.map(u => {
-                    const faces = u.faces || [];
+                    const faces = (u.faces || []).slice().sort((a,b)=> (b.similarity||0) - (a.similarity||0));
                     const cards = faces.map(item => {
                         const pid = item.photo_id;
                         const bb = item.box || {Left:0,Top:0,Width:0,Height:0};
