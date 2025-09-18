@@ -1553,3 +1553,71 @@ class AwsFaceRecognizer:
                 pass
         return { 'added': added, 'updated': updated, 'checked_photos': checked, 'affected': affected }
 
+    def diagnose_matching_gaps(self, event_id: int, user_id: int, db: Session, max_faces: int = 500) -> Dict:
+        """Diagnostique les trous entre ce que renvoie AWS (collection) et ce qui est stocké en DB.
+
+        Retourne:
+        {
+          collection_matches: [{photo_id, similarity}],
+          db_matches: [photo_id],
+          missing_in_db: [{photo_id, similarity}],
+          filtered_out: [{photo_id, reason}],
+        }
+        """
+        self.ensure_collection(event_id)
+        # Récupérer FaceId du selfie
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return { 'collection_matches': [], 'db_matches': [], 'missing_in_db': [], 'filtered_out': [] }
+        self.index_user_selfie(event_id, user)
+        user_fid = self._find_user_face_id(event_id, user_id)
+        if not user_fid:
+            return { 'collection_matches': [], 'db_matches': [], 'missing_in_db': [], 'filtered_out': [] }
+
+        coll_id = self._collection_id(event_id)
+        # 1) Interroger la collection depuis le selfie (seuil 0)
+        try:
+            resp = self._search_faces_retry(coll_id, user_fid, max_faces=max_faces, face_match_threshold=0)
+        except Exception:
+            resp = None
+        collection_matches: List[Dict] = []
+        if resp:
+            for fm in resp.get('FaceMatches', []) or []:
+                face = fm.get('Face') or {}
+                ext = (face.get('ExternalImageId') or '').strip()
+                if not ext.startswith('photo:'):
+                    continue
+                try:
+                    pid = int(ext.split(':', 1)[1])
+                except Exception:
+                    continue
+                try:
+                    sim = float(fm.get('Similarity', 0.0))
+                except Exception:
+                    sim = 0.0
+                collection_matches.append({ 'photo_id': pid, 'similarity': round(sim, 2) })
+
+        # 2) Lire DB face_matches
+        db_ids = [pid for (pid,) in db.query(FaceMatch.photo_id).filter(FaceMatch.user_id == user_id).all()]
+        db_set = set(int(x) for x in db_ids)
+
+        # 3) Filtrer par appartenance à l'événement et existence en DB photos
+        existing_photo_ids = set(int(x) for (x,) in db.query(Photo.id).filter(Photo.event_id == event_id).all())
+
+        missing_in_db: List[Dict] = []
+        filtered_out: List[Dict] = []
+        for entry in collection_matches:
+            pid = int(entry['photo_id'])
+            if pid not in existing_photo_ids:
+                filtered_out.append({ 'photo_id': pid, 'reason': 'not_in_event' })
+                continue
+            if pid not in db_set:
+                missing_in_db.append(entry)
+
+        return {
+            'collection_matches': collection_matches,
+            'db_matches': sorted(list(db_set)),
+            'missing_in_db': missing_in_db,
+            'filtered_out': filtered_out,
+        }
+
