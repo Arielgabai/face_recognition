@@ -1220,61 +1220,67 @@ class AwsFaceRecognizer:
         except ClientError as e:
             print(f"⚠️  ListFaces error while building faceid_to_box: {e}")
 
-        # 4) Assembler résultats
+        # 4) Assembler résultats en recalculant la box et la similarité via SearchFacesByImage (crop)
         pairs = list(best_for_photo.items())  # [(pid, (pfid, sim))]
-        # Optionnel: limiter
+        # Optionnel: limiter après tri par similarité
+        pairs = sorted(pairs, key=lambda kv: -float(kv[1][1]))
         if isinstance(limit, int) and limit > 0:
-            # garder les meilleurs par similarité
-            pairs = sorted(pairs, key=lambda kv: -int(kv[1][1]))[:limit]
+            pairs = pairs[:limit]
 
         results: List[Dict] = []
-        for pid, (pfid, sim) in pairs:
-            box = faceid_to_box.get(pfid)
-            if not box:
-                # Fallback: recalcul via recherche crop (coûteux)
-                try:
-                    p = db.query(Photo).filter(Photo.id == pid).first()
-                    if not p:
+        for pid, (pfid, _sim_from_searchfaces) in pairs:
+            try:
+                p = db.query(Photo).filter(Photo.id == pid).first()
+                if not p:
+                    continue
+                if int(getattr(p, 'event_id', 0) or 0) != int(event_id):
+                    continue
+                photo_input = p.file_path if (getattr(p, 'file_path', None) and os.path.exists(p.file_path)) else p.photo_data
+                if not photo_input:
+                    continue
+                img_bytes = self._prepare_image_bytes(photo_input)
+                if not img_bytes:
+                    continue
+                boxes = self._detect_faces_boxes(img_bytes)
+                if not boxes:
+                    continue
+                crops = self._crop_face_regions(img_bytes, boxes)
+                found_idx = None
+                sim_crop: Optional[float] = None
+                for idx, crop_bytes in enumerate(crops):
+                    r = self._search_faces_by_image_retry(coll_id, crop_bytes)
+                    if not r:
                         continue
-                    # sécuriser: garantir que la photo appartient bien à l'événement
-                    if int(getattr(p, 'event_id', 0) or 0) != int(event_id):
-                        continue
-                    photo_input = p.file_path if (getattr(p, 'file_path', None) and os.path.exists(p.file_path)) else p.photo_data
-                    if not photo_input:
-                        continue
-                    img_bytes = self._prepare_image_bytes(photo_input)
-                    if not img_bytes:
-                        continue
-                    boxes = self._detect_faces_boxes(img_bytes)
-                    crops = self._crop_face_regions(img_bytes, boxes)
-                    found_idx = None
-                    for idx, crop_bytes in enumerate(crops):
-                        r = self._search_faces_by_image_retry(coll_id, crop_bytes)
-                        if not r:
-                            continue
-                        for m in r.get('FaceMatches', []) or []:
-                            face = m.get('Face') or {}
-                            if (face.get('FaceId') or '') == pfid:
-                                found_idx = idx
-                                break
-                        if found_idx is not None:
+                    matched = False
+                    for m in r.get('FaceMatches', []) or []:
+                        face = m.get('Face') or {}
+                        if (face.get('FaceId') or '') == pfid:
+                            try:
+                                sim_crop = float(m.get('Similarity', 0.0))
+                            except Exception:
+                                sim_crop = None
+                            matched = True
                             break
-                    if found_idx is not None and 0 <= found_idx < len(boxes):
-                        bb = (boxes[found_idx].get('BoundingBox') or {})
-                        box = {
-                            'Left': float(bb.get('Left', 0.0)),
-                            'Top': float(bb.get('Top', 0.0)),
-                            'Width': float(bb.get('Width', 0.0)),
-                            'Height': float(bb.get('Height', 0.0)),
-                        }
-                except Exception:
-                    box = None
-            if box:
+                    if matched:
+                        found_idx = idx
+                        break
+                if found_idx is None or found_idx < 0 or found_idx >= len(boxes):
+                    continue
+                bb = (boxes[found_idx].get('BoundingBox') or {})
+                box = {
+                    'Left': float(bb.get('Left', 0.0)),
+                    'Top': float(bb.get('Top', 0.0)),
+                    'Width': float(bb.get('Width', 0.0)),
+                    'Height': float(bb.get('Height', 0.0)),
+                }
                 results.append({
                     'photo_id': pid,
-                    'similarity': int(sim),
+                    'similarity': round(max(0.0, min(100.0, float(sim_crop or 0.0))), 1),
                     'box': box,
                 })
+            except Exception as e:
+                print(f"⚠️  group box compute error pid={pid}: {e}")
+                continue
 
         return results
 
