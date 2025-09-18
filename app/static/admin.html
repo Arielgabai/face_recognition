@@ -1470,22 +1470,27 @@
                 container.innerHTML = `
                   <div class=\"grid\">
                     ${photos.map(ph => {
-                        const rows = (ph.faces || []).map(f => {
+                        const overlays = (ph.faces || []).map((f, idx) => {
                             const left = (f.box?.Left * 100).toFixed(2);
                             const top = (f.box?.Top * 100).toFixed(2);
                             const width = (f.box?.Width * 100).toFixed(2);
                             const height = (f.box?.Height * 100).toFixed(2);
                             const sim = (typeof f.similarity === 'number') ? f.similarity.toFixed(2) : '-';
-                            const tag = f.matched ? '✅' : '—';
-                            return `<div style=\"font-size:13px; color:#444; margin:2px 0;\">${tag} sim=${sim}% box=[${left}%, ${top}%, ${width}%, ${height}%]</div>`;
+                            const color = f.matched ? '#22c55e' : '#999999';
+                            const bg = f.matched ? 'rgba(34,197,94,0.9)' : 'rgba(60,60,60,0.85)';
+                            const label = f.matched ? `✅ ${sim}%` : `${sim}%`;
+                            return `
+                              <div style=\"position:absolute; left:${left}%; top:${top}%; width:${width}%; height:${height}%; border:2px solid ${color}; border-radius:4px; pointer-events:none; box-shadow:0 0 0 1px rgba(0,0,0,0.1) inset;\"></div>
+                              <div style=\"position:absolute; left:calc(${left}% + 2px); top:calc(${top}% + 2px); transform:translate(0, -110%); background:${bg}; color:white; font-size:12px; padding:2px 6px; border-radius:4px; white-space:nowrap; pointer-events:none;\">${label}</div>
+                            `;
                         }).join('');
                         return `
                           <div class=\"card\" style=\"position:relative;\">
                             <div style=\"position:relative; display:inline-block; max-width:100%;\">
-                              <img src=\"/api/photo/${ph.photo_id}\" alt=\"photo ${ph.photo_id}\" style=\"max-width:100%; border-radius:6px; border:1px solid #eee;\" />
+                              <img src=\"/api/photo/${ph.photo_id}\" alt=\"photo ${ph.photo_id}\" style=\"max-width:100%; border-radius:6px; border:1px solid #eee; display:block;\" />
+                              ${overlays}
                             </div>
                             <div style=\"margin-top:6px;\"><strong>Photo #${ph.photo_id}</strong></div>
-                            <div>${rows}</div>
                           </div>`;
                     }).join('')}
                   </div>`;
