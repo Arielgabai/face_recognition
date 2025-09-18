@@ -753,6 +753,73 @@ class AwsFaceRecognizer:
                 # fallback: ajouter si problème de lecture
                 db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
                 count_matches += 1
+
+        # Fallback robuste: si aucun match par collection, utiliser CompareFaces(Selfie vs crops) sur toutes les photos de l'événement
+        try:
+            if count_matches == 0:
+                # Préparer selfie crop
+                selfie_bytes: Optional[bytes] = None
+                if getattr(user, "selfie_data", None):
+                    try:
+                        selfie_bytes = bytes(user.selfie_data)
+                    except Exception:
+                        selfie_bytes = None
+                if selfie_bytes is None and getattr(user, "selfie_path", None) and os.path.exists(user.selfie_path):
+                    try:
+                        with open(user.selfie_path, "rb") as f:
+                            selfie_bytes = f.read()
+                    except Exception:
+                        selfie_bytes = None
+                if selfie_bytes:
+                    selfie_prepared = self._prepare_image_bytes(selfie_bytes)
+                    selfie_crop = self._best_face_crop_or_image(selfie_prepared) if selfie_prepared else None
+                else:
+                    selfie_crop = None
+
+                if selfie_crop:
+                    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+                    for p in photos:
+                        try:
+                            photo_input = p.file_path if (getattr(p, 'file_path', None) and os.path.exists(p.file_path)) else p.photo_data
+                            if not photo_input:
+                                continue
+                            image_bytes = self._prepare_image_bytes(photo_input)
+                            if not image_bytes:
+                                continue
+                            boxes = self._detect_faces_boxes(image_bytes)
+                            if not boxes:
+                                continue
+                            crops = self._crop_face_regions(image_bytes, boxes)
+                            best_sim = 0
+                            for cr in crops:
+                                try:
+                                    cmp = self.client.compare_faces(SourceImage={"Bytes": selfie_crop}, TargetImage={"Bytes": cr}, SimilarityThreshold=0)
+                                    for m in (cmp.get('FaceMatches') or []):
+                                        try:
+                                            s = int(round(float(m.get('Similarity', 0.0))))
+                                        except Exception:
+                                            s = 0
+                                        if s > best_sim:
+                                            best_sim = s
+                                except ClientError:
+                                    continue
+                            if best_sim >= int(self.search_threshold):
+                                try:
+                                    existing = db.query(FaceMatch).filter(FaceMatch.photo_id == p.id, FaceMatch.user_id == user.id).first()
+                                    if existing:
+                                        if best_sim > int(existing.confidence_score or 0):
+                                            existing.confidence_score = best_sim
+                                    else:
+                                        db.add(FaceMatch(photo_id=p.id, user_id=user.id, confidence_score=best_sim))
+                                        count_matches += 1
+                                except Exception:
+                                    db.add(FaceMatch(photo_id=p.id, user_id=user.id, confidence_score=best_sim))
+                                    count_matches += 1
+                        except Exception:
+                            continue
+        except Exception as _e:
+            print(f"[MatchFallback][CompareFaces] error: {_e}")
+
         db.commit()
         return count_matches
 
