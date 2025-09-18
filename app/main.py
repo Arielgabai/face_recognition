@@ -1571,6 +1571,35 @@ async def admin_rematch_event(
     background_tasks.add_task(_rematch_event_via_selfies, event_id)
     return {"scheduled": True, "event_id": event_id}
 
+@app.post("/api/admin/events/{event_id}/repair-matches")
+async def admin_repair_matches(
+    event_id: int,
+    user_id: int,
+    threshold: float | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Répare les FaceMatch en utilisant CompareFaces(Selfie vs chaque visage des photos) pour un user/event.
+    Crée/actualise les FaceMatch >= threshold (ou seuil provider).
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    from aws_face_recognizer import AwsFaceRecognizer as _Aws
+    if not isinstance(face_recognizer, _Aws):
+        raise HTTPException(status_code=400, detail="Disponible uniquement avec le provider AWS")
+
+    try:
+        result = face_recognizer.repair_matches_via_compare_faces(event_id, user_id, db, threshold=threshold)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur repair-matches: {e}")
+
+    return result
+
 @app.post("/api/admin/dedupe-face-matches")
 async def admin_dedupe_face_matches(
     current_user: User = Depends(get_current_user),

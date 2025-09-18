@@ -494,9 +494,10 @@ class AwsFaceRecognizer:
             return image_bytes
 
     # ---------- Helpers AWS avec retry ----------
-    def _search_faces_retry(self, collection_id: str, face_id: str, max_faces: Optional[int] = None):
+    def _search_faces_retry(self, collection_id: str, face_id: str, max_faces: Optional[int] = None, face_match_threshold: Optional[float] = None):
         last_exc = None
         mf = int(max_faces or AWS_SEARCH_MAXFACES)
+        th = float(face_match_threshold) if (face_match_threshold is not None) else float(self.search_threshold)
         for attempt in range(AWS_MAX_RETRIES + 1):
             try:
                 aws_metrics.inc('SearchFaces')
@@ -504,7 +505,7 @@ class AwsFaceRecognizer:
                     CollectionId=collection_id,
                     FaceId=face_id,
                     MaxFaces=mf,
-                    FaceMatchThreshold=self.search_threshold,
+                    FaceMatchThreshold=th,
                 )
             except ClientError as e:
                 code = e.response.get("Error", {}).get("Code", "")
@@ -521,8 +522,9 @@ class AwsFaceRecognizer:
             print(f"⚠️  search_faces retry failed: {last_exc}")
         return None
 
-    def _search_faces_by_image_retry(self, collection_id: str, image_bytes: bytes):
+    def _search_faces_by_image_retry(self, collection_id: str, image_bytes: bytes, face_match_threshold: Optional[float] = None):
         last_exc = None
+        th = float(face_match_threshold) if (face_match_threshold is not None) else float(self.search_threshold)
         for attempt in range(AWS_MAX_RETRIES + 1):
             try:
                 aws_metrics.inc('SearchFacesByImage')
@@ -530,7 +532,7 @@ class AwsFaceRecognizer:
                     CollectionId=collection_id,
                     Image={"Bytes": image_bytes},
                     MaxFaces=AWS_SEARCH_MAXFACES,
-                    FaceMatchThreshold=self.search_threshold,
+                    FaceMatchThreshold=th,
                     QualityFilter=AWS_SEARCH_QUALITY_FILTER,
                 )
             except ClientError as e:
@@ -901,9 +903,9 @@ class AwsFaceRecognizer:
         self.ensure_event_users_indexed(event_id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
         user_best: Dict[int, int] = {}
+        # 1) Recherche collection classique
         if not face_ids:
-            # Si aucun visage détecté/indexé, tenter une recherche directe par image complète (fallback)
-            resp = self._search_faces_by_image_retry(self._collection_id(event_id), image_bytes)
+            resp = self._search_faces_by_image_retry(self._collection_id(event_id), image_bytes, face_match_threshold=0)
             if resp:
                 for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
                     ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
@@ -920,7 +922,7 @@ class AwsFaceRecognizer:
         if face_ids:
             coll_id = self._collection_id(event_id)
             with ThreadPoolExecutor(max_workers=MAX_PARALLEL_PER_REQUEST) as ex:
-                futures = {ex.submit(self._search_faces_retry, coll_id, fid): fid for fid in face_ids}
+                futures = {ex.submit(self._search_faces_retry, coll_id, fid, 0): fid for fid in face_ids}
                 for fut in as_completed(futures):
                     resp = fut.result()
                     if not resp:
@@ -937,6 +939,45 @@ class AwsFaceRecognizer:
                         prev = user_best.get(uid)
                         if prev is None or sim > prev:
                             user_best[uid] = sim
+        # 2) CompareFaces fallback pour garantir l’upsert même si la collection rate
+        if not user_best:
+            from sqlalchemy import or_ as _or
+            ues = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+            candidate_users = db.query(User).filter(
+                User.id.in_([ue.user_id for ue in ues]),
+                _or(User.selfie_data.isnot(None), User.selfie_path.isnot(None))
+            ).all()
+            # Préparer crops des visages de la photo
+            boxes = self._detect_faces_boxes(image_bytes)
+            crops = self._crop_face_regions(image_bytes, boxes) if boxes else []
+            for u in candidate_users:
+                # selfie crop
+                b = None
+                try:
+                    if getattr(u, 'selfie_data', None):
+                        b = bytes(u.selfie_data)
+                    elif getattr(u, 'selfie_path', None) and os.path.exists(u.selfie_path):
+                        with open(u.selfie_path, 'rb') as f:
+                            b = f.read()
+                except Exception:
+                    b = None
+                if not b:
+                    continue
+                sc = self._best_face_crop_or_image(self._prepare_image_bytes(b))
+                if not sc:
+                    continue
+                best_sim = 0
+                for cr in crops:
+                    try:
+                        cmp = self.client.compare_faces(SourceImage={"Bytes": sc}, TargetImage={"Bytes": cr}, SimilarityThreshold=0)
+                        for m in (cmp.get('FaceMatches') or []):
+                            best_sim = max(best_sim, int(float(m.get('Similarity', 0.0))))
+                    except ClientError:
+                        continue
+                if best_sim > 0:
+                    prev = user_best.get(int(u.id))
+                    if prev is None or best_sim > prev:
+                        user_best[int(u.id)] = best_sim
         allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
         for uid, score in user_best.items():
             if uid in allowed_user_ids:
@@ -1416,4 +1457,99 @@ class AwsFaceRecognizer:
                 continue
 
         return { 'event_id': int(event_id), 'user_id': int(user_id), 'photos': out_photos }
+
+    def repair_matches_via_compare_faces(self, event_id: int, user_id: int, db: Session,
+                                         threshold: Optional[float] = None) -> Dict:
+        """Parcourt toutes les photos de l'événement et crée/actualise FaceMatch
+        pour chaque visage dont la similarité CompareFaces(Selfie vs Crop) >= threshold.
+
+        Retour: { added: int, updated: int, checked_photos: int, affected: [{photo_id, similarity}...] }
+        """
+        self.ensure_collection(event_id)
+        # Préparer selfie crop
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return { 'added': 0, 'updated': 0, 'checked_photos': 0, 'affected': [] }
+        selfie_bytes: Optional[bytes] = None
+        try:
+            if getattr(user, 'selfie_data', None):
+                selfie_bytes = bytes(user.selfie_data)
+            elif getattr(user, 'selfie_path', None) and os.path.exists(user.selfie_path):
+                with open(user.selfie_path, 'rb') as f:
+                    selfie_bytes = f.read()
+        except Exception:
+            selfie_bytes = None
+        if not selfie_bytes:
+            return { 'added': 0, 'updated': 0, 'checked_photos': 0, 'affected': [] }
+        selfie_prepared = self._prepare_image_bytes(selfie_bytes)
+        selfie_crop = self._best_face_crop_or_image(selfie_prepared) if selfie_prepared else None
+        if not selfie_crop:
+            return { 'added': 0, 'updated': 0, 'checked_photos': 0, 'affected': [] }
+
+        thr = float(threshold) if (threshold is not None) else float(self.search_threshold)
+        added = 0
+        updated = 0
+        affected: List[Dict] = []
+        checked = 0
+        photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+        for p in photos:
+            try:
+                checked += 1
+                photo_input = p.file_path if (getattr(p, 'file_path', None) and os.path.exists(p.file_path)) else p.photo_data
+                if not photo_input:
+                    continue
+                img_bytes = self._prepare_image_bytes(photo_input)
+                if not img_bytes:
+                    continue
+                boxes = self._detect_faces_boxes(img_bytes)
+                if not boxes:
+                    continue
+                crops = self._crop_face_regions(img_bytes, boxes)
+                best_sim = 0.0
+                for crop_bytes in crops:
+                    try:
+                        cmp = self.client.compare_faces(
+                            SourceImage={"Bytes": selfie_crop},
+                            TargetImage={"Bytes": crop_bytes},
+                            SimilarityThreshold=0,
+                        )
+                        for m in (cmp.get('FaceMatches') or []):
+                            try:
+                                sim = float(m.get('Similarity', 0.0))
+                            except Exception:
+                                sim = 0.0
+                            if sim > best_sim:
+                                best_sim = sim
+                    except ClientError:
+                        continue
+                if best_sim >= thr:
+                    score = int(round(max(0.0, min(100.0, best_sim))))
+                    try:
+                        existing = db.query(FaceMatch).filter(FaceMatch.photo_id == p.id, FaceMatch.user_id == user_id).first()
+                        if existing:
+                            if score > int(existing.confidence_score or 0):
+                                existing.confidence_score = score
+                                updated += 1
+                        else:
+                            db.add(FaceMatch(photo_id=p.id, user_id=user_id, confidence_score=score))
+                            added += 1
+                        affected.append({ 'photo_id': int(p.id), 'similarity': round(best_sim, 2) })
+                    except Exception:
+                        # tentative d'ajout si lecture existant a échoué
+                        try:
+                            db.add(FaceMatch(photo_id=p.id, user_id=user_id, confidence_score=score))
+                            added += 1
+                            affected.append({ 'photo_id': int(p.id), 'similarity': round(best_sim, 2) })
+                        except Exception:
+                            pass
+            except Exception:
+                continue
+        try:
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        return { 'added': added, 'updated': updated, 'checked_photos': checked, 'affected': affected }
 
