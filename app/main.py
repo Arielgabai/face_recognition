@@ -2019,6 +2019,21 @@ async def delete_photo(
     try:
         # Supprimer les correspondances de visages associ+�es
         db.query(FaceMatch).filter(FaceMatch.photo_id == photo_id).delete()
+        # Nettoyage Rekognition pour cette photo (faces photo:{id})
+        try:
+            if photo.event_id is not None:
+                from aws_face_recognizer import AwsFaceRecognizer as _Aws
+                if isinstance(face_recognizer, _Aws):
+                    try:
+                        face_recognizer.ensure_collection(int(photo.event_id))
+                    except Exception:
+                        pass
+                    try:
+                        face_recognizer._delete_photo_faces(int(photo.event_id), int(photo.id))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         
         # Supprimer l'enregistrement de la base de donn+�es
         db.delete(photo)
@@ -2065,6 +2080,21 @@ async def delete_multiple_photos(
         for photo in photos:
             # Supprimer les correspondances de visages associ+�es
             db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()
+            # Nettoyage Rekognition pour chacune
+            try:
+                if photo.event_id is not None:
+                    from aws_face_recognizer import AwsFaceRecognizer as _Aws
+                    if isinstance(face_recognizer, _Aws):
+                        try:
+                            face_recognizer.ensure_collection(int(photo.event_id))
+                        except Exception:
+                            pass
+                        try:
+                            face_recognizer._delete_photo_faces(int(photo.event_id), int(photo.id))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
             
             # Supprimer l'enregistrement de la base de donn+�es
             db.delete(photo)
