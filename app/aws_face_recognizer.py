@@ -1342,18 +1342,25 @@ class AwsFaceRecognizer:
         }
         """
         self.ensure_collection(event_id)
-        # S'assurer que le selfie est indexé et récupérer son FaceId
+        # Charger le selfie et préparer un crop unique à comparer
         user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            try:
-                self.index_user_selfie(event_id, user)
-            except Exception:
-                pass
-        user_fid = self._find_user_face_id(event_id, user_id)
-        if not user_fid:
+        if not user:
             return { 'event_id': int(event_id), 'user_id': int(user_id), 'photos': [] }
-
-        coll_id = self._collection_id(event_id)
+        selfie_bytes: Optional[bytes] = None
+        try:
+            if getattr(user, 'selfie_data', None):
+                selfie_bytes = bytes(user.selfie_data)
+            elif getattr(user, 'selfie_path', None) and os.path.exists(user.selfie_path):
+                with open(user.selfie_path, 'rb') as f:
+                    selfie_bytes = f.read()
+        except Exception:
+            selfie_bytes = None
+        if not selfie_bytes:
+            return { 'event_id': int(event_id), 'user_id': int(user_id), 'photos': [] }
+        selfie_prepared = self._prepare_image_bytes(selfie_bytes)
+        selfie_crop = self._best_face_crop_or_image(selfie_prepared) if selfie_prepared else None
+        if not selfie_crop:
+            return { 'event_id': int(event_id), 'user_id': int(user_id), 'photos': [] }
         # Parcourir toutes les photos de l'événement
         photos = db.query(Photo).filter(Photo.event_id == event_id).all()
         out_photos: List[Dict] = []
@@ -1372,30 +1379,27 @@ class AwsFaceRecognizer:
                 crops = self._crop_face_regions(img_bytes, boxes)
                 faces_out: List[Dict] = []
                 for idx, crop_bytes in enumerate(crops):
-                    # Appel direct avec seuil 0 pour récupérer une similarité même faible
-                    try:
-                        aws_metrics.inc('SearchFacesByImage')
-                        r = self.client.search_faces_by_image(
-                            CollectionId=coll_id,
-                            Image={"Bytes": crop_bytes},
-                            MaxFaces=max_results_per_crop,
-                            FaceMatchThreshold=0,
-                            QualityFilter=AWS_SEARCH_QUALITY_FILTER,
-                        )
-                    except ClientError:
-                        r = None
+                    # Utiliser CompareFaces(Selfie vs Crop) pour obtenir la similarité directe AWS
                     similarity_val: float = 0.0
                     matched = False
-                    if r:
-                        for m in r.get('FaceMatches', []) or []:
-                            face = m.get('Face') or {}
-                            if (face.get('FaceId') or '') == user_fid:
-                                try:
-                                    similarity_val = float(m.get('Similarity', 0.0))
-                                except Exception:
-                                    similarity_val = 0.0
-                                matched = True
-                                break
+                    try:
+                        aws_metrics.inc('CompareFaces')
+                        cmp = self.client.compare_faces(
+                            SourceImage={"Bytes": selfie_crop},
+                            TargetImage={"Bytes": crop_bytes},
+                            SimilarityThreshold=0,
+                        )
+                        # Prendre la meilleure similarité retournée
+                        for m in (cmp.get('FaceMatches') or []):
+                            try:
+                                sim = float(m.get('Similarity', 0.0))
+                            except Exception:
+                                sim = 0.0
+                            if sim > similarity_val:
+                                similarity_val = sim
+                        matched = similarity_val >= self.search_threshold
+                    except ClientError:
+                        similarity_val = 0.0
                     bb = (boxes[idx].get('BoundingBox') or {})
                     faces_out.append({
                         'box': {
