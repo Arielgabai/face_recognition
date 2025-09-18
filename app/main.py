@@ -1626,6 +1626,48 @@ async def admin_diagnose_matching(
 
     return diag
 
+@app.post("/api/admin/events/{event_id}/purge-collection")
+async def admin_purge_collection(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    from aws_face_recognizer import AwsFaceRecognizer as _Aws
+    if not isinstance(face_recognizer, _Aws):
+        raise HTTPException(status_code=400, detail="Disponible uniquement avec le provider AWS")
+    try:
+        res = face_recognizer.purge_collection_to_event(event_id, db)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur purge: {e}")
+    return res
+
+@app.post("/api/admin/events/{event_id}/purge-and-reindex")
+async def admin_purge_and_reindex(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    from aws_face_recognizer import AwsFaceRecognizer as _Aws
+    if not isinstance(face_recognizer, _Aws):
+        raise HTTPException(status_code=400, detail="Disponible uniquement avec le provider AWS")
+    try:
+        purge = face_recognizer.purge_collection_to_event(event_id, db)
+        face_recognizer.ensure_event_users_indexed(event_id, db)
+        face_recognizer.ensure_event_photos_indexed(event_id, db)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur purge/reindex: {e}")
+    return { "purge": purge, "reindexed": True }
+
 @app.post("/api/admin/dedupe-face-matches")
 async def admin_dedupe_face_matches(
     current_user: User = Depends(get_current_user),

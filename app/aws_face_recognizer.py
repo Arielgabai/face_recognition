@@ -678,6 +678,10 @@ class AwsFaceRecognizer:
         3) Filtrer les matches "photo:{photo_id}" et créer FaceMatch en bulk
         """
         self.ensure_collection(event_id)
+        try:
+            self._maybe_purge_collection(event_id, db)
+        except Exception:
+            pass
         self.index_user_selfie(event_id, user)
 
         # Charger les octets du selfie
@@ -880,6 +884,10 @@ class AwsFaceRecognizer:
             # Utiliser les octets originaux (préparés) pour une meilleure empreinte faciale
             image_bytes = self._prepare_image_bytes(original_data)
             self.ensure_collection(event_id)
+            try:
+                self._maybe_purge_collection(event_id, db)
+            except Exception:
+                pass
             self.ensure_event_users_indexed(event_id, db)
             face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
             # Pour chaque FaceId indexé, rechercher des selfies correspondants (ExternalImageId user:{user_id})
@@ -966,6 +974,10 @@ class AwsFaceRecognizer:
         # Utiliser les octets originaux (préparés) pour une meilleure empreinte faciale
         image_bytes = self._prepare_image_bytes(original_data)
         self.ensure_collection(event_id)
+        try:
+            self._maybe_purge_collection(event_id, db)
+        except Exception:
+            pass
         # IMPORTANT: indexer aussi les selfies des users de l'événement avant de matcher
         self.ensure_event_users_indexed(event_id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
@@ -1687,4 +1699,126 @@ class AwsFaceRecognizer:
             'missing_in_db': missing_in_db,
             'filtered_out': filtered_out,
         }
+
+    def purge_collection_to_event(self, event_id: int, db: Session) -> Dict:
+        """Purge la collection de l'événement pour ne garder que les faces pertinentes:
+        - photo:{photo_id} où photo_id ∈ photos(event_id)
+        - user:{user_id} où user_id ∈ users(event_id)
+        Retour: { deleted: int, kept: int }
+        """
+        self.ensure_collection(event_id)
+        coll_id = self._collection_id(event_id)
+        # Construire les ensembles autorisés
+        photo_ids = set(int(x) for (x,) in db.query(Photo.id).filter(Photo.event_id == event_id).all())
+        user_ids = set(int(x) for (x,) in db.query(UserEvent.user_id).filter(UserEvent.event_id == event_id).all())
+
+        deleted = 0
+        kept = 0
+        next_token = None
+        try:
+            while True:
+                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
+                if next_token:
+                    kwargs["NextToken"] = next_token
+                aws_metrics.inc('ListFaces')
+                resp = self.client.list_faces(**kwargs)
+                to_delete: List[str] = []
+                for f in (resp.get('Faces') or []):
+                    ext = (f.get('ExternalImageId') or '').strip()
+                    fid = f.get('FaceId')
+                    if not fid:
+                        continue
+                    ok = False
+                    if ext.startswith('photo:'):
+                        try:
+                            pid = int(ext.split(':', 1)[1])
+                        except Exception:
+                            pid = None
+                        ok = (pid is not None and pid in photo_ids)
+                    elif ext.startswith('user:'):
+                        try:
+                            uid = int(ext.split(':', 1)[1])
+                        except Exception:
+                            uid = None
+                        ok = (uid is not None and uid in user_ids)
+                    elif ext.isdigit():
+                        # legacy user id
+                        try:
+                            uid = int(ext)
+                        except Exception:
+                            uid = None
+                        ok = (uid is not None and uid in user_ids)
+                    else:
+                        ok = False
+                    if not ok:
+                        to_delete.append(fid)
+                    else:
+                        kept += 1
+                if to_delete:
+                    try:
+                        aws_metrics.inc('DeleteFaces')
+                        self.client.delete_faces(CollectionId=coll_id, FaceIds=to_delete)
+                        deleted += len(to_delete)
+                    except ClientError:
+                        pass
+                next_token = resp.get('NextToken')
+                if not next_token:
+                    break
+        except ClientError as e:
+            print(f"[Purge] list/delete error: {e}")
+        return { 'deleted': deleted, 'kept': kept }
+
+    # ---------- Auto-purge helpers ----------
+    def _maybe_purge_collection(self, event_id: int, db: Session) -> None:
+        """Purge automatiquement si la collection contient des faces hors-événement.
+        Heuristique: on inspecte jusqu'à 1000 faces; si au moins une invalide, purge complète.
+        Contrôlable via env AWS_REKOGNITION_PURGE_AUTO (true/false)."""
+        try:
+            auto = os.environ.get("AWS_REKOGNITION_PURGE_AUTO", "true").strip().lower() not in {"false", "0", "no"}
+            if not auto:
+                return
+            self.ensure_collection(event_id)
+            coll_id = self._collection_id(event_id)
+            allowed_photo_ids = set(int(x) for (x,) in db.query(Photo.id).filter(Photo.event_id == event_id).all())
+            allowed_user_ids = set(int(x) for (x,) in db.query(UserEvent.user_id).filter(UserEvent.event_id == event_id).all())
+            # Inspecter une page (1000)
+            aws_metrics.inc('ListFaces')
+            resp = self.client.list_faces(CollectionId=coll_id, MaxResults=1000)
+            invalid_found = False
+            for f in (resp.get('Faces') or []):
+                ext = (f.get('ExternalImageId') or '').strip()
+                if ext.startswith('photo:'):
+                    try:
+                        pid = int(ext.split(':', 1)[1])
+                    except Exception:
+                        pid = None
+                    if (pid is None) or (pid not in allowed_photo_ids):
+                        invalid_found = True
+                        break
+                elif ext.startswith('user:'):
+                    try:
+                        uid = int(ext.split(':', 1)[1])
+                    except Exception:
+                        uid = None
+                    if (uid is None) or (uid not in allowed_user_ids):
+                        invalid_found = True
+                        break
+                elif ext.isdigit():
+                    try:
+                        uid = int(ext)
+                    except Exception:
+                        uid = None
+                    if (uid is None) or (uid not in allowed_user_ids):
+                        invalid_found = True
+                        break
+                else:
+                    # inconnu
+                    invalid_found = True
+                    break
+            if invalid_found:
+                self.purge_collection_to_event(event_id, db)
+        except ClientError as _e:
+            print(f"[AutoPurge] AWS error: {_e}")
+        except Exception as _e:
+            print(f"[AutoPurge] error: {_e}")
 
