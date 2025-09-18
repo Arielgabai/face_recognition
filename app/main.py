@@ -1517,6 +1517,12 @@ def _rematch_event_via_selfies(event_id: int):
     try:
         session = next(get_db())
         try:
+            # S'assurer que toutes les photos de l'événement sont indexées dans la collection
+            try:
+                if hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                    face_recognizer.ensure_event_photos_indexed(event_id, session)
+            except Exception as _e:
+                print(f"[AdminRematch] ensure_event_photos_indexed failed: {_e}")
             # Charger tous les users de l'événement (avec ou sans selfie) puis filtrer
             from sqlalchemy import or_ as _or
             user_events = session.query(UserEvent).filter(UserEvent.event_id == event_id).all()
