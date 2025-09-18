@@ -1438,11 +1438,59 @@
                       <div class=\"card\">
                         <h4>User #${u.user_id} ${u.selfie_available ? '📸' : ''}</h4>
                         <div class=\"grid\">${cards || ''}</div>
+                        <div class=\"card-actions\">
+                          <button onclick=\"renderFacesSimilarities(${u.user_id})\">Voir toutes les similarités (toutes faces)</button>
+                        </div>
+                        <div id=\"facesSimilarities_${u.user_id}\"></div>
                       </div>`;
                   }).join('')}
                 `;
             } catch (e) {
                 graphEl.innerHTML = '<div style="color:#666;">Erreur chargement snapshot.</div>';
+            }
+        }
+
+        async function renderFacesSimilarities(uid) {
+            const groupsEventSelect = document.getElementById('groupsEventSelect');
+            const eventCode = groupsEventSelect?.value;
+            const container = document.getElementById(`facesSimilarities_${uid}`);
+            if (!container) return;
+            if (!eventCode) { container.textContent = 'Sélectionnez un événement.'; return; }
+            try {
+                const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                const events = eventsResp.ok ? await eventsResp.json() : [];
+                const ev = events.find(e => e.event_code === eventCode);
+                if (!ev) { container.textContent = 'Événement introuvable.'; return; }
+                container.textContent = 'Calcul des similarités…';
+                const resp = await fetch(`/api/admin/events/${ev.id}/faces-similarities?user_id=${uid}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { container.textContent = 'Erreur de calcul.'; return; }
+                const data = await resp.json();
+                const photos = data.photos || [];
+                if (!photos.length) { container.textContent = 'Aucune donnée.'; return; }
+                container.innerHTML = `
+                  <div class=\"grid\">
+                    ${photos.map(ph => {
+                        const rows = (ph.faces || []).map(f => {
+                            const left = (f.box?.Left * 100).toFixed(2);
+                            const top = (f.box?.Top * 100).toFixed(2);
+                            const width = (f.box?.Width * 100).toFixed(2);
+                            const height = (f.box?.Height * 100).toFixed(2);
+                            const sim = (typeof f.similarity === 'number') ? f.similarity.toFixed(2) : '-';
+                            const tag = f.matched ? '✅' : '—';
+                            return `<div style=\"font-size:13px; color:#444; margin:2px 0;\">${tag} sim=${sim}% box=[${left}%, ${top}%, ${width}%, ${height}%]</div>`;
+                        }).join('');
+                        return `
+                          <div class=\"card\" style=\"position:relative;\">
+                            <div style=\"position:relative; display:inline-block; max-width:100%;\">
+                              <img src=\"/api/photo/${ph.photo_id}\" alt=\"photo ${ph.photo_id}\" style=\"max-width:100%; border-radius:6px; border:1px solid #eee;\" />
+                            </div>
+                            <div style=\"margin-top:6px;\"><strong>Photo #${ph.photo_id}</strong></div>
+                            <div>${rows}</div>
+                          </div>`;
+                    }).join('')}
+                  </div>`;
+            } catch (e) {
+                container.textContent = 'Erreur de calcul.';
             }
         }
 

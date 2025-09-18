@@ -1160,7 +1160,7 @@ class AwsFaceRecognizer:
         if not resp:
             return []
         # Grouper par photo_id et garder la meilleure face (similarité max)
-        best_for_photo: Dict[int, Tuple[str, int]] = {}  # pid -> (pfid, similarity)
+        best_for_photo: Dict[int, Tuple[str, float]] = {}  # pid -> (pfid, similarity_float)
         for fm in resp.get('FaceMatches', []) or []:
             face = fm.get('Face') or {}
             ext = (face.get('ExternalImageId') or '').strip()
@@ -1178,12 +1178,12 @@ class AwsFaceRecognizer:
             except Exception:
                 continue
             pfid = face.get('FaceId') or ''
-            # Similarity sur 1 décimale et bornée [0,100]
+            # Similarité float bornée [0,100]
             try:
-                sim_f = float(fm.get('Similarity', 0.0))
+                sim = float(fm.get('Similarity', 0.0))
             except Exception:
-                sim_f = 0.0
-            sim = int(round(max(0.0, min(100.0, sim_f))))
+                sim = 0.0
+            sim = max(0.0, min(100.0, sim))
             keep = best_for_photo.get(pid)
             if keep is None or sim > keep[1]:
                 best_for_photo[pid] = (pfid, sim)
@@ -1221,7 +1221,7 @@ class AwsFaceRecognizer:
             print(f"⚠️  ListFaces error while building faceid_to_box: {e}")
 
         # 4) Assembler résultats en recalculant la box et la similarité via SearchFacesByImage (crop)
-        pairs = list(best_for_photo.items())  # [(pid, (pfid, sim))]
+        pairs = list(best_for_photo.items())  # [(pid, (pfid, sim_float))]
         # Optionnel: limiter après tri par similarité
         pairs = sorted(pairs, key=lambda kv: -float(kv[1][1]))
         if isinstance(limit, int) and limit > 0:
@@ -1275,7 +1275,8 @@ class AwsFaceRecognizer:
                 }
                 results.append({
                     'photo_id': pid,
-                    'similarity': round(max(0.0, min(100.0, float(sim_crop or 0.0))), 1),
+                    # Afficher la similarité AWS entre le selfie et cette face (SearchFaces), pas la similarité du crop
+                    'similarity': round(max(0.0, min(100.0, float(_sim_from_searchfaces or 0.0))), 2),
                     'box': box,
                 })
             except Exception as e:
@@ -1325,4 +1326,90 @@ class AwsFaceRecognizer:
             'event_id': int(event_id),
             'users': graph_users,
         }
+
+    def compute_all_faces_similarity_to_user(self, event_id: int, user_id: int, db: Session,
+                                             max_results_per_crop: int = 100) -> Dict:
+        """Pour chaque visage détecté sur chaque photo de l'événement, calcule la similarité
+        AWS Rekognition par rapport au selfie de l'utilisateur (s'il est indexé).
+
+        Retour:
+        {
+          "event_id": int,
+          "user_id": int,
+          "photos": [
+            { "photo_id": int, "faces": [ { "box": {Left,Top,Width,Height}, "similarity": float, "matched": bool } ] }
+          ]
+        }
+        """
+        self.ensure_collection(event_id)
+        # S'assurer que le selfie est indexé et récupérer son FaceId
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            try:
+                self.index_user_selfie(event_id, user)
+            except Exception:
+                pass
+        user_fid = self._find_user_face_id(event_id, user_id)
+        if not user_fid:
+            return { 'event_id': int(event_id), 'user_id': int(user_id), 'photos': [] }
+
+        coll_id = self._collection_id(event_id)
+        # Parcourir toutes les photos de l'événement
+        photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+        out_photos: List[Dict] = []
+        for p in photos:
+            try:
+                photo_input = p.file_path if (getattr(p, 'file_path', None) and os.path.exists(p.file_path)) else p.photo_data
+                if not photo_input:
+                    continue
+                img_bytes = self._prepare_image_bytes(photo_input)
+                if not img_bytes:
+                    continue
+                boxes = self._detect_faces_boxes(img_bytes)
+                if not boxes:
+                    out_photos.append({ 'photo_id': int(p.id), 'faces': [] })
+                    continue
+                crops = self._crop_face_regions(img_bytes, boxes)
+                faces_out: List[Dict] = []
+                for idx, crop_bytes in enumerate(crops):
+                    # Appel direct avec seuil 0 pour récupérer une similarité même faible
+                    try:
+                        aws_metrics.inc('SearchFacesByImage')
+                        r = self.client.search_faces_by_image(
+                            CollectionId=coll_id,
+                            Image={"Bytes": crop_bytes},
+                            MaxFaces=max_results_per_crop,
+                            FaceMatchThreshold=0,
+                            QualityFilter=AWS_SEARCH_QUALITY_FILTER,
+                        )
+                    except ClientError:
+                        r = None
+                    similarity_val: float = 0.0
+                    matched = False
+                    if r:
+                        for m in r.get('FaceMatches', []) or []:
+                            face = m.get('Face') or {}
+                            if (face.get('FaceId') or '') == user_fid:
+                                try:
+                                    similarity_val = float(m.get('Similarity', 0.0))
+                                except Exception:
+                                    similarity_val = 0.0
+                                matched = True
+                                break
+                    bb = (boxes[idx].get('BoundingBox') or {})
+                    faces_out.append({
+                        'box': {
+                            'Left': float(bb.get('Left', 0.0)),
+                            'Top': float(bb.get('Top', 0.0)),
+                            'Width': float(bb.get('Width', 0.0)),
+                            'Height': float(bb.get('Height', 0.0)),
+                        },
+                        'similarity': max(0.0, min(100.0, similarity_val)),
+                        'matched': bool(matched),
+                    })
+                out_photos.append({ 'photo_id': int(p.id), 'faces': faces_out })
+            except Exception:
+                continue
+
+        return { 'event_id': int(event_id), 'user_id': int(user_id), 'photos': out_photos }
 

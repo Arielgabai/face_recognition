@@ -277,6 +277,34 @@ async def admin_snapshot_graph(
 
     return graph
 
+@app.get("/api/admin/events/{event_id}/faces-similarities")
+async def admin_faces_similarities(
+    event_id: int,
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Pour un utilisateur, retourne la similarité AWS de chaque visage détecté
+    sur chaque photo de l'événement, même si non matché (seuil zéro).
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    from aws_face_recognizer import AwsFaceRecognizer as _Aws
+    if not isinstance(face_recognizer, _Aws):
+        raise HTTPException(status_code=400, detail="Endpoint disponible uniquement avec le provider AWS")
+
+    try:
+        result = face_recognizer.compute_all_faces_similarity_to_user(event_id, user_id, db)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors du calcul des similarités: {e}")
+
+    return result
+
 @app.get("/api/admin/aws-usage")
 async def get_aws_usage(current_user: User = Depends(get_current_user)):
     if current_user.user_type != UserType.ADMIN:
