@@ -154,7 +154,10 @@ def _gdrive_exchange_code_for_tokens(code: str) -> Dict[str, Any]:
         "grant_type": "authorization_code",
     }
     r = requests.post(urls["token_url"], data=data, timeout=30)
-    r.raise_for_status()
+    try:
+        r.raise_for_status()
+    except Exception:
+        raise RuntimeError(f"token_exchange_failed status={r.status_code} body={r.text}")
     return r.json()
 
 def _gdrive_refresh_access_token(refresh_token: str) -> Dict[str, Any]:
@@ -166,7 +169,10 @@ def _gdrive_refresh_access_token(refresh_token: str) -> Dict[str, Any]:
         "grant_type": "refresh_token",
     }
     r = requests.post(urls["token_url"], data=data, timeout=30)
-    r.raise_for_status()
+    try:
+        r.raise_for_status()
+    except Exception:
+        raise RuntimeError(f"token_refresh_failed status={r.status_code} body={r.text}")
     return r.json()
 
 def _gdrive_headers(access_token: str) -> Dict[str, str]:
