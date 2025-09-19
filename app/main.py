@@ -330,7 +330,11 @@ async def gdrive_sync_now(
                         _integ.token_expiry = datetime.utcnow() + timedelta(seconds=int(tk.get("expires_in", 3600)))
                         _db.commit()
 
-                files = _gdrive_list_folder_files(_integ.access_token, _integ.folder_id)
+                try:
+                    files = _gdrive_list_folder_files(_integ.access_token, _integ.folder_id)
+                except Exception as le:
+                    job["errors"].append(str(le))
+                    files = []
                 job["total"] = len(files)
                 # Préparer batch côté Rekognition
                 try:

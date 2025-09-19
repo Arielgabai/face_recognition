@@ -1113,7 +1113,11 @@
                         const st = await fetch(`/api/gdrive/jobs/${jobId}/status`, { headers: { 'Authorization': `Bearer ${token}` } });
                         if (st.ok) {
                             const d = await st.json();
-                            document.getElementById('gdriveJobStatus').textContent = `Job ${jobId}: ${d.processed}/${d.total} • échecs: ${d.failed} • statut: ${d.status}`;
+                            const errArr = Array.isArray(d.errors) ? d.errors : [];
+                            const lastErr = errArr.length ? errArr[errArr.length - 1] : null;
+                            const statusEl = document.getElementById('gdriveJobStatus');
+                            statusEl.innerHTML = `Job ${jobId}: ${d.processed}/${d.total} • échecs: ${d.failed} • statut: ${d.status}` +
+                              (lastErr ? `<div style="margin-top:6px;color:#b91c1c;">Dernière erreur:<pre style="white-space:pre-wrap;background:#fff0f0;border:1px solid #fca5a5;padding:8px;border-radius:6px;">${(lastErr+'').replace(/</g,'&lt;')}</pre></div>` : '');
                             if (d.status === 'done' || d.status === 'error') return;
                         }
                     } catch (e) {}
