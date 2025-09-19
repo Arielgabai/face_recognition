@@ -78,6 +78,21 @@ export const photoService = {
     });
   },
   
+  // Async job-based upload (recommended for large batches)
+  uploadPhotoToEventAsync: (files: File[], eventId: number) => {
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append('files', file);
+    });
+    return api.post(`/photographer/events/${eventId}/upload-photos-async`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+
+  getUploadJobStatus: (jobId: string) => api.get(`/upload-jobs/${jobId}/status`),
+  
   getMyPhotos: () => api.get('/my-photos'),
   getAllPhotos: () => api.get('/all-photos'),
   getProfile: () => api.get('/profile'),

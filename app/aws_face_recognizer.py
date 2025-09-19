@@ -12,6 +12,7 @@ from aws_metrics import aws_metrics
 from photo_optimizer import PhotoOptimizer
 from io import BytesIO as _BytesIO
 from PIL import Image as _Image, ImageOps as _ImageOps
+import gc as _gc
 
 
 AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")  # Ireland (Rekognition supported, close to FR)
@@ -28,7 +29,7 @@ AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTE
 AWS_DETECT_MIN_CONF = float(os.environ.get("AWS_REKOGNITION_DETECT_MIN_CONF", "70") or "70")
 
 # Préparation image / crop
-AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "2048") or "2048")
+AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "1536") or "1536")
 AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.3") or "0.3")  # 30% padding
 AWS_MIN_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_CROP_SIDE", "36") or "36")
 # Dimension minimale de sortie pour un crop visage (on upsample si nécessaire)
@@ -37,7 +38,7 @@ AWS_MIN_OUTPUT_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_OUTPUT_CROP_S
 AWS_TINY_FACE_AREA_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_TINY_FACE_AREA", "0.015") or "0.015")
 
 # Parallélisation bornée (bornes codées simplement; pas d'arrière-plan)
-MAX_PARALLEL_PER_REQUEST = 4
+MAX_PARALLEL_PER_REQUEST = 2
 AWS_MAX_RETRIES = 2
 AWS_BACKOFF_BASE_SEC = 0.2
 
@@ -257,6 +258,15 @@ class AwsFaceRecognizer:
             if not img_bytes:
                 continue
             self._index_photo_faces_and_get_ids(event_id, p.id, img_bytes)
+            # Libérer mémoire intermédiaire
+            try:
+                del photo_input, img_bytes
+            except Exception:
+                pass
+            try:
+                _gc.collect()
+            except Exception:
+                pass
         # Ne pas mémoriser pour autoriser la réindexation quand de nouvelles photos arrivent
 
     def ensure_event_users_indexed(self, event_id: int, db: Session):

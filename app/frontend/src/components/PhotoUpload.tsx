@@ -19,6 +19,8 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess, eventId }) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{processed: number; total: number; failed: number; status: string} | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -65,8 +67,28 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess, eventId }) => {
 
     try {
       if (eventId) {
-        // Upload vers un événement spécifique
-        await photoService.uploadPhotoToEvent(selectedFiles, eventId);
+        // Upload asynchrone pour un événement (sub-batching + polling)
+        const resp = await photoService.uploadPhotoToEventAsync(selectedFiles, eventId);
+        const jid = resp.data.job_id as string;
+        setJobId(jid);
+
+        // Polling simple
+        const poll = async () => {
+          if (!jid) return;
+          try {
+            const st = await photoService.getUploadJobStatus(jid);
+            const data = st.data as any;
+            setProgress({ processed: data.processed, total: data.total, failed: data.failed, status: data.status });
+            if (data.status === 'done' || data.status === 'error') {
+              setSuccess(`Traitement terminé: ${data.processed}/${data.total} • échecs: ${data.failed}`);
+              onSuccess();
+              setUploading(false);
+              return;
+            }
+          } catch (e) {}
+          setTimeout(poll, 1500);
+        };
+        setTimeout(poll, 1500);
       } else {
         // Upload normal (une seule photo)
         await photoService.uploadPhoto(selectedFiles[0]);
@@ -75,11 +97,11 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess, eventId }) => {
       setSuccess(`${selectedFiles.length} photo(s) uploadée(s) et traitée(s) avec succès !`);
       setSelectedFiles([]);
       setPreviews([]);
-      onSuccess();
+      if (!eventId) onSuccess();
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Erreur lors de l\'upload');
     } finally {
-      setUploading(false);
+      if (!eventId) setUploading(false);
     }
   };
 
@@ -172,12 +194,20 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSuccess, eventId }) => {
           {uploading ? (
             <>
               <CircularProgress size={20} sx={{ mr: 1 }} />
-              Upload et traitement en cours...
+              {progress ? `En cours ${progress.processed}/${progress.total} (${progress.status})` : 'Upload et traitement en cours...'}
             </>
           ) : (
             `Uploader ${selectedFiles.length} photo(s)`
           )}
         </Button>
+      )}
+
+      {jobId && progress && (
+        <Box mt={2}>
+          <Alert severity={progress.status === 'error' ? 'error' : 'info'}>
+            Job {jobId} — {progress.processed}/{progress.total} traitées • échecs: {progress.failed} • statut: {progress.status}
+          </Alert>
+        </Box>
       )}
     </Box>
   );

@@ -267,6 +267,9 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
               Uploader des photos pour cet événement
             </Typography>
             <PhotoUpload onSuccess={handlePhotoUploadSuccess} eventId={selectedEventId} />
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              L’upload est traité en arrière-plan par sous-lots; les photos apparaissent au fur et à mesure.
+            </Typography>
           </CardContent>
         </Card>
       )}

@@ -49,6 +49,13 @@ templates = Jinja2Templates(directory="templates")
 # État en mémoire pour suivre l'avancement du rematching de selfie par utilisateur
 REMATCH_STATUS: Dict[int, Dict[str, Any]] = {}
 
+# Registre en mémoire des jobs d'upload asynchrones
+# key = job_id, value = {
+#   id, event_id, photographer_id, status: pending|running|done|error,
+#   total, processed, failed, started_at, finished_at, errors: [str],
+# }
+UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
+
 # Helper pour trouver un événement par code (tolérant: trim, insensible à la casse, ignore les espaces internes)
 def find_event_by_code(db: Session, code: str) -> Event:
     if code is None:
@@ -2562,6 +2569,12 @@ async def upload_photos_to_event(
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
+                # Libérer mémoire entre fichiers
+                try:
+                    import gc as _gc
+                    _gc.collect()
+                except Exception:
+                    pass
     
     # Après upload: inutile de relancer un matching global qui pourrait écraser l'existant.
     # Le process d'upload gère déjà l'indexation et le matching pour les nouvelles photos.
@@ -2577,6 +2590,132 @@ async def upload_photos_to_event(
         "message": f"{len(uploaded_photos)} photos uploadées et traitées avec succès",
         "uploaded_photos": uploaded_photos
     }
+
+@app.post("/api/photographer/events/{event_id}/upload-photos-async")
+async def upload_photos_to_event_async(
+    event_id: int,
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+):
+    """Démarre un job asynchrone d'upload pour un événement. Retourne un job_id à poller."""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent uploader des photos")
+
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.photographer_id == current_user.id
+    ).first()
+
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    if not files:
+        raise HTTPException(status_code=400, detail="Aucun fichier fourni")
+
+    # Créer un job
+    job_id = str(uuid.uuid4())
+    UPLOAD_JOBS[job_id] = {
+        "id": job_id,
+        "event_id": event_id,
+        "photographer_id": current_user.id,
+        "status": "pending",
+        "total": len(files),
+        "processed": 0,
+        "failed": 0,
+        "errors": [],
+        "started_at": time.time(),
+        "finished_at": None,
+    }
+
+    # Sauvegarder temporairement tous les fichiers pour détacher le job de la requête HTTP
+    temp_files: List[Dict[str, str]] = []
+    for f in files:
+        if not f.content_type.startswith("image/"):
+            continue
+        temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(f.filename)[1]}"
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(f.file, buffer)
+        temp_files.append({"path": temp_path, "original": f.filename})
+
+    def _process_job(job_key: str, event_id_local: int, photographer_id_local: int, temp_files_local: List[Dict[str, str]]):
+        job = UPLOAD_JOBS.get(job_key)
+        if not job:
+            return
+        job["status"] = "running"
+        # Sous-batches automatiques
+        SUB_BATCH_SIZE = int(os.environ.get("UPLOAD_SUB_BATCH_SIZE", "25"))
+        try:
+            _db = next(get_db())
+            try:
+                # Préparer la collection une fois (purge conditionnelle + index users)
+                try:
+                    if hasattr(face_recognizer, 'prepare_event_for_batch'):
+                        face_recognizer.prepare_event_for_batch(event_id_local, _db)
+                except Exception as _e:
+                    job["errors"].append(f"prepare_event_for_batch: {_e}")
+
+                from aws_metrics import aws_metrics as _m
+                with _m.action_context(f"upload_event_async:{event_id_local}"):
+                    for i in range(0, len(temp_files_local), SUB_BATCH_SIZE):
+                        sub = temp_files_local[i:i+SUB_BATCH_SIZE]
+                        for item in sub:
+                            try:
+                                photo = face_recognizer.process_and_save_photo_for_event(
+                                    item["path"], item["original"], photographer_id_local, event_id_local, _db
+                                )
+                            except Exception as e:
+                                job["failed"] += 1
+                                job["errors"].append(f"{item['original']}: {e}")
+                            finally:
+                                try:
+                                    if os.path.exists(item["path"]):
+                                        os.remove(item["path"])
+                                except Exception:
+                                    pass
+                                try:
+                                    import gc as _gc
+                                    _gc.collect()
+                                except Exception:
+                                    pass
+                            job["processed"] += 1
+                        # Optionnel: lancer un rematch léger après chaque sous-batch
+                        try:
+                            _bg = getattr(job, "background_tasks", None)
+                            # Ici on déclenche directement en local
+                            _rematch_event_via_selfies(event_id_local)
+                        except Exception:
+                            pass
+            finally:
+                try:
+                    _db.close()
+                except Exception:
+                    pass
+            job["status"] = "done"
+            job["finished_at"] = time.time()
+        except Exception as e:
+            job["status"] = "error"
+            job["errors"].append(str(e))
+            job["finished_at"] = time.time()
+
+    if background_tasks is not None:
+        background_tasks.add_task(_process_job, job_id, event_id, current_user.id, temp_files)
+    else:
+        # Fallback: exécuter synchrone (rare)
+        _process_job(job_id, event_id, current_user.id, temp_files)
+
+    return {"job_id": job_id, "status": "scheduled"}
+
+@app.get("/api/upload-jobs/{job_id}/status")
+async def get_upload_job_status(job_id: str, current_user: User = Depends(get_current_user)):
+    job = UPLOAD_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job introuvable")
+    # Autorisation: admin ou propriétaire
+    if current_user.user_type != UserType.ADMIN and job.get("photographer_id") != current_user.id:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+    return job
 
 @app.get("/api/user/events")
 async def get_user_events(
