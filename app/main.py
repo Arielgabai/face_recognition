@@ -31,6 +31,7 @@ load_dotenv()
 
 from database import get_db, create_tables
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent
+from models import GoogleDriveIntegration, GoogleDriveIngestionLog
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
 from recognizer_factory import get_face_recognizer
@@ -39,6 +40,8 @@ from aws_metrics import aws_metrics
 import requests
 from auto_face_recognition import update_face_recognition_for_event
 from collections import OrderedDict
+from urllib.parse import urlencode
+from base64 import urlsafe_b64encode
 
 # Créer les tables au démarrage
 create_tables()
@@ -112,6 +115,251 @@ print(f"[FaceRecognition] Provider actif: {type(face_recognizer).__name__}")
 # Cache léger en mémoire pour les cadres/encodages par photo (LRU ~128 entrées)
 PHOTO_FACES_CACHE: "OrderedDict[int, Dict[str, Any]]" = OrderedDict()
 PHOTO_FACES_CACHE_MAX = 128
+
+# État en mémoire pour suivre l'avancement du rematching de selfie par utilisateur
+REMATCH_STATUS: Dict[int, Dict[str, Any]] = {}
+
+# Registre en mémoire des jobs d'upload asynchrones
+UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
+
+# Registre en mémoire des jobs d'ingestion Google Drive
+GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
+# === Google Drive: OAuth2 helpers ===
+def get_gdrive_oauth_urls() -> Dict[str, str]:
+    client_id = os.environ.get("GDRIVE_CLIENT_ID", "")
+    redirect_uri = os.environ.get("GDRIVE_REDIRECT_URI", "https://facerecognition-d0r8.onrender.com/api/gdrive/callback")
+    scope = "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email openid"
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "access_type": "offline",
+        "prompt": "consent",
+        "scope": scope,
+    }
+    return {
+        "auth_url": f"{auth_url}?{urlencode(params)}",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "redirect_uri": redirect_uri,
+    }
+
+def _gdrive_exchange_code_for_tokens(code: str) -> Dict[str, Any]:
+    urls = get_gdrive_oauth_urls()
+    data = {
+        "code": code,
+        "client_id": os.environ.get("GDRIVE_CLIENT_ID", ""),
+        "client_secret": os.environ.get("GDRIVE_CLIENT_SECRET", ""),
+        "redirect_uri": urls["redirect_uri"],
+        "grant_type": "authorization_code",
+    }
+    r = requests.post(urls["token_url"], data=data, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+def _gdrive_refresh_access_token(refresh_token: str) -> Dict[str, Any]:
+    urls = get_gdrive_oauth_urls()
+    data = {
+        "refresh_token": refresh_token,
+        "client_id": os.environ.get("GDRIVE_CLIENT_ID", ""),
+        "client_secret": os.environ.get("GDRIVE_CLIENT_SECRET", ""),
+        "grant_type": "refresh_token",
+    }
+    r = requests.post(urls["token_url"], data=data, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+def _gdrive_headers(access_token: str) -> Dict[str, str]:
+    return {"Authorization": f"Bearer {access_token}"}
+
+def _gdrive_list_folder_files(access_token: str, folder_id: str) -> List[Dict[str, Any]]:
+    # Images only
+    q = f"'{folder_id}' in parents and trashed=false and (mimeType contains 'image/')"
+    params = {
+        'q': q,
+        'fields': 'files(id,name,md5Checksum,mimeType,modifiedTime)'
+    }
+    url = f"https://www.googleapis.com/drive/v3/files?{urlencode(params)}"
+    r = requests.get(url, headers=_gdrive_headers(access_token), timeout=60)
+    r.raise_for_status()
+    return r.json().get("files", [])
+
+def _gdrive_download_file(access_token: str, file_id: str) -> bytes:
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+    r = requests.get(url, headers=_gdrive_headers(access_token), timeout=120)
+    r.raise_for_status()
+    return r.content
+
+# === Google Drive: endpoints minimalistes (MVP: polling) ===
+
+@app.get("/api/gdrive/connect")
+async def gdrive_connect(current_user: User = Depends(get_current_user)):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    urls = get_gdrive_oauth_urls()
+    return {"auth_url": urls["auth_url"]}
+
+@app.get("/api/gdrive/callback")
+async def gdrive_callback(code: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    try:
+        tokens = _gdrive_exchange_code_for_tokens(code)
+        access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        expires_in = tokens.get("expires_in")
+        if not access_token or not refresh_token:
+            raise HTTPException(status_code=400, detail="OAuth invalide")
+        integ = GoogleDriveIntegration(
+            event_id=None,  # sera lié plus tard
+            photographer_id=current_user.id,
+            account_email=None,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_expiry=datetime.utcnow() + timedelta(seconds=int(expires_in or 3600)),
+            status="connected",
+        )
+        db.add(integ)
+        db.commit()
+        db.refresh(integ)
+        return {"integration_id": integ.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur callback Google: {e}")
+
+@app.post("/api/gdrive/link-folder")
+async def gdrive_link_folder(
+    integration_id: int = Body(..., embed=True),
+    event_id: int = Body(..., embed=True),
+    folder_id: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    integ = db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.id == integration_id).first()
+    if not integ:
+        raise HTTPException(status_code=404, detail="Intégration introuvable")
+    if integ.photographer_id != current_user.id and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Non propriétaire")
+    integ.event_id = event_id
+    integ.folder_id = folder_id
+    db.commit()
+    return {"linked": True}
+
+@app.post("/api/gdrive/sync-now")
+async def gdrive_sync_now(
+    integration_id: int = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    integ = db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.id == integration_id).first()
+    if not integ:
+        raise HTTPException(status_code=404, detail="Intégration introuvable")
+    if not integ.folder_id or not integ.event_id:
+        raise HTTPException(status_code=400, detail="Lien event/folder manquant")
+
+    job_id = str(uuid.uuid4())
+    GDRIVE_JOBS[job_id] = {
+        "id": job_id,
+        "integration_id": integ.id,
+        "event_id": int(integ.event_id),
+        "status": "pending",
+        "total": 0,
+        "processed": 0,
+        "failed": 0,
+        "errors": [],
+        "started_at": time.time(),
+        "finished_at": None,
+    }
+
+    def _ingest_job(job_key: str, integ_id: int):
+        job = GDRIVE_JOBS.get(job_key)
+        if not job:
+            return
+        job["status"] = "running"
+        try:
+            _db = next(get_db())
+            try:
+                _integ = _db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.id == integ_id).first()
+                if not _integ:
+                    raise RuntimeError("Intégration manquante")
+                # Refresh token si expiré
+                if not _integ.access_token or (_integ.token_expiry and _integ.token_expiry < datetime.utcnow()):
+                    rt = _integ.refresh_token
+                    if rt:
+                        tk = _gdrive_refresh_access_token(rt)
+                        _integ.access_token = tk.get("access_token")
+                        _integ.token_expiry = datetime.utcnow() + timedelta(seconds=int(tk.get("expires_in", 3600)))
+                        _db.commit()
+
+                files = _gdrive_list_folder_files(_integ.access_token, _integ.folder_id)
+                job["total"] = len(files)
+                # Préparer batch côté Rekognition
+                try:
+                    if hasattr(face_recognizer, 'prepare_event_for_batch'):
+                        face_recognizer.prepare_event_for_batch(int(_integ.event_id), _db)
+                except Exception as _e:
+                    job["errors"].append(f"prepare_event_for_batch: {_e}")
+
+                SUB_BATCH_SIZE = int(os.environ.get("UPLOAD_SUB_BATCH_SIZE", "25"))
+                for i in range(0, len(files), SUB_BATCH_SIZE):
+                    sub = files[i:i+SUB_BATCH_SIZE]
+                    for f in sub:
+                        try:
+                            data = _gdrive_download_file(_integ.access_token, f["id"])
+                            temp_path = f"./temp_{uuid.uuid4()}.img"
+                            with open(temp_path, "wb") as _buf:
+                                _buf.write(data)
+                            face_recognizer.process_and_save_photo_for_event(
+                                temp_path, f.get("name") or f.get("id"), int(_integ.photographer_id), int(_integ.event_id), _db
+                            )
+                        except Exception as e:
+                            job["failed"] += 1
+                            job["errors"].append(f"{f.get('name')}: {e}")
+                        finally:
+                            try:
+                                if os.path.exists(temp_path):
+                                    os.remove(temp_path)
+                            except Exception:
+                                pass
+                            try:
+                                import gc as _gc
+                                _gc.collect()
+                            except Exception:
+                                pass
+                        job["processed"] += 1
+                    try:
+                        _rematch_event_via_selfies(int(_integ.event_id))
+                    except Exception:
+                        pass
+            finally:
+                try:
+                    _db.close()
+                except Exception:
+                    pass
+            job["status"] = "done"
+            job["finished_at"] = time.time()
+        except Exception as e:
+            job["status"] = "error"
+            job["errors"].append(str(e))
+            job["finished_at"] = time.time()
+
+    if background_tasks is not None:
+        background_tasks.add_task(_ingest_job, job_id, integ.id)
+    else:
+        _ingest_job(job_id, integ.id)
+
+    return {"job_id": job_id, "status": "scheduled"}
+
+@app.get("/api/gdrive/jobs/{job_id}/status")
+async def gdrive_job_status(job_id: str, current_user: User = Depends(get_current_user)):
+    job = GDRIVE_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job introuvable")
+    return job
 
 @app.get("/api/admin/provider")
 async def get_active_provider(current_user: User = Depends(get_current_user)):

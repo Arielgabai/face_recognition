@@ -16,7 +16,7 @@ import {
   CardMedia,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
-import { photoService } from '../services/api';
+import { photoService, gdriveService } from '../services/api';
 import { Photo } from '../types';
 import PhotoUpload from './PhotoUpload';
 
@@ -45,6 +45,10 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
   const [error, setError] = useState('');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [gConnectBusy, setGConnectBusy] = useState(false);
+  const [gIntegrationId, setGIntegrationId] = useState<number | null>(null);
+  const [gFolderId, setGFolderId] = useState<string>('');
+  const [gSyncJob, setGSyncJob] = useState<{ id: string; status: string; processed: number; total: number; failed: number } | null>(null);
 
   useEffect(() => {
     loadEvents();
@@ -178,6 +182,94 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
             <Typography variant="h6" gutterBottom>
               Photos de l'événement ({eventPhotos.length})
             </Typography>
+            {/* Google Drive */}
+            <Box display="flex" gap={1} mb={2} alignItems="center" flexWrap="wrap">
+              <Button
+                variant="outlined"
+                disabled={gConnectBusy}
+                onClick={async () => {
+                  try {
+                    setGConnectBusy(true);
+                    const r = await gdriveService.getConnectUrl();
+                    const url = r.data?.auth_url;
+                    if (url) {
+                      window.open(url, '_blank');
+                    }
+                  } catch (e) {
+                  } finally {
+                    setGConnectBusy(false);
+                  }
+                }}
+              >
+                Connecter Google Drive
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={async () => {
+                  const code = prompt('Collez le code ?code=xxxx reçu en fin d’URL après consentement Google');
+                  if (!code) return;
+                  try {
+                    const resp = await gdriveService.callback(code);
+                    const integId = resp.data?.integration_id;
+                    if (integId) setGIntegrationId(integId);
+                  } catch (e) {}
+                }}
+              >
+                Renseigner le code de callback
+              </Button>
+              <input
+                placeholder="ID du dossier Google Drive"
+                value={gFolderId}
+                onChange={(e) => setGFolderId(e.target.value)}
+                style={{ padding: 8, border: '1px solid #ccc', borderRadius: 4 }}
+              />
+              <Button
+                variant="contained"
+                disabled={!gIntegrationId || !gFolderId}
+                onClick={async () => {
+                  if (!gIntegrationId || !selectedEventId || !gFolderId) return;
+                  try {
+                    await gdriveService.linkFolder(gIntegrationId, selectedEventId, gFolderId);
+                    alert('Dossier lié à l’événement.');
+                  } catch (e) {}
+                }}
+              >
+                Lier le dossier à l’événement
+              </Button>
+              <Button
+                variant="contained"
+                color="secondary"
+                disabled={!gIntegrationId}
+                onClick={async () => {
+                  if (!gIntegrationId) return;
+                  try {
+                    const r = await gdriveService.syncNow(gIntegrationId);
+                    const jobId = r.data?.job_id;
+                    if (!jobId) return;
+                    const poll = async () => {
+                      try {
+                        const st = await gdriveService.getJobStatus(jobId);
+                        const d = st.data;
+                        setGSyncJob({ id: jobId, status: d.status, processed: d.processed, total: d.total, failed: d.failed });
+                        if (d.status === 'done' || d.status === 'error') {
+                          await loadEventPhotos(selectedEventId);
+                          return;
+                        }
+                      } catch {}
+                      setTimeout(poll, 1500);
+                    };
+                    setTimeout(poll, 1500);
+                  } catch (e) {}
+                }}
+              >
+                Synchroniser maintenant
+              </Button>
+            </Box>
+            {gSyncJob && (
+              <Alert severity={gSyncJob.status === 'error' ? 'error' : 'info'} sx={{ mb: 2 }}>
+                Drive job {gSyncJob.id}: {gSyncJob.processed}/{gSyncJob.total} • échecs: {gSyncJob.failed} • statut: {gSyncJob.status}
+              </Alert>
+            )}
             {eventPhotos.length > 0 && (
               <Box display="flex" gap={1} mb={2}>
                 <Button variant="outlined" onClick={() => setSelectedIds([])} disabled={bulkBusy}>Désélectionner</Button>

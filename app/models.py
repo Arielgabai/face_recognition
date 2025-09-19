@@ -93,3 +93,39 @@ class FaceMatch(Base):
     # Relations
     photo = relationship("Photo", back_populates="face_matches")
     user = relationship("User", back_populates="face_matches")
+
+# --- Intégration Google Drive ---
+
+class GoogleDriveIntegration(Base):
+    __tablename__ = "gdrive_integrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    photographer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    account_email = Column(String, nullable=True)
+    folder_id = Column(String, nullable=True)
+    access_token = Column(String, nullable=True)
+    refresh_token = Column(String, nullable=True)
+    token_expiry = Column(DateTime(timezone=True), nullable=True)
+    delta_token = Column(String, nullable=True)  # réservé si on passe au Changes API
+    status = Column(String, default="connected")  # connected|revoked|error
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    event = relationship("Event")
+    photographer = relationship("User")
+
+
+class GoogleDriveIngestionLog(Base):
+    __tablename__ = "gdrive_ingestion_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    integration_id = Column(Integer, ForeignKey("gdrive_integrations.id"), nullable=False)
+    file_id = Column(String, index=True)
+    file_name = Column(String)
+    md5_checksum = Column(String, nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), server_default=func.now())
+    status = Column(String, default="ingested")  # ingested|failed
+    error = Column(String, nullable=True)
+
+    integration = relationship("GoogleDriveIntegration")

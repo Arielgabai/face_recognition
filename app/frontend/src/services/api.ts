@@ -134,4 +134,15 @@ export const adminService = {
   },
 };
 
+// Google Drive integration
+export const gdriveService = {
+  getConnectUrl: () => api.get('/gdrive/connect'),
+  callback: (code: string) => api.get(`/gdrive/callback`, { params: { code } }),
+  linkFolder: (integrationId: number, eventId: number, folderId: string) =>
+    api.post('/gdrive/link-folder', { integration_id: integrationId, event_id: eventId, folder_id: folderId }),
+  syncNow: (integrationId: number) =>
+    api.post('/gdrive/sync-now', { integration_id: integrationId }),
+  getJobStatus: (jobId: string) => api.get(`/gdrive/jobs/${jobId}/status`),
+};
+
 export default api; 
