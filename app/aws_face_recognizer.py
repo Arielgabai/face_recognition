@@ -1452,13 +1452,21 @@ class AwsFaceRecognizer:
         graph_users = []
         for uid in user_ids:
             try:
-                faces = self.get_user_group_faces_with_boxes(event_id, uid, db, limit=per_user_limit)
+                # Récupère toutes les faces, puis garde les 10 plus FAIBLES similarités
+                faces_all = self.get_user_group_faces_with_boxes(event_id, uid, db, limit=None)
             except Exception:
-                faces = []
+                faces_all = []
+            # Tri croissant par similarité (plus faible d'abord)
+            try:
+                faces_sorted = sorted(faces_all, key=lambda f: float(f.get('similarity', 0.0)))
+            except Exception:
+                faces_sorted = faces_all
+            if isinstance(per_user_limit, int) and per_user_limit > 0:
+                faces_sorted = faces_sorted[:per_user_limit]
             graph_users.append({
                 'user_id': int(uid),
                 'selfie_available': bool(selfie_map.get(int(uid), False)),
-                'faces': faces,
+                'faces': faces_sorted,
             })
 
         return {
