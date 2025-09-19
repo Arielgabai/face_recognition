@@ -179,16 +179,33 @@ def _gdrive_headers(access_token: str) -> Dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 def _gdrive_list_folder_files(access_token: str, folder_id: str) -> List[Dict[str, Any]]:
-    # Images only
+    # Images only, support My Drive + Shared Drives, paginate
+    base_url = "https://www.googleapis.com/drive/v3/files"
     q = f"'{folder_id}' in parents and trashed=false and (mimeType contains 'image/')"
     params = {
         'q': q,
-        'fields': 'files(id,name,md5Checksum,mimeType,modifiedTime)'
+        'fields': 'nextPageToken, files(id,name,md5Checksum,mimeType,modifiedTime)',
+        'includeItemsFromAllDrives': 'true',
+        'supportsAllDrives': 'true',
+        'pageSize': 1000,
     }
-    url = f"https://www.googleapis.com/drive/v3/files?{urlencode(params)}"
-    r = requests.get(url, headers=_gdrive_headers(access_token), timeout=60)
-    r.raise_for_status()
-    return r.json().get("files", [])
+    files: List[Dict[str, Any]] = []
+    page_token = None
+    while True:
+        if page_token:
+            params['pageToken'] = page_token
+        url = f"{base_url}?{urlencode(params)}"
+        r = requests.get(url, headers=_gdrive_headers(access_token), timeout=60)
+        try:
+            r.raise_for_status()
+        except Exception:
+            raise RuntimeError(f"drive_list_failed status={r.status_code} body={r.text}")
+        data = r.json()
+        files.extend(data.get('files', []))
+        page_token = data.get('nextPageToken')
+        if not page_token:
+            break
+    return files
 
 def _gdrive_download_file(access_token: str, file_id: str) -> bytes:
     url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
