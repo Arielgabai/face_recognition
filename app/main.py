@@ -13,7 +13,7 @@ import time
 import os
 import shutil
 import uuid
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from sqlalchemy.exc import NoResultFound
 import qrcode
 from io import BytesIO
@@ -240,7 +240,7 @@ async def gdrive_callback(code: str, current_user: User = Depends(get_current_us
                 account_email=None,
                 access_token=access_token,
                 refresh_token=refresh_token,
-                token_expiry=datetime.utcnow() + timedelta(seconds=int(expires_in or 3600)),
+                token_expiry=datetime.now(timezone.utc) + timedelta(seconds=int(expires_in or 3600)),
                 status="connected",
             )
             db.add(integ)
@@ -322,12 +322,19 @@ async def gdrive_sync_now(
                 if not _integ:
                     raise RuntimeError("Intégration manquante")
                 # Refresh token si expiré
-                if not _integ.access_token or (_integ.token_expiry and _integ.token_expiry < datetime.utcnow()):
+                now_utc = datetime.now(timezone.utc)
+                token_exp = _integ.token_expiry
+                if token_exp is not None and token_exp.tzinfo is None:
+                    try:
+                        token_exp = token_exp.replace(tzinfo=timezone.utc)
+                    except Exception:
+                        pass
+                if not _integ.access_token or (token_exp and token_exp < now_utc):
                     rt = _integ.refresh_token
                     if rt:
                         tk = _gdrive_refresh_access_token(rt)
                         _integ.access_token = tk.get("access_token")
-                        _integ.token_expiry = datetime.utcnow() + timedelta(seconds=int(tk.get("expires_in", 3600)))
+                        _integ.token_expiry = datetime.now(timezone.utc) + timedelta(seconds=int(tk.get("expires_in", 3600)))
                         _db.commit()
 
                 try:
