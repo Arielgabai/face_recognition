@@ -290,6 +290,7 @@
                 <button class="tab" onclick="showTab('aws-usage')">💲 Coûts AWS</button>
                 <button class="tab" onclick="showTab('rekog-settings')">⚙️ Réglages Rekognition</button>
                 <button class="tab" onclick="showTab('face-groups')">🧩 Groupes de visages</button>
+                <button class="tab" onclick="showTab('gdrive')">📂 Google Drive</button>
             </div>
 
             <div id="photographers" class="tab-content active">
@@ -468,6 +469,42 @@
                         <button class="success" onclick="lookupFaceIdMatches()">Voir les correspondances avec cadres</button>
                     </div>
                     <div id="faceIdResults">—</div>
+                </div>
+            </div>
+
+            <div id="gdrive" class="tab-content">
+                <h3>📂 Google Drive (ingestion automatique)</h3>
+                <div class="card">
+                    <h4>1) Connecter Google Drive</h4>
+                    <div class="card-actions">
+                        <button onclick="gdriveConnect()">Obtenir l'URL d'autorisation</button>
+                        <input id="gdriveCallbackCode" placeholder="Collez le paramètre code=... de l'URL de retour" />
+                        <button onclick="gdriveSubmitCode()" class="success">Enregistrer le code</button>
+                    </div>
+                    <div id="gdriveIntegrationInfo" style="color:#666;">—</div>
+                </div>
+                <div class="card">
+                    <h4>2) Lier un dossier Drive à un événement</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="gdriveEventSelect">Événement</label>
+                            <select id="gdriveEventSelect"><option value="">Sélectionner un événement</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="gdriveFolderId">ID du dossier Google Drive</label>
+                            <input id="gdriveFolderId" placeholder="ex: 1AbCDefG..." />
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <button onclick="gdriveLinkFolder()" class="success">Lier le dossier</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h4>3) Synchroniser maintenant</h4>
+                    <div class="card-actions">
+                        <button onclick="gdriveSyncNow()">Lancer la synchronisation</button>
+                    </div>
+                    <div id="gdriveJobStatus" style="color:#666;">—</div>
                 </div>
             </div>
 
@@ -1000,6 +1037,91 @@
             } catch (e) {
                 usersList.textContent = 'Erreur lors du chargement des utilisateurs.';
             }
+        }
+
+        // === Google Drive (admin) ===
+        let __gdriveIntegrationId = null;
+        async function gdriveConnect() {
+            try {
+                const resp = await fetch('/api/gdrive/connect', { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!resp.ok) { showAlert('Erreur: connect', 'error'); return; }
+                const data = await resp.json();
+                if (data.auth_url) {
+                    window.open(data.auth_url, '_blank');
+                }
+            } catch (e) { showAlert('Erreur connect', 'error'); }
+        }
+
+        async function gdriveSubmitCode() {
+            const code = document.getElementById('gdriveCallbackCode').value.trim();
+            if (!code) { showAlert('Code manquant', 'error'); return; }
+            try {
+                const url = `/api/gdrive/callback?code=${encodeURIComponent(code)}`;
+                const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await resp.json();
+                if (!resp.ok) { showAlert(data.detail || 'Erreur callback', 'error'); return; }
+                __gdriveIntegrationId = data.integration_id;
+                document.getElementById('gdriveIntegrationInfo').textContent = `Intégration créée: ID ${__gdriveIntegrationId}`;
+                // Précharger les événements dans le select gdrive
+                try {
+                    const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                    const events = eventsResp.ok ? await eventsResp.json() : [];
+                    const sel = document.getElementById('gdriveEventSelect');
+                    sel.innerHTML = '<option value="">Sélectionner un événement</option>';
+                    events.forEach(ev => {
+                        const opt = document.createElement('option');
+                        opt.value = ev.id;
+                        opt.textContent = `${ev.name} (${ev.event_code})`;
+                        sel.appendChild(opt);
+                    });
+                } catch (e) {}
+                showAlert('Google Drive connecté', 'success');
+            } catch (e) { showAlert('Erreur callback', 'error'); }
+        }
+
+        async function gdriveLinkFolder() {
+            const eventId = Number(document.getElementById('gdriveEventSelect').value);
+            const folderId = document.getElementById('gdriveFolderId').value.trim();
+            if (!__gdriveIntegrationId) { showAlert('Connectez Drive d\'abord', 'error'); return; }
+            if (!eventId || !folderId) { showAlert('Sélectionnez un événement et un folder', 'error'); return; }
+            try {
+                const resp = await fetch('/api/gdrive/link-folder', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ integration_id: __gdriveIntegrationId, event_id: eventId, folder_id: folderId })
+                });
+                const data = await resp.json();
+                if (!resp.ok) { showAlert(data.detail || 'Erreur de liaison', 'error'); return; }
+                showAlert('Dossier lié à l\'événement', 'success');
+            } catch (e) { showAlert('Erreur de liaison', 'error'); }
+        }
+
+        async function gdriveSyncNow() {
+            if (!__gdriveIntegrationId) { showAlert('Connectez Drive et enregistrez le code', 'error'); return; }
+            try {
+                const resp = await fetch('/api/gdrive/sync-now', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ integration_id: __gdriveIntegrationId })
+                });
+                const data = await resp.json();
+                if (!resp.ok) { showAlert(data.detail || 'Erreur sync', 'error'); return; }
+                const jobId = data.job_id;
+                document.getElementById('gdriveJobStatus').textContent = `Job ${jobId} démarré…`;
+                const poll = async () => {
+                    try {
+                        const st = await fetch(`/api/gdrive/jobs/${jobId}/status`, { headers: { 'Authorization': `Bearer ${token}` } });
+                        if (st.ok) {
+                            const d = await st.json();
+                            document.getElementById('gdriveJobStatus').textContent = `Job ${jobId}: ${d.processed}/${d.total} • échecs: ${d.failed} • statut: ${d.status}`;
+                            if (d.status === 'done' || d.status === 'error') return;
+                        }
+                    } catch (e) {}
+                    setTimeout(poll, 1500);
+                };
+                setTimeout(poll, 1500);
+                showAlert('Sync démarrée', 'success');
+            } catch (e) { showAlert('Erreur sync', 'error'); }
         }
 
         async function deleteUser(userId, username) {
