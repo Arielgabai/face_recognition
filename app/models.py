@@ -100,7 +100,7 @@ class GoogleDriveIntegration(Base):
     __tablename__ = "gdrive_integrations"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=True)
     photographer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     account_email = Column(String, nullable=True)
     folder_id = Column(String, nullable=True)

@@ -216,18 +216,30 @@ async def gdrive_callback(code: str, current_user: User = Depends(get_current_us
         expires_in = tokens.get("expires_in")
         if not access_token or not refresh_token:
             raise HTTPException(status_code=400, detail="OAuth invalide")
-        integ = GoogleDriveIntegration(
-            event_id=None,  # sera lié plus tard
-            photographer_id=current_user.id,
-            account_email=None,
-            access_token=access_token,
-            refresh_token=refresh_token,
-            token_expiry=datetime.utcnow() + timedelta(seconds=int(expires_in or 3600)),
-            status="connected",
-        )
-        db.add(integ)
-        db.commit()
-        db.refresh(integ)
+        try:
+            integ = GoogleDriveIntegration(
+                event_id=None,  # sera lié plus tard
+                photographer_id=current_user.id,
+                account_email=None,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_expiry=datetime.utcnow() + timedelta(seconds=int(expires_in or 3600)),
+                status="connected",
+            )
+            db.add(integ)
+            db.commit()
+            db.refresh(integ)
+        except Exception as e:
+            # Si la colonne event_id est encore NOT NULL en DB, on tente de la relaxer automatiquement (migration souple)
+            try:
+                db.rollback()
+                db.execute(_text("ALTER TABLE gdrive_integrations ALTER COLUMN event_id DROP NOT NULL"))
+                db.commit()
+                db.add(integ)
+                db.commit()
+                db.refresh(integ)
+            except Exception as e2:
+                raise HTTPException(status_code=500, detail=f"Erreur DB (event_id nullable): {e2}")
         return {"integration_id": integ.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur callback Google: {e}")
