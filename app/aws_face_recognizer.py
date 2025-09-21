@@ -1275,7 +1275,9 @@ class AwsFaceRecognizer:
 
         return results
 
-    def get_user_group_faces_with_boxes(self, event_id: int, user_id: int, db: Session, limit: Optional[int] = None) -> List[Dict]:
+    def get_user_group_faces_with_boxes(self, event_id: int, user_id: int, db: Session,
+                                        limit: Optional[int] = None,
+                                        order: str = "desc") -> List[Dict]:
         """Retourne les photos associées à un utilisateur (via SearchFaces du selfie)
         avec la bounding box de la face photo correspondante (normalisée 0..1).
 
@@ -1361,8 +1363,13 @@ class AwsFaceRecognizer:
 
         # 4) Assembler résultats en recalculant la box et la similarité via SearchFacesByImage (crop)
         pairs = list(best_for_photo.items())  # [(pid, (pfid, sim_float))]
-        # Optionnel: limiter après tri par similarité
-        pairs = sorted(pairs, key=lambda kv: -float(kv[1][1]))
+        # Tri par similarité selon l'ordre demandé (asc = plus faibles d'abord)
+        try:
+            asc = (str(order).lower() == "asc")
+        except Exception:
+            asc = False
+        pairs = sorted(pairs, key=lambda kv: float(kv[1][1]), reverse=not asc)
+        # Limiter le nombre d'éléments à traiter pour réduire la charge
         if isinstance(limit, int) and limit > 0:
             pairs = pairs[:limit]
 
@@ -1452,21 +1459,16 @@ class AwsFaceRecognizer:
         graph_users = []
         for uid in user_ids:
             try:
-                # Récupère toutes les faces, puis garde les 10 plus FAIBLES similarités
-                faces_all = self.get_user_group_faces_with_boxes(event_id, uid, db, limit=None)
+                # Sélectionne uniquement les plus FAIBLES similarités côté provider pour réduire la charge
+                faces_all = self.get_user_group_faces_with_boxes(event_id, uid, db,
+                                                                limit=per_user_limit or 20,
+                                                                order="asc")
             except Exception:
                 faces_all = []
-            # Tri croissant par similarité (plus faible d'abord)
-            try:
-                faces_sorted = sorted(faces_all, key=lambda f: float(f.get('similarity', 0.0)))
-            except Exception:
-                faces_sorted = faces_all
-            if isinstance(per_user_limit, int) and per_user_limit > 0:
-                faces_sorted = faces_sorted[:per_user_limit]
             graph_users.append({
                 'user_id': int(uid),
                 'selfie_available': bool(selfie_map.get(int(uid), False)),
-                'faces': faces_sorted,
+                'faces': faces_all,
             })
 
         return {

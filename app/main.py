@@ -553,7 +553,7 @@ async def admin_user_group_faces(
 @app.get("/api/admin/events/{event_id}/snapshot-graph")
 async def admin_snapshot_graph(
     event_id: int,
-    per_user_limit: int = 10,
+    per_user_limit: int = 20,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
