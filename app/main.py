@@ -554,6 +554,7 @@ async def admin_user_group_faces(
 async def admin_snapshot_graph(
     event_id: int,
     per_user_limit: int = 20,
+    fast: bool = True,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -572,7 +573,7 @@ async def admin_snapshot_graph(
         raise HTTPException(status_code=400, detail="Endpoint disponible uniquement avec le provider AWS")
 
     try:
-        graph = face_recognizer.build_snapshot_graph(event_id, db, per_user_limit=per_user_limit)
+        graph = face_recognizer.build_snapshot_graph(event_id, db, per_user_limit=per_user_limit, fast=bool(fast))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors de la construction du snapshot: {e}")
 

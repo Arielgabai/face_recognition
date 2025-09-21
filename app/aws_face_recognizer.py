@@ -1277,7 +1277,8 @@ class AwsFaceRecognizer:
 
     def get_user_group_faces_with_boxes(self, event_id: int, user_id: int, db: Session,
                                         limit: Optional[int] = None,
-                                        order: str = "desc") -> List[Dict]:
+                                        order: str = "desc",
+                                        fast: bool = False) -> List[Dict]:
         """Retourne les photos associées à un utilisateur (via SearchFaces du selfie)
         avec la bounding box de la face photo correspondante (normalisée 0..1).
 
@@ -1373,6 +1374,29 @@ class AwsFaceRecognizer:
         if isinstance(limit, int) and limit > 0:
             pairs = pairs[:limit]
 
+        # Mode rapide: ne relit pas l'image originale et n'effectue pas de détection
+        if fast:
+            results_fast: List[Dict] = []
+            for pid, (pfid, sim_val) in pairs:
+                try:
+                    box = faceid_to_box.get(pfid)
+                    if not box:
+                        continue
+                    results_fast.append({
+                        'photo_id': pid,
+                        'face_id_photo': pfid,
+                        'similarity': round(max(0.0, min(100.0, float(sim_val or 0.0))), 2),
+                        'box': {
+                            'Left': float(box.get('Left', 0.0)),
+                            'Top': float(box.get('Top', 0.0)),
+                            'Width': float(box.get('Width', 0.0)),
+                            'Height': float(box.get('Height', 0.0)),
+                        },
+                    })
+                except Exception:
+                    continue
+            return results_fast
+
         results: List[Dict] = []
         for pid, (pfid, _sim_from_searchfaces) in pairs:
             try:
@@ -1431,7 +1455,7 @@ class AwsFaceRecognizer:
 
         return results
 
-    def build_snapshot_graph(self, event_id: int, db: Session, per_user_limit: int = 10) -> Dict:
+    def build_snapshot_graph(self, event_id: int, db: Session, per_user_limit: int = 10, fast: bool = False) -> Dict:
         """Construit un snapshot visuel groupé par utilisateur pour un événement.
 
         Retourne:
@@ -1462,7 +1486,8 @@ class AwsFaceRecognizer:
                 # Sélectionne uniquement les plus FAIBLES similarités côté provider pour réduire la charge
                 faces_all = self.get_user_group_faces_with_boxes(event_id, uid, db,
                                                                 limit=per_user_limit or 20,
-                                                                order="asc")
+                                                                order="asc",
+                                                                fast=bool(fast))
             except Exception:
                 faces_all = []
             graph_users.append({
