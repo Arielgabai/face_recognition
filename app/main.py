@@ -299,7 +299,14 @@ async def gdrive_callback(code: str, current_user: User = Depends(get_current_us
         return {"integration_id": integ.id}
     except Exception as e:
         # Renvoyer une erreur explicite pour faciliter le debug côté UI
-        msg = str(e)
+        try:
+            from fastapi import HTTPException as _HTTPEx
+            if isinstance(e, _HTTPEx):
+                msg = e.detail if hasattr(e, 'detail') else str(e)
+            else:
+                msg = str(e)
+        except Exception:
+            msg = str(e)
         # Aide de diagnostic pour les cas fréquents
         hint = ""
         if "invalid_grant" in msg or "token_exchange_failed" in msg:
