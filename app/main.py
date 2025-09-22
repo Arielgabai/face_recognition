@@ -193,6 +193,31 @@ def _gdrive_refresh_access_token(refresh_token: str) -> Dict[str, Any]:
 def _gdrive_headers(access_token: str) -> Dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
+def _gdrive_ensure_integration_schema(db: Session) -> None:
+    """Ensure gdrive_integrations has recent columns (idempotent)."""
+    try:
+        # Add newly introduced columns if they are missing
+        db.execute(_text(
+            "ALTER TABLE gdrive_integrations ADD COLUMN IF NOT EXISTS listening BOOLEAN NOT NULL DEFAULT false"
+        ))
+        db.execute(_text(
+            "ALTER TABLE gdrive_integrations ADD COLUMN IF NOT EXISTS poll_interval_sec INTEGER"
+        ))
+        db.execute(_text(
+            "ALTER TABLE gdrive_integrations ADD COLUMN IF NOT EXISTS batch_size INTEGER"
+        ))
+        db.execute(_text(
+            "ALTER TABLE gdrive_integrations ADD COLUMN IF NOT EXISTS last_poll_at TIMESTAMPTZ"
+        ))
+        # Relax event_id NOT NULL if still present
+        try:
+            db.execute(_text("ALTER TABLE gdrive_integrations ALTER COLUMN event_id DROP NOT NULL"))
+        except Exception:
+            pass
+        db.commit()
+    except Exception:
+        db.rollback()
+
 def _gdrive_list_folder_files(access_token: str, folder_id: str) -> List[Dict[str, Any]]:
     # Images only, support My Drive + Shared Drives, paginate
     base_url = "https://www.googleapis.com/drive/v3/files"
@@ -272,6 +297,8 @@ async def gdrive_callback(code: str, current_user: User = Depends(get_current_us
         expires_in = tokens.get("expires_in")
         if not access_token or not refresh_token:
             raise HTTPException(status_code=400, detail="OAuth invalide")
+        # S'assurer que le schéma DB est à jour avant insertion
+        _gdrive_ensure_integration_schema(db)
         try:
             integ = GoogleDriveIntegration(
                 event_id=None,  # sera lié plus tard
@@ -286,11 +313,10 @@ async def gdrive_callback(code: str, current_user: User = Depends(get_current_us
             db.commit()
             db.refresh(integ)
         except Exception as e:
-            # Si la colonne event_id est encore NOT NULL en DB, on tente de la relaxer automatiquement (migration souple)
+            # Migration souple: tenter d'ajouter les colonnes manquantes puis réessayer une fois
             try:
                 db.rollback()
-                db.execute(_text("ALTER TABLE gdrive_integrations ALTER COLUMN event_id DROP NOT NULL"))
-                db.commit()
+                _gdrive_ensure_integration_schema(db)
                 db.add(integ)
                 db.commit()
                 db.refresh(integ)
