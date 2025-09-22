@@ -1062,13 +1062,17 @@
             try {
                 const url = `/api/gdrive/callback?code=${encodeURIComponent(code)}`;
                 const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-                const data = await resp.json();
+                // Lire d'abord le texte brut pour couvrir les erreurs non-JSON
+                const raw = await resp.text();
+                let data;
+                try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = { raw }; }
                 if (!resp.ok) {
-                    showAlert(data.detail || 'Erreur callback', 'error');
+                    const detail = (data && (data.detail || data.error)) ? (data.detail || data.error) : (data.raw || '(vide)');
+                    showAlert(detail || 'Erreur callback', 'error');
                     try {
                         const errBox = document.getElementById('gdriveCallbackError');
                         const errBody = document.getElementById('gdriveCallbackErrorBody');
-                        errBody.textContent = (data.detail ? JSON.stringify(data.detail, null, 2) : JSON.stringify(data, null, 2));
+                        errBody.textContent = `HTTP ${resp.status}\n\n` + (typeof detail === 'string' ? detail : JSON.stringify(detail, null, 2));
                         errBox.style.display = 'block';
                     } catch (e) {}
                     return;
