@@ -275,6 +275,88 @@ async def gdrive_config_check(current_user: User = Depends(get_current_user)):
         "redirect_uri": redir,
     }
 
+@app.get("/api/gdrive/integrations")
+async def gdrive_list_integrations(
+    event_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    q = db.query(GoogleDriveIntegration, Event).outerjoin(Event, Event.id == GoogleDriveIntegration.event_id)
+    if event_id:
+        q = q.filter(GoogleDriveIntegration.event_id == event_id)
+    rows = q.all()
+    out = []
+    for integ, ev in rows:
+        out.append({
+            "id": int(integ.id),
+            "event_id": int(integ.event_id) if integ.event_id is not None else None,
+            "event_name": getattr(ev, 'name', None),
+            "folder_id": integ.folder_id,
+            "listening": bool(integ.listening) if getattr(integ, 'listening', False) is not None else False,
+            "poll_interval_sec": integ.poll_interval_sec,
+            "batch_size": integ.batch_size,
+            "last_poll_at": integ.last_poll_at.isoformat() if getattr(integ, 'last_poll_at', None) else None,
+            "status": integ.status,
+        })
+    return out
+
+@app.post("/api/gdrive/update-config")
+async def gdrive_update_config(
+    integration_id: int = Body(..., embed=True),
+    event_id: int | None = Body(None, embed=True),
+    folder_id: str | None = Body(None, embed=True),
+    listening: bool | None = Body(None, embed=True),
+    poll_interval_sec: int | None = Body(None, embed=True),
+    batch_size: int | None = Body(None, embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    integ = db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.id == integration_id).first()
+    if not integ:
+        raise HTTPException(status_code=404, detail="Intégration introuvable")
+    if (current_user.user_type != UserType.ADMIN) and (integ.photographer_id != current_user.id):
+        raise HTTPException(status_code=403, detail="Non propriétaire")
+    if event_id is not None:
+        integ.event_id = event_id
+    if folder_id is not None:
+        integ.folder_id = folder_id
+    if listening is not None:
+        integ.listening = bool(listening)
+    if poll_interval_sec is not None:
+        integ.poll_interval_sec = int(poll_interval_sec)
+    if batch_size is not None:
+        integ.batch_size = int(batch_size)
+    db.commit()
+    return {"updated": True}
+
+@app.get("/api/gdrive/logs")
+async def gdrive_logs(
+    integration_id: int,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    q = db.query(GoogleDriveIngestionLog).filter(GoogleDriveIngestionLog.integration_id == integration_id).order_by(GoogleDriveIngestionLog.id.desc())
+    logs = q.limit(max(1, min(200, int(limit)))).all()
+    out = []
+    for lg in logs:
+        out.append({
+            "id": int(lg.id),
+            "file_id": lg.file_id,
+            "file_name": lg.file_name,
+            "md5_checksum": lg.md5_checksum,
+            "status": lg.status,
+            "error": lg.error,
+            "last_seen_at": lg.last_seen_at.isoformat() if lg.last_seen_at else None,
+        })
+    return out
+
 @app.get("/api/gdrive/callback")
 async def gdrive_callback(code: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
