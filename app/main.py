@@ -32,6 +32,7 @@ load_dotenv()
 from database import get_db, create_tables
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog
+GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
 from recognizer_factory import get_face_recognizer
@@ -266,6 +267,9 @@ async def gdrive_link_folder(
     integration_id: int = Body(..., embed=True),
     event_id: int = Body(..., embed=True),
     folder_id: str = Body(..., embed=True),
+    listening: bool = Body(False, embed=True),
+    poll_interval_sec: int = Body(None, embed=True),
+    batch_size: int = Body(None, embed=True),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -278,12 +282,18 @@ async def gdrive_link_folder(
         raise HTTPException(status_code=403, detail="Non propriétaire")
     integ.event_id = event_id
     integ.folder_id = folder_id
+    integ.listening = bool(listening)
+    if poll_interval_sec is not None:
+        integ.poll_interval_sec = int(poll_interval_sec)
+    if batch_size is not None:
+        integ.batch_size = int(batch_size)
     db.commit()
     return {"linked": True}
 
 @app.post("/api/gdrive/sync-now")
 async def gdrive_sync_now(
     integration_id: int = Body(..., embed=True),
+    sub_batch_size: int = Body(None, embed=True),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = None,
@@ -350,7 +360,9 @@ async def gdrive_sync_now(
                 except Exception as _e:
                     job["errors"].append(f"prepare_event_for_batch: {_e}")
 
-                SUB_BATCH_SIZE = int(os.environ.get("UPLOAD_SUB_BATCH_SIZE", "25"))
+                default_bs = 5
+                cfg_bs = int(sub_batch_size) if (sub_batch_size is not None) else int(_integ.batch_size or default_bs)
+                SUB_BATCH_SIZE = max(1, min(10, cfg_bs))
                 for i in range(0, len(files), SUB_BATCH_SIZE):
                     sub = files[i:i+SUB_BATCH_SIZE]
                     for f in sub:
@@ -406,6 +418,140 @@ async def gdrive_job_status(job_id: str, current_user: User = Depends(get_curren
     if not job:
         raise HTTPException(status_code=404, detail="Job introuvable")
     return job
+
+
+@app.post("/api/gdrive/listen/start")
+async def gdrive_listen_start(
+    integration_id: int = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    integ = db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.id == integration_id).first()
+    if not integ:
+        raise HTTPException(status_code=404, detail="Intégration introuvable")
+    if not integ.event_id or not integ.folder_id:
+        raise HTTPException(status_code=400, detail="Événement ou dossier non lié")
+    integ.listening = True
+    db.commit()
+
+    def _listener_loop(integ_id: int):
+        GDRIVE_LISTENERS[integ_id] = {"running": True}
+        try:
+            while GDRIVE_LISTENERS.get(integ_id, {}).get("running"):
+                _db = next(get_db())
+                try:
+                    _integ = _db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.id == integ_id).first()
+                    if not _integ or not _integ.listening:
+                        break
+                    now_utc = datetime.now(timezone.utc)
+                    token_exp = _integ.token_expiry
+                    if token_exp is not None and token_exp.tzinfo is None:
+                        try:
+                            token_exp = token_exp.replace(tzinfo=timezone.utc)
+                        except Exception:
+                            pass
+                    if not _integ.access_token or (token_exp and token_exp < now_utc):
+                        rt = _integ.refresh_token
+                        if rt:
+                            tk = _gdrive_refresh_access_token(rt)
+                            _integ.access_token = tk.get("access_token")
+                            _integ.token_expiry = datetime.now(timezone.utc) + timedelta(seconds=int(tk.get("expires_in", 3600)))
+                            _db.commit()
+                    try:
+                        files = _gdrive_list_folder_files(_integ.access_token, _integ.folder_id)
+                    except Exception:
+                        files = []
+                    seen_ids = set(r[0] for r in _db.query(GoogleDriveIngestionLog.file_id).filter(GoogleDriveIngestionLog.integration_id == _integ.id).all())
+                    new_files = [f for f in files if f.get("id") not in seen_ids]
+                    try:
+                        if hasattr(face_recognizer, 'prepare_event_for_batch'):
+                            face_recognizer.prepare_event_for_batch(int(_integ.event_id), _db)
+                    except Exception:
+                        pass
+                    bs = int(_integ.batch_size or 5)
+                    bs = max(1, min(10, bs))
+                    for i in range(0, len(new_files), bs):
+                        sub = new_files[i:i+bs]
+                        for f in sub:
+                            err = None
+                            try:
+                                data = _gdrive_download_file(_integ.access_token, f["id"])
+                                temp_path = f"./temp_{uuid.uuid4()}.img"
+                                with open(temp_path, "wb") as _buf:
+                                    _buf.write(data)
+                                face_recognizer.process_and_save_photo_for_event(
+                                    temp_path, f.get("name") or f.get("id"), int(_integ.photographer_id), int(_integ.event_id), _db
+                                )
+                            except Exception as e:
+                                err = str(e)
+                            finally:
+                                try:
+                                    if os.path.exists(temp_path):
+                                        os.remove(temp_path)
+                                except Exception:
+                                    pass
+                                try:
+                                    import gc as _gc
+                                    _gc.collect()
+                                except Exception:
+                                    pass
+                            try:
+                                log = GoogleDriveIngestionLog(
+                                    integration_id=_integ.id,
+                                    file_id=f.get("id"),
+                                    file_name=f.get("name"),
+                                    md5_checksum=f.get("md5Checksum"),
+                                    status="failed" if err else "ingested",
+                                    error=err,
+                                )
+                                _db.add(log)
+                                _db.commit()
+                            except Exception:
+                                pass
+                        try:
+                            _rematch_event_via_selfies(int(_integ.event_id))
+                        except Exception:
+                            pass
+                    _integ.last_poll_at = datetime.now(timezone.utc)
+                    _db.commit()
+                finally:
+                    try:
+                        _db.close()
+                    except Exception:
+                        pass
+                interval = int(_integ.poll_interval_sec or 15)
+                interval = max(5, min(120, interval))
+                time.sleep(interval)
+        finally:
+            GDRIVE_LISTENERS.pop(integ_id, None)
+
+    if background_tasks is not None:
+        background_tasks.add_task(_listener_loop, integ.id)
+    else:
+        _listener_loop(integ.id)
+    return {"listening": True}
+
+
+@app.post("/api/gdrive/listen/stop")
+async def gdrive_listen_stop(
+    integration_id: int = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    integ = db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.id == integration_id).first()
+    if not integ:
+        raise HTTPException(status_code=404, detail="Intégration introuvable")
+    integ.listening = False
+    db.commit()
+    lst = GDRIVE_LISTENERS.get(integration_id)
+    if lst:
+        lst["running"] = False
+    return {"listening": False}
 
 @app.get("/api/admin/provider")
 async def get_active_provider(current_user: User = Depends(get_current_user)):

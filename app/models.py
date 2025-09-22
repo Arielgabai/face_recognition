@@ -109,6 +109,11 @@ class GoogleDriveIntegration(Base):
     token_expiry = Column(DateTime(timezone=True), nullable=True)
     delta_token = Column(String, nullable=True)  # réservé si on passe au Changes API
     status = Column(String, default="connected")  # connected|revoked|error
+    # Écoute continue (polling)
+    listening = Column(Boolean, nullable=False, default=False)
+    poll_interval_sec = Column(Integer, nullable=True)  # défaut côté app si null
+    batch_size = Column(Integer, nullable=True)  # taille des sous-lots lors de l'ingestion
+    last_poll_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
