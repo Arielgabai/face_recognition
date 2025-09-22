@@ -482,6 +482,10 @@
                         <button onclick="gdriveSubmitCode()" class="success">Enregistrer le code</button>
                     </div>
                     <div id="gdriveIntegrationInfo" style="color:#666;">—</div>
+                    <div id="gdriveCallbackError" style="margin-top:8px; display:none;">
+                        <div style="color:#b91c1c; font-weight:600;">Détail de l'erreur callback:</div>
+                        <pre id="gdriveCallbackErrorBody" style="white-space:pre-wrap;background:#fff0f0;border:1px solid #fca5a5;padding:8px;border-radius:6px;overflow:auto;max-height:200px;"></pre>
+                    </div>
                 </div>
                 <div class="card">
                     <h4>2) Lier un dossier Drive à un événement</h4>
@@ -1059,9 +1063,22 @@
                 const url = `/api/gdrive/callback?code=${encodeURIComponent(code)}`;
                 const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
                 const data = await resp.json();
-                if (!resp.ok) { showAlert(data.detail || 'Erreur callback', 'error'); return; }
+                if (!resp.ok) {
+                    showAlert(data.detail || 'Erreur callback', 'error');
+                    try {
+                        const errBox = document.getElementById('gdriveCallbackError');
+                        const errBody = document.getElementById('gdriveCallbackErrorBody');
+                        errBody.textContent = (data.detail ? JSON.stringify(data.detail, null, 2) : JSON.stringify(data, null, 2));
+                        errBox.style.display = 'block';
+                    } catch (e) {}
+                    return;
+                }
                 __gdriveIntegrationId = data.integration_id;
                 document.getElementById('gdriveIntegrationInfo').textContent = `Intégration créée: ID ${__gdriveIntegrationId}`;
+                try {
+                    const errBox = document.getElementById('gdriveCallbackError');
+                    if (errBox) { errBox.style.display = 'none'; }
+                } catch (e) {}
                 // Précharger les événements dans le select gdrive
                 try {
                     const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
