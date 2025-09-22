@@ -133,14 +133,19 @@ def get_gdrive_oauth_urls() -> Dict[str, str]:
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
     params = {
         "client_id": client_id,
-        "redirect_uri": redirect_uri,
+        # On construira la query sans encoder les '/'
+        # "redirect_uri": redirect_uri,
         "response_type": "code",
         "access_type": "offline",
         "prompt": "consent",
         "scope": scope,
     }
+    # Construire la query manuellement pour éviter %2F pour redirect_uri
+    base_query = urlencode(params)
+    from urllib.parse import quote
+    auth_qs = f"{base_query}&redirect_uri={quote(redirect_uri, safe=':/')}"
     return {
-        "auth_url": f"{auth_url}?{urlencode(params)}",
+        "auth_url": f"{auth_url}?{auth_qs}",
         "token_url": "https://oauth2.googleapis.com/token",
         "redirect_uri": redirect_uri,
     }
