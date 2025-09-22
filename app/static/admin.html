@@ -1213,6 +1213,8 @@
                         </div>
                         <div>
                             <button onclick="selectIntegration(${d.id})">Sélectionner</button>
+                            <button onclick="deleteIntegration(${d.id})" class="danger">Supprimer</button>
+                            ${d.listening ? `<button onclick="stopIntegration(${d.id})">Arrêter</button>` : `<button onclick="startIntegration(${d.id})">Démarrer</button>`}
                         </div>
                     </div>
                 `).join('');
@@ -1247,6 +1249,39 @@
             } catch (e) {
                 document.getElementById('gdriveLogs').textContent = 'Erreur lors du chargement des logs';
             }
+        }
+
+        async function deleteIntegration(id) {
+            if (!confirm('Supprimer cette intégration ?')) return;
+            try {
+                const resp = await fetch(`/api/gdrive/integrations/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) { showAlert(data.detail || 'Erreur suppression', 'error'); return; }
+                showAlert('Intégration supprimée', 'success');
+                if (__gdriveIntegrationId === id) { __gdriveIntegrationId = null; }
+                loadGdriveIntegrations();
+                document.getElementById('gdriveLogs').textContent = '—';
+            } catch (e) { showAlert('Erreur suppression', 'error'); }
+        }
+
+        async function startIntegration(id) {
+            try {
+                const resp = await fetch('/api/gdrive/listen/start', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ integration_id: id }) });
+                const data = await resp.json();
+                if (!resp.ok) { showAlert(data.detail || 'Erreur démarrage', 'error'); return; }
+                showAlert('Écoute démarrée', 'success');
+                loadGdriveIntegrations();
+            } catch (e) { showAlert('Erreur démarrage', 'error'); }
+        }
+
+        async function stopIntegration(id) {
+            try {
+                const resp = await fetch('/api/gdrive/listen/stop', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ integration_id: id }) });
+                const data = await resp.json();
+                if (!resp.ok) { showAlert(data.detail || 'Erreur arrêt', 'error'); return; }
+                showAlert('Écoute arrêtée', 'success');
+                loadGdriveIntegrations();
+            } catch (e) { showAlert('Erreur arrêt', 'error'); }
         }
 
         async function deleteUser(userId, username) {

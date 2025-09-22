@@ -357,6 +357,33 @@ async def gdrive_logs(
         })
     return out
 
+@app.delete("/api/gdrive/integrations/{integration_id}")
+async def gdrive_delete_integration(
+    integration_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    integ = db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.id == integration_id).first()
+    if not integ:
+        raise HTTPException(status_code=404, detail="Intégration introuvable")
+    if (current_user.user_type != UserType.ADMIN) and (integ.photographer_id != current_user.id):
+        raise HTTPException(status_code=403, detail="Non propriétaire")
+    # Stopper un éventuel listener en mémoire
+    lst = GDRIVE_LISTENERS.get(integration_id)
+    if lst:
+        lst["running"] = False
+    try:
+        # Supprimer les logs associés (si beaucoup, on pourrait batcher)
+        db.query(GoogleDriveIngestionLog).filter(GoogleDriveIngestionLog.integration_id == integration_id).delete()
+        db.delete(integ)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur suppression: {e}")
+    return {"deleted": True}
+
 @app.get("/api/gdrive/callback")
 async def gdrive_callback(code: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
