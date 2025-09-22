@@ -158,7 +158,12 @@ def _gdrive_exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     try:
         r.raise_for_status()
     except Exception:
-        raise RuntimeError(f"token_exchange_failed status={r.status_code} body={r.text}")
+        # Essayer d'extraire un message clair
+        try:
+            body = r.json()
+        except Exception:
+            body = {"raw": r.text}
+        raise RuntimeError(f"token_exchange_failed status={r.status_code} body={body}")
     return r.json()
 
 def _gdrive_refresh_access_token(refresh_token: str) -> Dict[str, Any]:
@@ -173,7 +178,11 @@ def _gdrive_refresh_access_token(refresh_token: str) -> Dict[str, Any]:
     try:
         r.raise_for_status()
     except Exception:
-        raise RuntimeError(f"token_refresh_failed status={r.status_code} body={r.text}")
+        try:
+            body = r.json()
+        except Exception:
+            body = {"raw": r.text}
+        raise RuntimeError(f"token_refresh_failed status={r.status_code} body={body}")
     return r.json()
 
 def _gdrive_headers(access_token: str) -> Dict[str, str]:
@@ -223,11 +232,35 @@ async def gdrive_connect(current_user: User = Depends(get_current_user)):
     urls = get_gdrive_oauth_urls()
     return {"auth_url": urls["auth_url"]}
 
+@app.get("/api/gdrive/config-check")
+async def gdrive_config_check(current_user: User = Depends(get_current_user)):
+    if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé")
+    cid = os.environ.get("GDRIVE_CLIENT_ID", "")
+    csec = os.environ.get("GDRIVE_CLIENT_SECRET", "")
+    redir = os.environ.get("GDRIVE_REDIRECT_URI", "") or get_gdrive_oauth_urls()["redirect_uri"]
+    return {
+        "has_client_id": bool(cid),
+        "has_client_secret": bool(csec),
+        "redirect_uri": redir,
+    }
+
 @app.get("/api/gdrive/callback")
 async def gdrive_callback(code: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.user_type != UserType.PHOTOGRAPHER and current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Accès réservé")
     try:
+        # Vérifications de configuration minimales pour éviter des erreurs opaques
+        cid = os.environ.get("GDRIVE_CLIENT_ID", "")
+        csec = os.environ.get("GDRIVE_CLIENT_SECRET", "")
+        redir = os.environ.get("GDRIVE_REDIRECT_URI", "") or get_gdrive_oauth_urls()["redirect_uri"]
+        if not cid or not csec or not redir:
+            missing = []
+            if not cid: missing.append("GDRIVE_CLIENT_ID")
+            if not csec: missing.append("GDRIVE_CLIENT_SECRET")
+            if not redir: missing.append("GDRIVE_REDIRECT_URI")
+            raise HTTPException(status_code=500, detail=f"Configuration Google Drive manquante: {', '.join(missing)}")
+
         tokens = _gdrive_exchange_code_for_tokens(code)
         access_token = tokens.get("access_token")
         refresh_token = tokens.get("refresh_token")
@@ -260,7 +293,15 @@ async def gdrive_callback(code: str, current_user: User = Depends(get_current_us
                 raise HTTPException(status_code=500, detail=f"Erreur DB (event_id nullable): {e2}")
         return {"integration_id": integ.id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur callback Google: {e}")
+        # Renvoyer une erreur explicite pour faciliter le debug côté UI
+        msg = str(e)
+        # Aide de diagnostic pour les cas fréquents
+        hint = ""
+        if "invalid_grant" in msg or "token_exchange_failed" in msg:
+            hint = "Vérifiez que redirect_uri, client_id/secret et le code sont cohérents et non expirés."
+        elif "access_denied" in msg:
+            hint = "Ajoutez votre email en tant que Test user dans Google Cloud (mode Test)."
+        raise HTTPException(status_code=500, detail=f"Erreur callback Google: {msg}. {hint}")
 
 @app.post("/api/gdrive/link-folder")
 async def gdrive_link_folder(
