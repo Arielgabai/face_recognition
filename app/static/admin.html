@@ -1904,7 +1904,7 @@
             }
         }
 
-        function showTab(tabName) {
+        async function showTab(tabName) {
             // Masquer tous les contenus d'onglets
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.remove('active');
@@ -1920,6 +1920,43 @@
             
             // Activer l'onglet sélectionné
             event.target.classList.add('active');
+
+            // Initialisation spécifique à certains onglets
+            if (tabName === 'gdrive') {
+                try {
+                    await loadGdriveEvents();
+                } catch (e) {}
+                try { await loadGdriveIntegrations(); } catch (e) {}
+                // (ré)attacher le change du select pour filtrer
+                try {
+                    const sel = document.getElementById('gdriveEventSelect');
+                    if (sel && !sel.dataset.bound) {
+                        sel.addEventListener('change', () => loadGdriveIntegrations());
+                        sel.dataset.bound = '1';
+                    }
+                } catch (e) {}
+            }
+        }
+
+        async function loadGdriveEvents() {
+            try {
+                const eventsResp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!eventsResp.ok) return;
+                const events = await eventsResp.json();
+                const sel = document.getElementById('gdriveEventSelect');
+                if (!sel) return;
+                const current = sel.value;
+                sel.innerHTML = '<option value="">Sélectionner un événement</option>';
+                events.forEach(ev => {
+                    const opt = document.createElement('option');
+                    opt.value = ev.id;
+                    opt.textContent = `${ev.name} (${ev.event_code})`;
+                    sel.appendChild(opt);
+                });
+                if (current) {
+                    try { sel.value = current; } catch (e) {}
+                }
+            } catch (e) {}
         }
 
         function logout() {
