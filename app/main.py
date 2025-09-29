@@ -391,6 +391,7 @@ async def gdrive_list_integrations(
             "batch_size": integ.batch_size,
             "last_poll_at": integ.last_poll_at.isoformat() if getattr(integ, 'last_poll_at', None) else None,
             "status": integ.status,
+            "running": bool(GDRIVE_LISTENERS.get(int(integ.id), {}).get("running", False)),
         })
     return out
 
@@ -568,6 +569,12 @@ async def gdrive_link_folder(
     if batch_size is not None:
         integ.batch_size = int(batch_size)
     db.commit()
+    # Si listening=True, démarrer le listener si pas déjà en cours
+    try:
+        if integ.listening and not GDRIVE_LISTENERS.get(integ.id, {}).get("running"):
+            _gdrive_listener_loop(integ.id) if (os.environ.get("DISABLE_BACKGROUND_TASKS") == "1") else None
+    except Exception:
+        pass
     return {"linked": True}
 
 @app.post("/api/gdrive/sync-now")
@@ -783,6 +790,12 @@ async def gdrive_integration_stats(
         total_drive = len(files)
     except Exception as e:
         # keep total_drive at 0 on error but expose detail
+        pass
+    # Auto-start listener if expected to listen but not running
+    try:
+        if integ.listening and not GDRIVE_LISTENERS.get(integration_id, {}).get("running"):
+            _gdrive_listener_loop(integration_id) if (os.environ.get("DISABLE_BACKGROUND_TASKS") == "1") else None
+    except Exception:
         pass
     total_logs = db.query(GoogleDriveIngestionLog).filter(GoogleDriveIngestionLog.integration_id == integration_id).count()
     ingested = db.query(GoogleDriveIngestionLog).filter(GoogleDriveIngestionLog.integration_id == integration_id, GoogleDriveIngestionLog.status == 'ingested').count()
