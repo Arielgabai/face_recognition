@@ -519,7 +519,11 @@
                     <div id="gdriveIntegrations">—</div>
                 </div>
                 <div class="card">
-                    <h4>4) Derniers uploads</h4>
+                    <h4>4) Statut intégration sélectionnée</h4>
+                    <div id="gdriveStats">—</div>
+                </div>
+                <div class="card">
+                    <h4>5) Derniers uploads</h4>
                     <div id="gdriveLogs">—</div>
                 </div>
             </div>
@@ -1227,6 +1231,7 @@
         function selectIntegration(id) {
             __gdriveIntegrationId = id;
             showAlert(`Intégration ${id} sélectionnée`, 'success');
+            startGdriveStatsPolling();
             loadGdriveLogs();
         }
 
@@ -1249,6 +1254,34 @@
             } catch (e) {
                 document.getElementById('gdriveLogs').textContent = 'Erreur lors du chargement des logs';
             }
+        }
+
+        let __gdriveStatsTimer = null;
+        function startGdriveStatsPolling() {
+            if (!__gdriveIntegrationId) { document.getElementById('gdriveStats').textContent = 'Sélectionnez une intégration'; return; }
+            if (__gdriveStatsTimer) {
+                try { clearInterval(__gdriveStatsTimer); } catch (e) {}
+                __gdriveStatsTimer = null;
+            }
+            const tick = async () => {
+                try {
+                    const resp = await fetch(`/api/gdrive/integrations/${__gdriveIntegrationId}/stats`, { headers: { 'Authorization': `Bearer ${token}` } });
+                    const data = await resp.json();
+                    const box = document.getElementById('gdriveStats');
+                    if (!resp.ok) { box.textContent = data.detail || 'Erreur'; return; }
+                    box.innerHTML = `<div style="display:flex; gap:16px; align-items:center;">
+                        <div><strong>Total Drive</strong>: ${data.total_drive}</div>
+                        <div><strong>Ingestés</strong>: ${data.ingested}/${data.total_drive}</div>
+                        <div><strong>Échecs</strong>: ${data.failed}</div>
+                        <div><strong>Écoute</strong>: ${data.listening ? 'oui' : 'non'}</div>
+                        <div><strong>Dernier poll</strong>: ${data.last_poll_at || '-'}</div>
+                    </div>`;
+                } catch (e) {
+                    document.getElementById('gdriveStats').textContent = 'Erreur de stats';
+                }
+            };
+            tick();
+            __gdriveStatsTimer = setInterval(tick, 5000);
         }
 
         async function deleteIntegration(id) {
