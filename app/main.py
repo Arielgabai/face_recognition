@@ -3001,23 +3001,46 @@ async def admin_backfill_photographer_id(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Backfill des photographer_id manquants à partir de l'owner de l'événement (ADMIN uniquement)."""
+    """Backfill/realign des photographer_id à partir de l'owner de l'événement (ADMIN uniquement).
+
+    - Met à jour les photos avec photographer_id NULL en copiant l'owner de l'événement
+    - Corrige aussi les photos dont photographer_id ≠ event.photographer_id
+    """
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent exécuter ce backfill")
 
-    updated = 0
-    photos = db.query(Photo).filter(
+    # 1) Fix NULL photographer_id
+    updated_null = 0
+    null_photos = db.query(Photo).filter(
         Photo.photographer_id.is_(None),
         Photo.event_id.isnot(None)
     ).all()
-    for p in photos:
-        ev = db.query(Event).filter(Event.id == p.event_id).first()
-        if ev and ev.photographer_id is not None:
-            p.photographer_id = int(ev.photographer_id)
-            updated += 1
-    if updated:
+    if null_photos:
+        # Précharger les events en cache pour limiter les requêtes
+        event_ids = {p.event_id for p in null_photos if p.event_id is not None}
+        events_map = {e.id: e for e in db.query(Event).filter(Event.id.in_(list(event_ids))).all()}
+        for p in null_photos:
+            ev = events_map.get(p.event_id)
+            if ev and ev.photographer_id is not None:
+                p.photographer_id = int(ev.photographer_id)
+                updated_null += 1
+
+    # 2) Fix mismatch photographer_id vs event owner
+    updated_mismatch = 0
+    mismatch_photos = db.query(Photo, Event).join(Event, Event.id == Photo.event_id).filter(
+        Photo.event_id.isnot(None),
+        Event.photographer_id.isnot(None),
+        Photo.photographer_id.isnot(None),
+        Photo.photographer_id != Event.photographer_id
+    ).all()
+    for p, ev in mismatch_photos:
+        p.photographer_id = int(ev.photographer_id)
+        updated_mismatch += 1
+
+    total = updated_null + updated_mismatch
+    if total:
         db.commit()
-    return {"updated": updated}
+    return {"updated_null": updated_null, "updated_mismatch": updated_mismatch, "total_updated": total}
 
 @app.get("/api/admin/events/{event_id}/users")
 async def admin_get_event_users(
