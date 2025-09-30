@@ -657,6 +657,15 @@ async def gdrive_sync_now(
                 except Exception as le:
                     job["errors"].append(str(le))
                     files = []
+                # Dédupliquer: ignorer les fichiers déjà loggés comme ingérés
+                try:
+                    seen_ids = set(r[0] for r in _db.query(GoogleDriveIngestionLog.file_id).filter(
+                        GoogleDriveIngestionLog.integration_id == _integ.id,
+                        GoogleDriveIngestionLog.status == 'ingested'
+                    ).all())
+                    files = [f for f in files if f.get('id') not in seen_ids]
+                except Exception:
+                    pass
                 job["total"] = len(files)
                 # Préparer batch côté Rekognition
                 try:

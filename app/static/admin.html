@@ -1146,8 +1146,9 @@
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ integration_id: __gdriveIntegrationId, sub_batch_size: bs })
                 });
-                const data = await resp.json();
-                if (!resp.ok) { showAlert(data.detail || 'Erreur sync', 'error'); return; }
+                let data = null;
+                try { data = await resp.json(); } catch (e) { data = {}; }
+                if (!resp.ok) { showAlert((data && data.detail) || 'Erreur sync', 'error'); return; }
                 const jobId = data.job_id;
                 document.getElementById('gdriveJobStatus').textContent = `Job ${jobId} démarré…`;
                 const poll = async () => {
