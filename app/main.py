@@ -1,5 +1,6 @@
 import face_recognition_patch
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Body, BackgroundTasks
+import logging
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -48,6 +49,13 @@ from base64 import urlsafe_b64encode
 create_tables()
 
 app = FastAPI(title="Face Recognition API", version="1.0.0")
+logger = logging.getLogger("app")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 templates = Jinja2Templates(directory="templates")
 
 # État en mémoire pour suivre l'avancement du rematching de selfie par utilisateur
@@ -2712,17 +2720,21 @@ async def delete_photo(
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent supprimer des photos")
     
-    # R+�cup+�rer la photo
+    logger.info(f"delete_photo: requested by user_id={current_user.id} photo_id={photo_id}")
+    # Récupérer la photo
     photo = db.query(Photo).filter(Photo.id == photo_id).first()
     if not photo:
-        raise HTTPException(status_code=404, detail="Photo non trouv+�e")
+        logger.warning(f"delete_photo: photo_id={photo_id} not found")
+        raise HTTPException(status_code=404, detail="Photo non trouvée")
     
-    # V+�rifier que le photographe est bien le propri+�taire de la photo
+    # Vérifier que le photographe est bien le propriétaire de la photo
     if photo.photographer_id != current_user.id:
+        logger.warning(f"delete_photo: forbidden user_id={current_user.id} owner_id={photo.photographer_id}")
         raise HTTPException(status_code=403, detail="Vous ne pouvez supprimer que vos propres photos")
     
     try:
-        # Supprimer les correspondances de visages associ+�es
+        # Supprimer les correspondances de visages associées
+        logger.info(f"delete_photo: deleting face_matches for photo_id={photo_id}")
         db.query(FaceMatch).filter(FaceMatch.photo_id == photo_id).delete()
         # Nettoyage Rekognition pour cette photo (faces photo:{id})
         try:
@@ -2730,23 +2742,28 @@ async def delete_photo(
                 from aws_face_recognizer import AwsFaceRecognizer as _Aws
                 if isinstance(face_recognizer, _Aws):
                     try:
+                        logger.info(f"delete_photo: ensure_collection event_id={photo.event_id}")
                         face_recognizer.ensure_collection(int(photo.event_id))
                     except Exception:
-                        pass
+                        logger.exception("delete_photo: ensure_collection failed")
                     try:
+                        logger.info(f"delete_photo: deleting rekognition faces for photo:{photo.id} in event:{photo.event_id}")
                         face_recognizer._delete_photo_faces(int(photo.event_id), int(photo.id))
                     except Exception:
-                        pass
+                        logger.exception("delete_photo: _delete_photo_faces failed")
         except Exception:
-            pass
+            logger.exception("delete_photo: rekognition cleanup wrapper failed")
         
-        # Supprimer l'enregistrement de la base de donn+�es
+        # Supprimer l'enregistrement de la base de données
+        logger.info(f"delete_photo: deleting DB record photo_id={photo_id}")
         db.delete(photo)
         db.commit()
         
-        return {"message": "Photo supprim+�e avec succ+�s"}
+        logger.info(f"delete_photo: success photo_id={photo_id}")
+        return {"message": "Photo supprimée avec succès"}
     except Exception as e:
         db.rollback()
+        logger.exception("delete_photo: failed")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression: {str(e)}")
 
 @app.delete("/api/photos")
@@ -2759,8 +2776,9 @@ async def delete_multiple_photos(
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent supprimer des photos")
     
+    logger.info(f"delete_multiple_photos: requested by user_id={current_user.id} ids='{photo_ids}'")
     if not photo_ids:
-        raise HTTPException(status_code=400, detail="Aucune photo s+�lectionn+�e")
+        raise HTTPException(status_code=400, detail="Aucune photo sélectionnée")
     
     # Convertir la string en liste d'IDs
     try:
@@ -2769,7 +2787,7 @@ async def delete_multiple_photos(
         raise HTTPException(status_code=400, detail="Format d'ID invalide")
     
     if not photo_id_list:
-        raise HTTPException(status_code=400, detail="Aucune photo s+�lectionn+�e")
+        raise HTTPException(status_code=400, detail="Aucune photo sélectionnée")
     
     # R+�cup+�rer les photos du photographe
     photos = db.query(Photo).filter(
@@ -2778,12 +2796,13 @@ async def delete_multiple_photos(
     ).all()
     
     if not photos:
-        raise HTTPException(status_code=404, detail="Aucune photo trouv+�e")
+        raise HTTPException(status_code=404, detail="Aucune photo trouvée")
     
     deleted_count = 0
     try:
         for photo in photos:
-            # Supprimer les correspondances de visages associ+�es
+            # Supprimer les correspondances de visages associées
+            logger.info(f"delete_multiple_photos: deleting face_matches for photo_id={photo.id}")
             db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()
             # Nettoyage Rekognition pour chacune
             try:
@@ -2791,24 +2810,28 @@ async def delete_multiple_photos(
                     from aws_face_recognizer import AwsFaceRecognizer as _Aws
                     if isinstance(face_recognizer, _Aws):
                         try:
+                            logger.info(f"delete_multiple_photos: ensure_collection event_id={photo.event_id}")
                             face_recognizer.ensure_collection(int(photo.event_id))
                         except Exception:
-                            pass
+                            logger.exception("delete_multiple_photos: ensure_collection failed")
                         try:
+                            logger.info(f"delete_multiple_photos: deleting rekognition faces for photo:{photo.id} in event:{photo.event_id}")
                             face_recognizer._delete_photo_faces(int(photo.event_id), int(photo.id))
                         except Exception:
-                            pass
+                            logger.exception("delete_multiple_photos: _delete_photo_faces failed")
             except Exception:
-                pass
+                logger.exception("delete_multiple_photos: rekognition cleanup wrapper failed")
             
-            # Supprimer l'enregistrement de la base de donn+�es
+            # Supprimer l'enregistrement de la base de données
             db.delete(photo)
             deleted_count += 1
         
         db.commit()
-        return {"message": f"{deleted_count} photos supprim+�es avec succ+�s"}
+        logger.info(f"delete_multiple_photos: success deleted={deleted_count}")
+        return {"message": f"{deleted_count} photos supprimées avec succès"}
     except Exception as e:
         db.rollback()
+        logger.exception("delete_multiple_photos: failed")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression: {str(e)}")
 
 # === ADMINISTRATION ===
