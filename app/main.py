@@ -307,8 +307,18 @@ def _gdrive_listener_loop(integ_id: int):
                             temp_path = f"./temp_{uuid.uuid4()}.img"
                             with open(temp_path, "wb") as _buf:
                                 _buf.write(data)
+                            # Déterminer le propriétaire photographe à partir de l'événement lié
+                            _owner_id = None
+                            try:
+                                _ev = _db.query(Event).filter(Event.id == _integ.event_id).first()
+                                if _ev and _ev.photographer_id is not None:
+                                    _owner_id = int(_ev.photographer_id)
+                            except Exception:
+                                _owner_id = None
+                            if _owner_id is None:
+                                _owner_id = int(_integ.photographer_id)
                             face_recognizer.process_and_save_photo_for_event(
-                                temp_path, f.get("name") or f.get("id"), int(_integ.photographer_id), int(_integ.event_id), _db
+                                temp_path, f.get("name") or f.get("id"), _owner_id, int(_integ.event_id), _db
                             )
                         except Exception as e:
                             err = str(e)
@@ -666,8 +676,18 @@ async def gdrive_sync_now(
                             temp_path = f"./temp_{uuid.uuid4()}.img"
                             with open(temp_path, "wb") as _buf:
                                 _buf.write(data)
+                            # Déterminer le propriétaire photographe à partir de l'événement lié
+                            _owner_id = None
+                            try:
+                                _ev = _db.query(Event).filter(Event.id == _integ.event_id).first()
+                                if _ev and _ev.photographer_id is not None:
+                                    _owner_id = int(_ev.photographer_id)
+                            except Exception:
+                                _owner_id = None
+                            if _owner_id is None:
+                                _owner_id = int(_integ.photographer_id)
                             face_recognizer.process_and_save_photo_for_event(
-                                temp_path, f.get("name") or f.get("id"), int(_integ.photographer_id), int(_integ.event_id), _db
+                                temp_path, f.get("name") or f.get("id"), _owner_id, int(_integ.event_id), _db
                             )
                         except Exception as e:
                             job["failed"] += 1
@@ -2975,6 +2995,29 @@ async def admin_get_events(
     
     events = db.query(Event).all()
     return events
+
+@app.post("/api/admin/backfill-photographer-id")
+async def admin_backfill_photographer_id(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Backfill des photographer_id manquants à partir de l'owner de l'événement (ADMIN uniquement)."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent exécuter ce backfill")
+
+    updated = 0
+    photos = db.query(Photo).filter(
+        Photo.photographer_id.is_(None),
+        Photo.event_id.isnot(None)
+    ).all()
+    for p in photos:
+        ev = db.query(Event).filter(Event.id == p.event_id).first()
+        if ev and ev.photographer_id is not None:
+            p.photographer_id = int(ev.photographer_id)
+            updated += 1
+    if updated:
+        db.commit()
+    return {"updated": updated}
 
 @app.get("/api/admin/events/{event_id}/users")
 async def admin_get_event_users(
