@@ -689,9 +689,37 @@ async def gdrive_sync_now(
                             face_recognizer.process_and_save_photo_for_event(
                                 temp_path, f.get("name") or f.get("id"), _owner_id, int(_integ.event_id), _db
                             )
+                            # Log success for admin stats
+                            try:
+                                log = GoogleDriveIngestionLog(
+                                    integration_id=_integ.id,
+                                    file_id=f.get("id"),
+                                    file_name=f.get("name"),
+                                    md5_checksum=f.get("md5Checksum"),
+                                    status="ingested",
+                                    error=None,
+                                )
+                                _db.add(log)
+                                _db.commit()
+                            except Exception:
+                                pass
                         except Exception as e:
                             job["failed"] += 1
                             job["errors"].append(f"{f.get('name')}: {e}")
+                            # Log failure as well
+                            try:
+                                log = GoogleDriveIngestionLog(
+                                    integration_id=_integ.id,
+                                    file_id=f.get("id"),
+                                    file_name=f.get("name"),
+                                    md5_checksum=f.get("md5Checksum"),
+                                    status="failed",
+                                    error=str(e),
+                                )
+                                _db.add(log)
+                                _db.commit()
+                            except Exception:
+                                pass
                         finally:
                             try:
                                 if os.path.exists(temp_path):
