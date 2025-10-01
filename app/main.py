@@ -34,6 +34,7 @@ from database import get_db, create_tables
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
+GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
 from recognizer_factory import get_face_recognizer
@@ -120,6 +121,36 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Initialiser le recognizer (local ou Azure selon FACE_RECOGNIZER_PROVIDER)
 face_recognizer = get_face_recognizer()
 print(f"[FaceRecognition] Provider actif: {type(face_recognizer).__name__}")
+
+# Auto-start des listeners GDrive au démarrage de l'application
+@app.on_event("startup")
+def _startup_autostart_gdrive_listeners():
+    try:
+        db = next(get_db())
+        try:
+            # S'assurer que le schéma est prêt
+            _gdrive_ensure_integration_schema(db)
+            # Démarrer pour toutes les intégrations marquées listening=true
+            rows = db.query(GoogleDriveIntegration).filter(GoogleDriveIntegration.listening == True).all()  # noqa: E712
+            for integ in rows:
+                try:
+                    if not GDRIVE_LISTENERS.get(int(integ.id), {}).get("running"):
+                        if os.environ.get("DISABLE_BACKGROUND_TASKS") == "1":
+                            _gdrive_listener_loop(int(integ.id))
+                        else:
+                            import threading as _threading
+                            t = _threading.Thread(target=_gdrive_listener_loop, args=(int(integ.id),), daemon=True)
+                            t.start()
+                except Exception:
+                    pass
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+    except Exception:
+        # Ne pas bloquer le démarrage si GDrive échoue
+        pass
 
 # Cache léger en mémoire pour les cadres/encodages par photo (LRU ~128 entrées)
 PHOTO_FACES_CACHE: "OrderedDict[int, Dict[str, Any]]" = OrderedDict()
