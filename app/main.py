@@ -222,7 +222,7 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
         )
         emails = sorted({(u.email or "").strip() for u in users if (u.email or "").strip()})
         subject = f"Vos photos de {event.name} sont disponibles"
-        link = f"{SITE_BASE_URL}/galerie"
+        link = f"{SITE_BASE_URL}"
         text_body = (
             f"Bonjour,\n\n"
             f"Les photos de l'événement '{event.name}' sont désormais disponibles.\n"
