@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 import secrets
 import hashlib
 import re
@@ -58,6 +59,9 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 templates = Jinja2Templates(directory="templates")
+
+# Base URL du site pour les liens envoyés par email
+SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "https://facerecognition-d0r8.onrender.com")
 
 # État en mémoire pour suivre l'avancement du rematching de selfie par utilisateur
 REMATCH_STATUS: Dict[int, Dict[str, Any]] = {}
@@ -102,6 +106,141 @@ def assert_password_valid(password: str) -> None:
             ),
         )
 
+# === Helpers Email (SMTP) ===
+def _smtp_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    v = value.strip().lower()
+    return v in {"1", "true", "yes", "y", "on"}
+
+
+def _get_smtp_config() -> Dict[str, Any]:
+    host = os.environ.get("SMTP_HOST")
+    port_str = os.environ.get("SMTP_PORT", "587")
+    try:
+        port = int(port_str)
+    except Exception:
+        port = 587
+    username = os.environ.get("SMTP_USERNAME")
+    password = os.environ.get("SMTP_PASSWORD")
+    use_tls = _smtp_bool(os.environ.get("SMTP_USE_TLS"), True)
+    use_ssl = _smtp_bool(os.environ.get("SMTP_USE_SSL"), False)
+    from_email = (
+        os.environ.get("MAIL_FROM")
+        or os.environ.get("SMTP_FROM")
+        or os.environ.get("FROM_EMAIL")
+    )
+    from_name = os.environ.get("MAIL_FROM_NAME", "FaceRecognition")
+    dry_run = _smtp_bool(os.environ.get("EMAIL_DRY_RUN")) or not host or not from_email
+    return {
+        "host": host,
+        "port": port,
+        "username": username,
+        "password": password,
+        "use_tls": use_tls,
+        "use_ssl": use_ssl,
+        "from_email": from_email,
+        "from_name": from_name,
+        "dry_run": dry_run,
+    }
+
+
+def _build_email_message(from_name: str, from_email: str, to_email: str, subject: str, text_body: str, html_body: str | None = None) -> Any:
+    if html_body:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(text_body, "plain", "utf-8"))
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
+    else:
+        msg = MIMEText(text_body, "plain", "utf-8")  # type: ignore[assignment]
+    msg["Subject"] = subject
+    msg["From"] = formataddr((from_name, from_email))
+    msg["To"] = to_email
+    return msg
+
+
+def _send_bulk_email_smtp(recipients: List[str], subject: str, text_body: str, html_body: str | None = None) -> Dict[str, Any]:
+    cfg = _get_smtp_config()
+    results: Dict[str, Any] = {"attempted": len(recipients), "sent": 0, "failed": 0, "dry_run": cfg["dry_run"], "errors": []}
+    if not recipients:
+        return results
+    # Mode simulation si non configuré
+    if cfg["dry_run"]:
+        try:
+            preview = recipients[:3]
+            logger.info(f"[EMAIL][DRY_RUN] Subject='{subject}' to {len(recipients)} recipients. Sample={preview}")
+        except Exception:
+            pass
+        return results
+
+    try:
+        if cfg["use_ssl"]:
+            server: Any = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=30)
+        else:
+            server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=30)
+        with server as s:
+            try:
+                if not cfg["use_ssl"] and cfg["use_tls"]:
+                    s.starttls()
+            except Exception:
+                pass
+            if cfg["username"] and cfg["password"]:
+                try:
+                    s.login(cfg["username"], cfg["password"])  # type: ignore[arg-type]
+                except Exception as e:
+                    results["errors"].append(f"login_failed: {e}")
+                    return results
+
+            for to_email in recipients:
+                try:
+                    msg = _build_email_message(cfg["from_name"], cfg["from_email"], to_email, subject, text_body, html_body)
+                    s.sendmail(cfg["from_email"], [to_email], msg.as_string())
+                    results["sent"] += 1
+                except Exception as e:
+                    results["failed"] += 1
+                    if len(results["errors"]) < 20:
+                        results["errors"].append(f"{to_email}: {e}")
+            return results
+    except Exception as e:
+        results["errors"].append(f"smtp_connection: {e}")
+        return results
+
+
+def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
+    """Envoie les emails de notification aux utilisateurs d'un événement (tâche de fond)."""
+    session = next(get_db())
+    try:
+        event = session.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            return {"sent": 0, "attempted": 0, "errors": ["event_not_found"]}
+
+        # Récupérer les emails uniques des utilisateurs inscrits à l'événement
+        users = (
+            session.query(User)
+            .join(UserEvent, User.id == UserEvent.user_id)
+            .filter(UserEvent.event_id == event_id)
+            .all()
+        )
+        emails = sorted({(u.email or "").strip() for u in users if (u.email or "").strip()})
+        subject = f"Vos photos de {event.name} sont disponibles"
+        link = f"{SITE_BASE_URL}/galerie"
+        text_body = (
+            f"Bonjour,\n\n"
+            f"Les photos de l'événement '{event.name}' sont désormais disponibles.\n"
+            f"Accédez à vos photos sur notre site : {link}\n\n"
+            f"À bientôt,\nL'équipe Photo"
+        )
+        html_body = (
+            f"<p>Bonjour,</p>"
+            f"<p>Les photos de l'événement '<strong>{event.name}</strong>' sont désormais disponibles.</p>"
+            f"<p><a href=\"{link}\" target=\"_blank\" rel=\"noopener\">Accéder à mes photos</a></p>"
+            f"<p>À bientôt,<br/>L'équipe Photo</p>"
+        )
+        return _send_bulk_email_smtp(list(emails), subject, text_body, html_body)
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
 # Configuration CORS
 app.add_middleware(
     CORSMiddleware,
@@ -3324,6 +3463,53 @@ async def get_photographer_events(
     
     events = db.query(Event).filter(Event.photographer_id == current_user.id).all()
     return events
+
+
+@app.post("/api/photographer/events/{event_id}/notify-photos-available")
+async def notify_event_photos_available(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks | None = None,
+):
+    """Photographe: notifier par email tous les utilisateurs inscrits que les photos sont disponibles.
+
+    - Vérifie que l'événement appartient au photographe courant
+    - Déclenche l'envoi des emails (en tâche de fond si possible)
+    - Retourne immédiatement un récapitulatif (ou dry-run si SMTP non configuré)
+    """
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent notifier leurs événements")
+
+    event = db.query(Event).filter(Event.id == event_id, Event.photographer_id == current_user.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    # Récupérer rapidement le nombre de destinataires pour feedback immédiat
+    users = (
+        db.query(User)
+        .join(UserEvent, User.id == UserEvent.user_id)
+        .filter(UserEvent.event_id == event_id)
+        .all()
+    )
+    recipients = sorted({(u.email or "").strip() for u in users if (u.email or "").strip()})
+
+    # Si possible, exécuter en arrière-plan pour ne pas bloquer l'UI
+    if background_tasks is not None:
+        background_tasks.add_task(_notify_event_users_photos_available, event_id)
+        cfg = _get_smtp_config()
+        return {
+            "scheduled": True,
+            "dry_run": cfg.get("dry_run", True),
+            "recipients_count": len(recipients),
+            "message": "Notification programmée",
+        }
+
+    # Fallback synchrone
+    result = _notify_event_users_photos_available(event_id)
+    result["scheduled"] = False
+    result["recipients_count"] = len(recipients)
+    return result
 
 @app.get("/api/photographer/events/{event_id}/photos")
 async def get_event_photos(
