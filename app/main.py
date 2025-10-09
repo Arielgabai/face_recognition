@@ -3470,7 +3470,7 @@ async def notify_event_photos_available(
     event_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks | None = None,
+    background_tasks: BackgroundTasks = None,
 ):
     """Photographe: notifier par email tous les utilisateurs inscrits que les photos sont disponibles.
 
