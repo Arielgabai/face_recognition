@@ -32,7 +32,7 @@ import re
 load_dotenv()
 
 from database import get_db, create_tables
-from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher
+from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher, LocalIngestionLog
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
@@ -3217,6 +3217,13 @@ async def admin_list_local_watchers(
     rows = q.all()
     out = []
     for lw, ev in rows:
+        # Compute stats per watcher
+        try:
+            total = db.query(LocalIngestionLog).filter(LocalIngestionLog.watcher_id == lw.id).count()
+            ing = db.query(LocalIngestionLog).filter(LocalIngestionLog.watcher_id == lw.id, LocalIngestionLog.status == 'ingested').count()
+            fail = db.query(LocalIngestionLog).filter(LocalIngestionLog.watcher_id == lw.id, LocalIngestionLog.status == 'failed').count()
+        except Exception:
+            total = 0; ing = 0; fail = 0
         out.append({
             "id": int(lw.id),
             "event_id": int(lw.event_id),
@@ -3226,6 +3233,7 @@ async def admin_list_local_watchers(
             "move_uploaded_dir": lw.move_uploaded_dir,
             "created_at": lw.created_at.isoformat() if lw.created_at else None,
             "updated_at": lw.updated_at.isoformat() if lw.updated_at else None,
+            "stats": {"ingested": int(ing), "failed": int(fail), "total": int(total)},
         })
     return out
 
@@ -3638,6 +3646,7 @@ async def get_event_photos(
 async def upload_photos_to_event(
     event_id: int,
     files: List[UploadFile] = File(...),
+    watcher_id: int | None = Body(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = None,
@@ -3684,6 +3693,18 @@ async def upload_photos_to_event(
                 photo = face_recognizer.process_and_save_photo_for_event(
                     temp_path, file.filename, current_user.id, event_id, db
                 )
+                # Log local ingestion if watcher is provided
+                try:
+                    if watcher_id is not None:
+                        db.add(LocalIngestionLog(
+                            watcher_id=watcher_id,
+                            event_id=event_id,
+                            file_name=file.filename,
+                            status="ingested",
+                        ))
+                        db.commit()
+                except Exception:
+                    pass
                 uploaded_photos.append({
                     "filename": photo.filename,
                     "original_filename": photo.original_filename
@@ -3691,6 +3712,18 @@ async def upload_photos_to_event(
             except Exception as e:
                 # Ne pas interrompre tout le batch si une photo échoue (ex: FK sur user inexistant)
                 print(f"[UploadEvent] Erreur traitement {file.filename}: {e}")
+                try:
+                    if watcher_id is not None:
+                        db.add(LocalIngestionLog(
+                            watcher_id=watcher_id,
+                            event_id=event_id,
+                            file_name=file.filename,
+                            status="failed",
+                            error=str(e),
+                        ))
+                        db.commit()
+                except Exception:
+                    pass
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)

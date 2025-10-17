@@ -568,8 +568,10 @@
                     <label for="lwMoveDir">Dossier de déplacement</label>
                     <input id="lwMoveDir" placeholder="ex: C:\\ftp_drop\\uploaded" />
                 </div>
-                <div style="margin-top:10px;">
+                <div style="margin-top:10px; display:flex; gap:12px; align-items:center;">
                     <button onclick="lwCreate()" class="success">Créer</button>
+                    <button onclick="lwList()">Rafraîchir</button>
+                    <span style="color:#666;">Astuce: utilisez aussi WATCHER_ID dans le script local pour relier les stats.</span>
                 </div>
             </div>
 
@@ -1278,6 +1280,7 @@
                         <div>
                             <div><strong>${w.label || '(sans label)'}</strong> — Événement ${w.event_name || w.event_id}</div>
                             <div style="color:#666;">Chemin: ${w.expected_path || '—'} • Move to: ${w.move_uploaded_dir || '—'}</div>
+                            <div style="color:#333; margin-top:4px;">Progression: ${(w.stats?.ingested ?? 0)}/${(w.stats?.total ?? 0)} (échecs: ${(w.stats?.failed ?? 0)})</div>
                         </div>
                         <div>
                             <button onclick="lwDelete(${w.id})" class="danger">Supprimer</button>

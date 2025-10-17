@@ -63,12 +63,13 @@ class UploadClient:
             raise RuntimeError("Login ok but access_token missing in response")
         self.session.headers.update({"Authorization": f"Bearer {tok}"})
 
-    def upload_file_to_event(self, event_id: int, file_path: str) -> None:
+    def upload_file_to_event(self, event_id: int, file_path: str, watcher_id: Optional[int] = None) -> None:
         self.login_if_needed()
         url = f"{self.base_url}/api/photographer/events/{event_id}/upload-photos"
         with open(file_path, "rb") as f:
             files = [("files", (os.path.basename(file_path), f, "application/octet-stream"))]
-            resp = self.session.post(url, files=files, timeout=300)
+            data = {"watcher_id": watcher_id} if watcher_id is not None else None
+            resp = self.session.post(url, files=files, data=data, timeout=300)
         if not resp.ok:
             raise RuntimeError(f"Upload failed {os.path.basename(file_path)}: {resp.status_code} {resp.text}")
 
@@ -108,7 +109,7 @@ class Manifest:
             pass
 
 
-def process_path(client: UploadClient, event_id: int, path: str, manifest: Manifest, move_uploaded_dir: Optional[str]) -> None:
+def process_path(client: UploadClient, event_id: int, path: str, manifest: Manifest, move_uploaded_dir: Optional[str], watcher_id: Optional[int]) -> None:
     if not os.path.isfile(path) or not is_image_file(path):
         return
     abspath = os.path.abspath(path)
@@ -116,7 +117,7 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
         return
     if not file_is_stable(abspath):
         return
-    client.upload_file_to_event(event_id, abspath)
+    client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
     manifest.add(abspath)
     if move_uploaded_dir:
         try:
@@ -135,18 +136,19 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
 
 
 class CreatedHandler(FileSystemEventHandler):
-    def __init__(self, client: UploadClient, event_id: int, manifest: Manifest, move_uploaded_dir: Optional[str]) -> None:
+    def __init__(self, client: UploadClient, event_id: int, manifest: Manifest, move_uploaded_dir: Optional[str], watcher_id: Optional[int]) -> None:
         super().__init__()
         self.client = client
         self.event_id = event_id
         self.manifest = manifest
         self.move_uploaded_dir = move_uploaded_dir
+        self.watcher_id = watcher_id
 
     def on_created(self, event):  # type: ignore[no-untyped-def]
         if getattr(event, "is_directory", False):
             return
         try:
-            process_path(self.client, self.event_id, event.src_path, self.manifest, self.move_uploaded_dir)
+            process_path(self.client, self.event_id, event.src_path, self.manifest, self.move_uploaded_dir, self.watcher_id)
         except Exception:
             pass
 
@@ -154,18 +156,18 @@ class CreatedHandler(FileSystemEventHandler):
         if getattr(event, "is_directory", False):
             return
         try:
-            process_path(self.client, self.event_id, event.src_path, self.manifest, self.move_uploaded_dir)
+            process_path(self.client, self.event_id, event.src_path, self.manifest, self.move_uploaded_dir, self.watcher_id)
         except Exception:
             pass
 
 
-def scan_existing_once(watch_dir: str, client: UploadClient, event_id: int, manifest: Manifest, move_uploaded_dir: Optional[str]) -> None:
+def scan_existing_once(watch_dir: str, client: UploadClient, event_id: int, manifest: Manifest, move_uploaded_dir: Optional[str], watcher_id: Optional[int]) -> None:
     try:
         for name in os.listdir(watch_dir):
             p = os.path.join(watch_dir, name)
             if os.path.isfile(p) and is_image_file(p):
                 try:
-                    process_path(client, event_id, p, manifest, move_uploaded_dir)
+                    process_path(client, event_id, p, manifest, move_uploaded_dir, watcher_id)
                 except Exception:
                     pass
     except Exception:
@@ -180,6 +182,8 @@ def main() -> None:
     token = os.environ.get("PHOTOGRAPHER_TOKEN", "").strip() or None
     watch_dir = os.environ.get("WATCH_DIR", "").strip()
     move_uploaded_dir = os.environ.get("MOVE_UPLOADED_DIR", "").strip() or None
+    watcher_id_env = os.environ.get("WATCHER_ID", "").strip()
+    watcher_id = int(watcher_id_env) if watcher_id_env.isdigit() else None
 
     if not event_id_str.isdigit():
         raise SystemExit("EVENT_ID is required and must be an integer")
@@ -192,10 +196,10 @@ def main() -> None:
     manifest = Manifest(os.path.join(watch_dir, ".uploaded_manifest.json"))
 
     # Upload existing files once
-    scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir)
+    scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir, watcher_id)
 
     if WATCHDOG_AVAILABLE:
-        handler = CreatedHandler(client, event_id, manifest, move_uploaded_dir)
+        handler = CreatedHandler(client, event_id, manifest, move_uploaded_dir, watcher_id)
         observer = Observer()
         observer.schedule(handler, watch_dir, recursive=False)
         observer.start()
@@ -222,7 +226,7 @@ def main() -> None:
                         current.add(p)
                         if p not in seen_snapshot:
                             try:
-                                process_path(client, event_id, p, manifest, move_uploaded_dir)
+                                process_path(client, event_id, p, manifest, move_uploaded_dir, watcher_id)
                             except Exception:
                                 pass
                 seen_snapshot = current

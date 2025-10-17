@@ -148,3 +148,18 @@ class LocalWatcher(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     event = relationship("Event")
+
+
+class LocalIngestionLog(Base):
+    __tablename__ = "local_ingestion_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    watcher_id = Column(Integer, ForeignKey("local_watchers.id"), nullable=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    file_name = Column(String)
+    status = Column(String, default="ingested")  # ingested|failed
+    error = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    watcher = relationship("LocalWatcher")
+    event = relationship("Event")
