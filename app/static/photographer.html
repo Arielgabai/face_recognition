@@ -365,6 +365,9 @@
                 <h3>Informations Événement</h3>
                 <div class="card">
                     <div id="eventInfo">Chargement...</div>
+                    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="success" onclick="notifyPhotosAvailable()">📧 Notifier que les photos sont disponibles</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -778,6 +781,31 @@
                 }
             } catch (error) {
                 showAlert('Erreur lors de la suppression', 'error');
+            }
+        }
+
+        async function notifyPhotosAvailable() {
+            if (!currentEvent) {
+                showAlert('Veuillez sélectionner un événement', 'error');
+                return;
+            }
+            if (!confirm('Envoyer un email à tous les utilisateurs inscrits ?')) return;
+            try {
+                const resp = await fetch(`/api/photographer/events/${currentEvent.id}/notify-photos-available`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    showAlert(data.detail || 'Erreur lors de la notification', 'error');
+                    return;
+                }
+                const msg = data.dry_run
+                  ? `Notification simulée (DRY_RUN). Destinataires potentiels: ${data.recipients_count}`
+                  : `Notification envoyée (programmée: ${data.scheduled ? 'oui' : 'non'}). Destinataires: ${data.recipients_count}`;
+                showAlert(msg, 'success');
+            } catch (e) {
+                showAlert('Erreur réseau lors de la notification', 'error');
             }
         }
 
