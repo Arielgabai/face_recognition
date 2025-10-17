@@ -134,3 +134,17 @@ class GoogleDriveIngestionLog(Base):
     error = Column(String, nullable=True)
 
     integration = relationship("GoogleDriveIntegration")
+
+
+class LocalWatcher(Base):
+    __tablename__ = "local_watchers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    label = Column(String, nullable=True)
+    expected_path = Column(String, nullable=True)
+    move_uploaded_dir = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    event = relationship("Event")

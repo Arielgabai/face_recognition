@@ -31,7 +31,7 @@ import re
 load_dotenv()
 
 from database import get_db, create_tables
-from models import User, Photo, FaceMatch, UserType, Event, UserEvent
+from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
@@ -3063,6 +3063,90 @@ async def admin_get_events(
     
     events = db.query(Event).all()
     return events
+
+@app.get("/api/admin/local-watchers")
+async def admin_list_local_watchers(
+    event_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    q = db.query(LocalWatcher, Event).join(Event, Event.id == LocalWatcher.event_id)
+    if event_id is not None:
+        q = q.filter(LocalWatcher.event_id == int(event_id))
+    rows = q.all()
+    out = []
+    for lw, ev in rows:
+        out.append({
+            "id": int(lw.id),
+            "event_id": int(lw.event_id),
+            "event_name": getattr(ev, 'name', None),
+            "label": lw.label,
+            "expected_path": lw.expected_path,
+            "move_uploaded_dir": lw.move_uploaded_dir,
+            "created_at": lw.created_at.isoformat() if lw.created_at else None,
+            "updated_at": lw.updated_at.isoformat() if lw.updated_at else None,
+        })
+    return out
+
+@app.post("/api/admin/local-watchers")
+async def admin_create_local_watcher(
+    event_id: int = Body(..., embed=True),
+    label: str | None = Body(None, embed=True),
+    expected_path: str | None = Body(None, embed=True),
+    move_uploaded_dir: str | None = Body(None, embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    ev = db.query(Event).filter(Event.id == event_id).first()
+    if not ev:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    lw = LocalWatcher(event_id=event_id, label=label, expected_path=expected_path, move_uploaded_dir=move_uploaded_dir)
+    db.add(lw)
+    db.commit()
+    db.refresh(lw)
+    return {"id": int(lw.id)}
+
+@app.put("/api/admin/local-watchers/{watcher_id}")
+async def admin_update_local_watcher(
+    watcher_id: int,
+    label: str | None = Body(None, embed=True),
+    expected_path: str | None = Body(None, embed=True),
+    move_uploaded_dir: str | None = Body(None, embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    lw = db.query(LocalWatcher).filter(LocalWatcher.id == watcher_id).first()
+    if not lw:
+        raise HTTPException(status_code=404, detail="Watcher non trouvé")
+    if label is not None:
+        lw.label = label
+    if expected_path is not None:
+        lw.expected_path = expected_path
+    if move_uploaded_dir is not None:
+        lw.move_uploaded_dir = move_uploaded_dir
+    db.commit()
+    return {"updated": True}
+
+@app.delete("/api/admin/local-watchers/{watcher_id}")
+async def admin_delete_local_watcher(
+    watcher_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    lw = db.query(LocalWatcher).filter(LocalWatcher.id == watcher_id).first()
+    if not lw:
+        raise HTTPException(status_code=404, detail="Watcher non trouvé")
+    db.delete(lw)
+    db.commit()
+    return {"deleted": True}
 
 @app.post("/api/admin/backfill-photographer-id")
 async def admin_backfill_photographer_id(

@@ -291,6 +291,7 @@
                 <button class="tab" onclick="showTab('rekog-settings')">⚙️ Réglages Rekognition</button>
                 <button class="tab" onclick="showTab('face-groups')">🧩 Groupes de visages</button>
                 <button class="tab" onclick="showTab('gdrive')">📂 Google Drive</button>
+                <button class="tab" onclick="showTab('localwatch')">🖥️ Local Watchers</button>
             </div>
 
             <div id="photographers" class="tab-content active">
@@ -549,6 +550,30 @@
                     <pre id="snapshotContainer" style="white-space:pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px; max-height:300px; overflow:auto;">—</pre>
                 </div>
             </div>
+        </div>
+
+        <div id="localwatch" class="tab-content" style="display:none;">
+            <h3>🖥️ Local Watchers (FTP drop)</h3>
+            <div class="card">
+                <div class="form-grid">
+                    <label for="lwEvent">Événement</label>
+                    <select id="lwEvent"><option value="">Sélectionner</option></select>
+
+                    <label for="lwLabel">Label</label>
+                    <input id="lwLabel" placeholder="ex: PC Studio 1" />
+
+                    <label for="lwExpectedPath">Chemin local attendu</label>
+                    <input id="lwExpectedPath" placeholder="ex: C:\\ftp_drop" />
+
+                    <label for="lwMoveDir">Dossier de déplacement</label>
+                    <input id="lwMoveDir" placeholder="ex: C:\\ftp_drop\\uploaded" />
+                </div>
+                <div style="margin-top:10px;">
+                    <button onclick="lwCreate()" class="success">Créer</button>
+                </div>
+            </div>
+
+            <div id="lwList" class="list"></div>
         </div>
 
         <div id="alert"></div>
@@ -1226,6 +1251,78 @@
             } catch (e) {
                 const container = document.getElementById('gdriveIntegrations');
                 container.textContent = 'Erreur lors du chargement';
+            }
+        }
+
+        async function lwLoadEvents() {
+            try {
+                const resp = await fetch('/api/admin/events', { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await resp.json();
+                const sel = document.getElementById('lwEvent');
+                sel.innerHTML = '<option value="">Sélectionner</option>' +
+                  (Array.isArray(data) ? data.map(ev => `<option value="${ev.id}">${ev.name} (ID:${ev.id})</option>`).join('') : '');
+            } catch (e) { /* noop */ }
+        }
+
+        async function lwList() {
+            try {
+                const evId = Number(document.getElementById('lwEvent').value) || null;
+                const url = evId ? `/api/admin/local-watchers?event_id=${evId}` : '/api/admin/local-watchers';
+                const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await resp.json();
+                const box = document.getElementById('lwList');
+                if (!resp.ok) { box.textContent = data.detail || 'Erreur'; return; }
+                if (!Array.isArray(data) || data.length === 0) { box.textContent = 'Aucun watcher'; return; }
+                box.innerHTML = data.map(w => `
+                    <div class="item-row">
+                        <div>
+                            <div><strong>${w.label || '(sans label)'}</strong> — Événement ${w.event_name || w.event_id}</div>
+                            <div style="color:#666;">Chemin: ${w.expected_path || '—'} • Move to: ${w.move_uploaded_dir || '—'}</div>
+                        </div>
+                        <div>
+                            <button onclick="lwDelete(${w.id})" class="danger">Supprimer</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) { document.getElementById('lwList').textContent = 'Erreur'; }
+        }
+
+        async function lwCreate() {
+            try {
+                const eventId = Number(document.getElementById('lwEvent').value);
+                const label = document.getElementById('lwLabel').value.trim() || null;
+                const expectedPath = document.getElementById('lwExpectedPath').value.trim() || null;
+                const moveDir = document.getElementById('lwMoveDir').value.trim() || null;
+                if (!eventId) { showAlert('Sélectionnez un événement', 'error'); return; }
+                const resp = await fetch('/api/admin/local-watchers', {
+                    method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event_id: eventId, label, expected_path: expectedPath, move_uploaded_dir: moveDir })
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) { showAlert(data.detail || 'Erreur création watcher', 'error'); return; }
+                showAlert('Watcher créé', 'success');
+                lwList();
+            } catch (e) { showAlert('Erreur création watcher', 'error'); }
+        }
+
+        async function lwDelete(id) {
+            if (!confirm('Supprimer ce watcher ?')) return;
+            try {
+                const resp = await fetch(`/api/admin/local-watchers/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) { showAlert(data.detail || 'Erreur suppression watcher', 'error'); return; }
+                showAlert('Watcher supprimé', 'success');
+                lwList();
+            } catch (e) { showAlert('Erreur suppression watcher', 'error'); }
+        }
+
+        // Hook tab switch
+        const _origShowTab = showTab;
+        showTab = function(id) {
+            _origShowTab(id);
+            if (id === 'localwatch') {
+                lwLoadEvents();
+                lwList();
             }
         }
 
