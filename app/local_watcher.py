@@ -196,52 +196,115 @@ def main() -> None:
     move_uploaded_dir = os.environ.get("MOVE_UPLOADED_DIR", "").strip() or None
     watcher_id_env = os.environ.get("WATCHER_ID", "").strip()
     watcher_id = int(watcher_id_env) if watcher_id_env.isdigit() else None
+    machine_label = os.environ.get("MACHINE_LABEL", "").strip() or None
 
+    client = UploadClient(base_url=base_url, username=username, password=password, token=token)
+
+    # Agent mode: if MACHINE_LABEL present, poll server to get watchers
+    if machine_label:
+        print(f"[agent] machine_label={machine_label}")
+        try:
+            client.login_if_needed()
+        except Exception as e:
+            print(f"[agent] login failed: {e}")
+            raise SystemExit(1)
+
+        active: dict[int, dict] = {}
+        observers: dict[int, Observer] = {}
+        manifests: dict[int, Manifest] = {}
+        try:
+            while True:
+                try:
+                    # Fetch watchers for this machine
+                    resp = client.session.get(f"{base_url}/api/admin/local-watchers", params={"machine_label": machine_label}, timeout=30)
+                    ws = resp.json() if resp.ok else []
+                except Exception:
+                    ws = []
+                ids = set()
+                for w in (ws or []):
+                    wid = int(w.get("id"))
+                    ids.add(wid)
+                    listen = bool(w.get("listening"))
+                    wdir = w.get("expected_path") or ""
+                    move_dir = w.get("move_uploaded_dir") or None
+                    ev_id = int(w.get("event_id"))
+                    if not wdir or not os.path.isdir(wdir):
+                        # update last_error
+                        try:
+                            client.session.put(f"{base_url}/api/admin/local-watchers/{wid}", json={"listening": False}, timeout=15)
+                        except Exception:
+                            pass
+                        print(f"[agent] skip watcher {wid}: path not found {wdir}")
+                        # stop if running
+                        if wid in observers:
+                            try:
+                                observers[wid].stop(); observers[wid].join(); del observers[wid]
+                            except Exception:
+                                pass
+                        continue
+                    if not listen:
+                        # stop if running
+                        if wid in observers:
+                            try:
+                                observers[wid].stop(); observers[wid].join(); del observers[wid]
+                                print(f"[agent] stopped watcher {wid}")
+                            except Exception:
+                                pass
+                        continue
+                    # ensure running
+                    if wid not in observers:
+                        man = Manifest(os.path.join(wdir, ".uploaded_manifest.json"))
+                        manifests[wid] = man
+                        # initial scan
+                        scan_existing_once(wdir, client, ev_id, man, move_dir, wid)
+                        if WATCHDOG_AVAILABLE:
+                            handler = CreatedHandler(client, ev_id, man, move_dir, wid)
+                            obs = Observer(); obs.schedule(handler, wdir, recursive=False); obs.start()
+                            observers[wid] = obs
+                            print(f"[agent] started watcher {wid} on {wdir}")
+                        else:
+                            # fallback simple: rescan every loop via scan_existing_once
+                            pass
+                # stop removed watchers
+                for wid, obs in list(observers.items()):
+                    if wid not in ids:
+                        try:
+                            obs.stop(); obs.join(); del observers[wid]
+                            print(f"[agent] removed watcher {wid}")
+                        except Exception:
+                            pass
+                time.sleep(3)
+        except KeyboardInterrupt:
+            for obs in observers.values():
+                try:
+                    obs.stop(); obs.join()
+                except Exception:
+                    pass
+        return
+
+    # Single watcher mode (legacy)
     if not event_id_str.isdigit():
-        raise SystemExit("EVENT_ID is required and must be an integer")
+        raise SystemExit("EVENT_ID is required and must be an integer (or set MACHINE_LABEL for agent mode)")
     event_id = int(event_id_str)
     if not watch_dir or not os.path.isdir(watch_dir):
         raise SystemExit("WATCH_DIR must point to an existing directory")
 
-    client = UploadClient(base_url=base_url, username=username, password=password, token=token)
-
     manifest = Manifest(os.path.join(watch_dir, ".uploaded_manifest.json"))
-
-    # Upload existing files once
     scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir, watcher_id)
-
     if WATCHDOG_AVAILABLE:
         handler = CreatedHandler(client, event_id, manifest, move_uploaded_dir, watcher_id)
-        observer = Observer()
-        observer.schedule(handler, watch_dir, recursive=False)
-        observer.start()
+        observer = Observer(); observer.schedule(handler, watch_dir, recursive=False); observer.start()
         print(f"[start] watcher on {watch_dir}. Press Ctrl+C to quit.")
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            observer.stop()
-        observer.join()
+            observer.stop(); observer.join()
     else:
         print("[info] watchdog not installed; falling back to periodic scan.")
-        seen_snapshot: Set[str] = set()
         try:
             while True:
-                try:
-                    names = os.listdir(watch_dir)
-                except Exception:
-                    names = []
-                current = set()
-                for n in names:
-                    p = os.path.join(watch_dir, n)
-                    if os.path.isfile(p) and is_image_file(p):
-                        current.add(p)
-                        if p not in seen_snapshot:
-                            try:
-                                process_path(client, event_id, p, manifest, move_uploaded_dir, watcher_id)
-                            except Exception:
-                                print(f"[error] failed processing {p}")
-                seen_snapshot = current
+                scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir, watcher_id)
                 time.sleep(2)
         except KeyboardInterrupt:
             pass

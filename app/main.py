@@ -3206,6 +3206,7 @@ async def admin_get_events(
 @app.get("/api/admin/local-watchers")
 async def admin_list_local_watchers(
     event_id: int | None = None,
+    machine_label: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -3214,6 +3215,8 @@ async def admin_list_local_watchers(
     q = db.query(LocalWatcher, Event).join(Event, Event.id == LocalWatcher.event_id)
     if event_id is not None:
         q = q.filter(LocalWatcher.event_id == int(event_id))
+    if machine_label:
+        q = q.filter(LocalWatcher.machine_label == machine_label)
     rows = q.all()
     out = []
     for lw, ev in rows:
@@ -3229,8 +3232,12 @@ async def admin_list_local_watchers(
             "event_id": int(lw.event_id),
             "event_name": getattr(ev, 'name', None),
             "label": lw.label,
+            "machine_label": lw.machine_label,
             "expected_path": lw.expected_path,
             "move_uploaded_dir": lw.move_uploaded_dir,
+            "listening": bool(lw.listening),
+            "status": lw.status,
+            "last_error": lw.last_error,
             "created_at": lw.created_at.isoformat() if lw.created_at else None,
             "updated_at": lw.updated_at.isoformat() if lw.updated_at else None,
             "stats": {"ingested": int(ing), "failed": int(fail), "total": int(total)},
