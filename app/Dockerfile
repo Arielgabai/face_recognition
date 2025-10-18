@@ -32,11 +32,6 @@ RUN pip install --upgrade pip setuptools wheel && \
     pip install Pillow==10.0.1 && \
     pip install face-recognition-models==0.1.3
 
-# Injecter dlib déjà compilé (venant du build local)
-COPY dlib /usr/local/lib/python3.11/site-packages/dlib
-COPY dlib-20.0.0.dist-info /usr/local/lib/python3.11/site-packages/dlib-20.0.0.dist-info
-COPY _dlib_pybind11.cpython-311-x86_64-linux-gnu.so /usr/local/lib/python3.11/site-packages/
-
 # Installer face_recognition depuis GitHub master (avec patch pour compatibilité)
 RUN pip install --no-deps git+https://github.com/ageitgey/face_recognition.git@master
 
@@ -45,6 +40,17 @@ RUN pip install -r requirements.txt
 
 # Copier le code source de l'application
 COPY . .
+
+# Injecter dlib déjà compilé (si présent dans le repo)
+RUN if [ -d "./dlib" ]; then \
+      cp -r ./dlib /usr/local/lib/python3.11/site-packages/dlib ; \
+    fi && \
+    if [ -d "./dlib-20.0.0.dist-info" ]; then \
+      cp -r ./dlib-20.0.0.dist-info /usr/local/lib/python3.11/site-packages/dlib-20.0.0.dist-info ; \
+    fi && \
+    if [ -f "./_dlib_pybind11.cpython-311-x86_64-linux-gnu.so" ]; then \
+      cp ./_dlib_pybind11.cpython-311-x86_64-linux-gnu.so /usr/local/lib/python3.11/site-packages/ ; \
+    fi
 
 # Rester sur les pages statiques servies par FastAPI
 
