@@ -5,6 +5,7 @@ import threading
 from typing import Optional, Set
 
 import requests
+import mimetypes
 
 try:
     from watchdog.observers import Observer
@@ -67,11 +68,19 @@ class UploadClient:
         self.login_if_needed()
         url = f"{self.base_url}/api/photographer/events/{event_id}/upload-photos"
         with open(file_path, "rb") as f:
-            files = [("files", (os.path.basename(file_path), f, "application/octet-stream"))]
+            guessed, _ = mimetypes.guess_type(file_path)
+            content_type = guessed if (guessed and guessed.startswith("image/")) else "image/jpeg"
+            files = [("files", (os.path.basename(file_path), f, content_type))]
             data = {"watcher_id": watcher_id} if watcher_id is not None else None
+            print(f"[upload] -> {os.path.basename(file_path)} ct={content_type} watcher_id={watcher_id}")
             resp = self.session.post(url, files=files, data=data, timeout=300)
         if not resp.ok:
             raise RuntimeError(f"Upload failed {os.path.basename(file_path)}: {resp.status_code} {resp.text}")
+        try:
+            data = resp.json()
+            print(f"[upload] <- ok: {data}")
+        except Exception:
+            print(f"[upload] <- ok: status={resp.status_code}")
 
 
 class Manifest:
@@ -116,7 +125,9 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
     if manifest.contains(abspath):
         return
     if not file_is_stable(abspath):
+        print(f"[skip] not stable yet: {abspath}")
         return
+    print(f"[detected] {abspath}")
     client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
     manifest.add(abspath)
     if move_uploaded_dir:
@@ -130,9 +141,10 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
                 dest = f"{base}_{i}{ext}"
                 i += 1
             os.replace(abspath, dest)
+            print(f"[moved] {abspath} -> {dest}")
         except Exception:
             # keep file if move fails
-            pass
+            print(f"[warn] move failed for {abspath}")
 
 
 class CreatedHandler(FileSystemEventHandler):
@@ -203,7 +215,7 @@ def main() -> None:
         observer = Observer()
         observer.schedule(handler, watch_dir, recursive=False)
         observer.start()
-        print(f"Watcher started on {watch_dir}. Press Ctrl+C to quit.")
+        print(f"[start] watcher on {watch_dir}. Press Ctrl+C to quit.")
         try:
             while True:
                 time.sleep(1)
@@ -211,7 +223,7 @@ def main() -> None:
             observer.stop()
         observer.join()
     else:
-        print("watchdog not installed; falling back to periodic scan.")
+        print("[info] watchdog not installed; falling back to periodic scan.")
         seen_snapshot: Set[str] = set()
         try:
             while True:
@@ -228,7 +240,7 @@ def main() -> None:
                             try:
                                 process_path(client, event_id, p, manifest, move_uploaded_dir, watcher_id)
                             except Exception:
-                                pass
+                                print(f"[error] failed processing {p}")
                 seen_snapshot = current
                 time.sleep(2)
         except KeyboardInterrupt:

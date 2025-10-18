@@ -3243,6 +3243,7 @@ async def admin_create_local_watcher(
     label: str | None = Body(None, embed=True),
     expected_path: str | None = Body(None, embed=True),
     move_uploaded_dir: str | None = Body(None, embed=True),
+    machine_label: str | None = Body(None, embed=True),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -3251,7 +3252,7 @@ async def admin_create_local_watcher(
     ev = db.query(Event).filter(Event.id == event_id).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
-    lw = LocalWatcher(event_id=event_id, label=label, expected_path=expected_path, move_uploaded_dir=move_uploaded_dir)
+    lw = LocalWatcher(event_id=event_id, label=label, expected_path=expected_path, move_uploaded_dir=move_uploaded_dir, machine_label=machine_label, listening=True, status=None, last_error=None)
     db.add(lw)
     db.commit()
     db.refresh(lw)
@@ -3263,6 +3264,7 @@ async def admin_update_local_watcher(
     label: str | None = Body(None, embed=True),
     expected_path: str | None = Body(None, embed=True),
     move_uploaded_dir: str | None = Body(None, embed=True),
+    listening: bool | None = Body(None, embed=True),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -3277,6 +3279,8 @@ async def admin_update_local_watcher(
         lw.expected_path = expected_path
     if move_uploaded_dir is not None:
         lw.move_uploaded_dir = move_uploaded_dir
+    if listening is not None:
+        lw.listening = bool(listening)
     db.commit()
     return {"updated": True}
 

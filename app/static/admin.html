@@ -562,6 +562,9 @@
                     <label for="lwLabel">Label</label>
                     <input id="lwLabel" placeholder="ex: PC Studio 1" />
 
+                    <label for="lwMachine">Nom de la machine</label>
+                    <input id="lwMachine" placeholder="ex: ADMIN-PC" />
+
                     <label for="lwExpectedPath">Chemin local attendu</label>
                     <input id="lwExpectedPath" placeholder="ex: C:\\ftp_drop" />
 
@@ -1279,10 +1282,11 @@
                     <div class="item-row">
                         <div>
                             <div><strong>${w.label || '(sans label)'}</strong> — Événement ${w.event_name || w.event_id}</div>
-                            <div style="color:#666;">Chemin: ${w.expected_path || '—'} • Move to: ${w.move_uploaded_dir || '—'}</div>
+                            <div style="color:#666;">Machine: ${w.machine_label || '—'} • Chemin: ${w.expected_path || '—'} • Move: ${w.move_uploaded_dir || '—'}</div>
                             <div style="color:#333; margin-top:4px;">Progression: ${(w.stats?.ingested ?? 0)}/${(w.stats?.total ?? 0)} (échecs: ${(w.stats?.failed ?? 0)})</div>
                         </div>
                         <div>
+                            <button onclick="lwToggle(${w.id}, ${w.listening ? 'false' : 'true'})" class="${(w.listening ? 'danger' : 'success')}">${w.listening ? 'Pause' : 'Reprendre'}</button>
                             <button onclick="lwDelete(${w.id})" class="danger">Supprimer</button>
                         </div>
                     </div>
@@ -1294,12 +1298,13 @@
             try {
                 const eventId = Number(document.getElementById('lwEvent').value);
                 const label = document.getElementById('lwLabel').value.trim() || null;
+                const machine = document.getElementById('lwMachine').value.trim() || null;
                 const expectedPath = document.getElementById('lwExpectedPath').value.trim() || null;
                 const moveDir = document.getElementById('lwMoveDir').value.trim() || null;
                 if (!eventId) { showAlert('Sélectionnez un événement', 'error'); return; }
                 const resp = await fetch('/api/admin/local-watchers', {
                     method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ event_id: eventId, label, expected_path: expectedPath, move_uploaded_dir: moveDir })
+                    body: JSON.stringify({ event_id: eventId, label, machine_label: machine, expected_path: expectedPath, move_uploaded_dir: moveDir })
                 });
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) { showAlert(data.detail || 'Erreur création watcher', 'error'); return; }
@@ -1317,6 +1322,19 @@
                 showAlert('Watcher supprimé', 'success');
                 lwList();
             } catch (e) { showAlert('Erreur suppression watcher', 'error'); }
+        }
+
+        async function lwToggle(id, listen) {
+            try {
+                const resp = await fetch(`/api/admin/local-watchers/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ listening: !!listen })
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) { showAlert(data.detail || 'Erreur mise à jour', 'error'); return; }
+                lwList();
+            } catch (e) { showAlert('Erreur mise à jour', 'error'); }
         }
 
         // Hook tab switch

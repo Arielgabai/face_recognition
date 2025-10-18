@@ -12,9 +12,11 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Options de pool pour éviter les connexions mortes et élargir la capacité
-POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10") or "10")
-MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20") or "20")
-POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "3600") or "3600")
+# Ajustables via variables d'environnement côté déploiement (Render)
+POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20") or "20")
+MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "50") or "50")
+POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800") or "1800")
+POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "60") or "60")
 
 # Pour SQLite, désactiver check_same_thread pour éviter les erreurs en environnement async/multithread
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -25,6 +27,7 @@ engine = create_engine(
     pool_size=POOL_SIZE,
     max_overflow=MAX_OVERFLOW,
     pool_recycle=POOL_RECYCLE,
+    pool_timeout=POOL_TIMEOUT,
     connect_args=connect_args,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

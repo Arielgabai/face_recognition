@@ -144,6 +144,10 @@ class LocalWatcher(Base):
     label = Column(String, nullable=True)
     expected_path = Column(String, nullable=True)
     move_uploaded_dir = Column(String, nullable=True)
+    machine_label = Column(String, nullable=True)
+    listening = Column(Boolean, nullable=False, default=True)
+    status = Column(String, nullable=True)
+    last_error = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
