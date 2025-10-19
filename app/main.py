@@ -60,6 +60,26 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)
 templates = Jinja2Templates(directory="templates")
 
+def _ensure_local_watchers_schema(db: Session) -> None:
+    try:
+        db.execute(_text("""
+            CREATE TABLE IF NOT EXISTS local_watchers (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER NOT NULL REFERENCES events(id),
+                label TEXT NULL,
+                expected_path TEXT NULL,
+                move_uploaded_dir TEXT NULL,
+                machine_label TEXT NULL,
+                listening BOOLEAN NOT NULL DEFAULT TRUE,
+                status TEXT NULL,
+                last_error TEXT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ
+            )
+        """))
+    except Exception:
+        pass
+
 # Base URL du site pour les liens envoyés par email
 SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "https://facerecognition-d0r8.onrender.com")
 
@@ -3212,6 +3232,10 @@ async def admin_list_local_watchers(
 ):
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    try:
+        _ensure_local_watchers_schema(db)
+    except Exception:
+        pass
     q = db.query(LocalWatcher, Event).join(Event, Event.id == LocalWatcher.event_id)
     if event_id is not None:
         q = q.filter(LocalWatcher.event_id == int(event_id))
@@ -3256,6 +3280,10 @@ async def admin_create_local_watcher(
 ):
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    try:
+        _ensure_local_watchers_schema(db)
+    except Exception:
+        pass
     ev = db.query(Event).filter(Event.id == event_id).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
@@ -3277,6 +3305,10 @@ async def admin_update_local_watcher(
 ):
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent accéder à cette route")
+    try:
+        _ensure_local_watchers_schema(db)
+    except Exception:
+        pass
     lw = db.query(LocalWatcher).filter(LocalWatcher.id == watcher_id).first()
     if not lw:
         raise HTTPException(status_code=404, detail="Watcher non trouvé")
