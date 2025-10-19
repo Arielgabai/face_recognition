@@ -3706,18 +3706,22 @@ async def upload_photos_to_event(
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = None,
 ):
-    """Upload de photos pour un événement spécifique (batch-friendly)."""
-    if current_user.user_type != UserType.PHOTOGRAPHER:
-        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent uploader des photos")
-    
-    # V+�rifier que l'+�v+�nement appartient au photographe
-    event = db.query(Event).filter(
-        Event.id == event_id,
-        Event.photographer_id == current_user.id
-    ).first()
-    
+    """Upload de photos pour un événement spécifique (batch-friendly).
+
+    Autorisations:
+    - Photographe propriétaire de l'événement
+    - Admin: upload au nom du photographe de l'événement
+    """
+    if current_user.user_type not in (UserType.PHOTOGRAPHER, UserType.ADMIN):
+        raise HTTPException(status_code=403, detail="Accès réservé")
+
+    # Récupérer l'événement; si photographe, vérifier la propriété
+    event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    if current_user.user_type == UserType.PHOTOGRAPHER and event.photographer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Vous n'êtes pas propriétaire de cet événement")
+    effective_photographer_id = current_user.id if current_user.user_type == UserType.PHOTOGRAPHER else int(event.photographer_id)
     
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
@@ -3746,7 +3750,7 @@ async def upload_photos_to_event(
             try:
                 # Traiter la photo avec reconnaissance faciale pour l'événement spécifique
                 photo = face_recognizer.process_and_save_photo_for_event(
-                    temp_path, file.filename, current_user.id, event_id, db
+                    temp_path, file.filename, effective_photographer_id, event_id, db
                 )
                 # Log local ingestion if watcher is provided
                 try:
