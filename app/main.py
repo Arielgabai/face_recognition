@@ -3340,8 +3340,14 @@ async def admin_delete_local_watcher(
     lw = db.query(LocalWatcher).filter(LocalWatcher.id == watcher_id).first()
     if not lw:
         raise HTTPException(status_code=404, detail="Watcher non trouvé")
-    db.delete(lw)
-    db.commit()
+    try:
+        # Supprimer les logs liés pour éviter les violations de FK
+        db.query(LocalIngestionLog).filter(LocalIngestionLog.watcher_id == watcher_id).delete()
+        db.delete(lw)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur suppression watcher: {e}")
     return {"deleted": True}
 
 @app.post("/api/admin/backfill-photographer-id")
