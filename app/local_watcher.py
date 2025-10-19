@@ -214,10 +214,24 @@ def main() -> None:
         manifests: dict[int, Manifest] = {}
         try:
             while True:
+                # Fetch watchers for this machine (with 401 re-login)
+                ws = []
                 try:
-                    # Fetch watchers for this machine
                     resp = client.session.get(f"{base_url}/api/admin/local-watchers", params={"machine_label": machine_label}, timeout=30)
-                    ws = resp.json() if resp.ok else []
+                    if resp.status_code == 401:
+                        # token expired or missing → re-login then retry once
+                        try:
+                            # drop old header and login again
+                            try:
+                                client.session.headers.pop("Authorization", None)
+                            except Exception:
+                                pass
+                            client.login_if_needed()
+                            resp = client.session.get(f"{base_url}/api/admin/local-watchers", params={"machine_label": machine_label}, timeout=30)
+                        except Exception:
+                            pass
+                    if resp.ok:
+                        ws = resp.json()
                 except Exception:
                     ws = []
                 ids = set()
