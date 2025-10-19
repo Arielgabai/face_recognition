@@ -77,6 +77,12 @@ def _ensure_local_watchers_schema(db: Session) -> None:
                 updated_at TIMESTAMPTZ
             )
         """))
+        # Idempotent add columns (for existing deployments)
+        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS machine_label TEXT"))
+        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS listening BOOLEAN NOT NULL DEFAULT TRUE"))
+        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS status TEXT"))
+        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS last_error TEXT"))
+        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ"))
     except Exception:
         pass
 
