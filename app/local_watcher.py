@@ -277,8 +277,12 @@ def main() -> None:
                             observers[wid] = obs
                             print(f"[agent] started watcher {wid} on {wdir}")
                         else:
-                            # fallback simple: rescan every loop via scan_existing_once
-                            pass
+                            print(f"[agent] fallback scan mode for watcher {wid} on {wdir}")
+                    # In fallback (no watchdog), rescan every loop for active watchers
+                    if not WATCHDOG_AVAILABLE:
+                        man = manifests.get(wid) or Manifest(os.path.join(wdir, ".uploaded_manifest.json"))
+                        manifests[wid] = man
+                        scan_existing_once(wdir, client, ev_id, man, move_dir, wid)
                 # stop removed watchers
                 for wid, obs in list(observers.items()):
                     if wid not in ids:
