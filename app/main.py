@@ -3731,7 +3731,7 @@ async def upload_photos_to_event(
     # Traquer l'action d'upload par événement (pour l'affichage des coûts)
     from aws_metrics import aws_metrics
     with aws_metrics.action_context(f"upload_event:{event_id}"):
-        # Préparer une fois la collection pour le batch (purge conditionnelle + index users)
+        # Aligner la logique sur l'async: préparation de la collection avant traitement
         try:
             if hasattr(face_recognizer, 'prepare_event_for_batch'):
                 face_recognizer.prepare_event_for_batch(event_id, db)
@@ -3799,6 +3799,7 @@ async def upload_photos_to_event(
     # Lancer un rematch via selfies pour refléter 'Vos photos' après upload
     try:
         if background_tasks:
+            # Aligner avec async: petit rematch après upload pour refléter "Vos photos"
             background_tasks.add_task(_rematch_event_via_selfies, event_id)
     except Exception:
         pass
