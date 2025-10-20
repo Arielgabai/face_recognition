@@ -1000,10 +1000,25 @@ class AwsFaceRecognizer:
         # IMPORTANT: indexer aussi les selfies des users de l'événement avant de matcher
         self.ensure_event_users_indexed(event_id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+        # Seuil commun aligné sur la logique selfie->photos
+        try:
+            threshold = int(getattr(self, 'search_threshold', 0) or 0)
+            if threshold <= 0:
+                import os as _os
+                threshold = int(_os.environ.get('AWS_MATCH_MIN_SIMILARITY', '80') or '80')
+        except Exception:
+            threshold = 80
         user_best: Dict[int, int] = {}
+        _debug = False
+        try:
+            import os as _os
+            _debug = (_os.environ.get('AWS_MATCH_DEBUG', '0') == '1')
+        except Exception:
+            _debug = False
         # 1) Recherche collection classique
         if not face_ids:
-            resp = self._search_faces_by_image_retry(self._collection_id(event_id), image_bytes, face_match_threshold=0)
+            # Utiliser un seuil explicite pour éviter les faux positifs
+            resp = self._search_faces_by_image_retry(self._collection_id(event_id), image_bytes, face_match_threshold=int(threshold))
             if resp:
                 for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
                     ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
@@ -1014,6 +1029,8 @@ class AwsFaceRecognizer:
                     except Exception:
                         continue
                     sim = int(float(fm.get("Similarity", 0.0)))
+                    if sim < int(threshold):
+                        continue
                     prev = user_best.get(uid)
                     if prev is None or sim > prev:
                         user_best[uid] = sim
@@ -1034,9 +1051,16 @@ class AwsFaceRecognizer:
                         except Exception:
                             continue
                         sim = int(float(fm.get("Similarity", 0.0)))
+                        if sim < int(threshold):
+                            continue
                         prev = user_best.get(uid)
                         if prev is None or sim > prev:
                             user_best[uid] = sim
+        if _debug and user_best:
+            try:
+                print(f"[AWS-MATCH][photo->{photo.id}] candidates (top): {sorted(user_best.items(), key=lambda x: -x[1])[:5]} threshold={threshold}")
+            except Exception:
+                pass
         # 2) CompareFaces fallback pour garantir l’upsert même si la collection rate
         if not user_best:
             from sqlalchemy import or_ as _or
@@ -1090,6 +1114,11 @@ class AwsFaceRecognizer:
                         db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
                 except Exception:
                     db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+        if _debug:
+            try:
+                print(f"[AWS-MATCH][photo->{photo.id}] kept_user_ids={kept_user_ids}")
+            except Exception:
+                pass
         # Nettoyage: supprimer les FaceMatch non retenus pour cette photo
         try:
             from sqlalchemy import not_ as _not
