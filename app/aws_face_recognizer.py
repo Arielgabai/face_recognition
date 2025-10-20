@@ -1077,8 +1077,10 @@ class AwsFaceRecognizer:
                     if prev is None or best_sim > prev:
                         user_best[int(u.id)] = best_sim
         allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
+        kept_user_ids: Dict[int, int] = {}
         for uid, score in user_best.items():
             if uid in allowed_user_ids:
+                kept_user_ids[uid] = int(score)
                 try:
                     existing = db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id, FaceMatch.user_id == uid).first()
                     if existing:
@@ -1088,6 +1090,18 @@ class AwsFaceRecognizer:
                         db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
                 except Exception:
                     db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+        # Nettoyage: supprimer les FaceMatch non retenus pour cette photo
+        try:
+            from sqlalchemy import not_ as _not
+            if kept_user_ids:
+                db.query(FaceMatch).filter(
+                    FaceMatch.photo_id == photo.id,
+                    _not(FaceMatch.user_id.in_(list(kept_user_ids.keys())))
+                ).delete(synchronize_session=False)
+            else:
+                db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete(synchronize_session=False)
+        except Exception:
+            pass
         # Réinitialiser la date d'expiration de toutes les photos de l'événement (compte à rebours commun)
         try:
             from datetime import datetime, timedelta

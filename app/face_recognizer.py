@@ -333,6 +333,20 @@ class FaceRecognizer:
                 confidence_score=match['confidence_score']
             )
             db.add(face_match)
+        # Nettoyage: ne conserver que les correspondances calculées pour cette photo
+        try:
+            matched_user_ids = {m['user_id'] for m in matches} if matches else set()
+            from sqlalchemy import not_ as _not
+            if matched_user_ids:
+                db.query(FaceMatch).filter(
+                    FaceMatch.photo_id == photo.id,
+                    _not(FaceMatch.user_id.in_(list(matched_user_ids)))
+                ).delete(synchronize_session=False)
+            else:
+                # Aucun match retenu: supprimer tous les FaceMatch de cette photo
+                db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete(synchronize_session=False)
+        except Exception:
+            pass
         
         # NOUVEAU: Si associée à un événement, réinitialiser la date d'expiration 
         # de TOUTES les photos de cet événement pour qu'elles expirent en même temps
