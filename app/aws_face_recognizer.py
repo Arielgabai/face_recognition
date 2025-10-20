@@ -1002,12 +1002,15 @@ class AwsFaceRecognizer:
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
         # Seuil commun aligné sur la logique selfie->photos
         try:
-            threshold = int(getattr(self, 'search_threshold', 0) or 0)
-            if threshold <= 0:
-                import os as _os
-                threshold = int(_os.environ.get('AWS_MATCH_MIN_SIMILARITY', '80') or '80')
+            import os as _os
+            env_thr = int(_os.environ.get('AWS_MATCH_MIN_SIMILARITY', '85') or '85')
         except Exception:
-            threshold = 80
+            env_thr = 85
+        try:
+            cfg_thr = int(round(float(getattr(self, 'search_threshold', 0) or 0)))
+        except Exception:
+            cfg_thr = 0
+        threshold = max(env_thr, cfg_thr)
         user_best: Dict[int, int] = {}
         _debug = False
         try:
@@ -1104,6 +1107,8 @@ class AwsFaceRecognizer:
         kept_user_ids: Dict[int, int] = {}
         for uid, score in user_best.items():
             if uid in allowed_user_ids:
+                if int(score) < int(threshold):
+                    continue
                 kept_user_ids[uid] = int(score)
                 try:
                     existing = db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id, FaceMatch.user_id == uid).first()
