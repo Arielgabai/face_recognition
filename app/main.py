@@ -3793,12 +3793,6 @@ async def upload_photos_to_event(
                 except Exception:
                     pass
     
-    # Aligner avec la version async: lancer un rematch immédiatement pour refléter correctement "Vos photos"
-    try:
-        _rematch_event_via_selfies(event_id)
-    except Exception:
-        pass
-
     # Après upload: inutile de relancer un matching global qui pourrait écraser l'existant.
     # Le process d'upload gère déjà l'indexation et le matching pour les nouvelles photos.
 
