@@ -556,6 +556,10 @@ class AwsFaceRecognizer:
                 )
             except ClientError as e:
                 code = e.response.get("Error", {}).get("Code", "")
+                msg = (e.response.get("Error", {}).get("Message") or "").lower()
+                # Silencieux si aucune face dans l'image
+                if code == "InvalidParameterException" and ("no faces" in msg or "there are no faces" in msg):
+                    return None
                 if "Throttl" in code or code in {"ProvisionedThroughputExceededException"}:
                     time.sleep(AWS_BACKOFF_BASE_SEC * (2 ** attempt))
                     last_exc = e
@@ -1118,7 +1122,18 @@ class AwsFaceRecognizer:
                     else:
                         db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
                 except Exception:
-                    db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+                    try:
+                        db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+                        db.commit()
+                    except Exception:
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
         if _debug:
             try:
                 print(f"[AWS-MATCH][photo->{photo.id}] kept_user_ids={kept_user_ids}")
@@ -1135,7 +1150,10 @@ class AwsFaceRecognizer:
             else:
                 db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete(synchronize_session=False)
         except Exception:
-            pass
+            try:
+                db.rollback()
+            except Exception:
+                pass
         # Réinitialiser la date d'expiration de toutes les photos de l'événement (compte à rebours commun)
         try:
             from datetime import datetime, timedelta

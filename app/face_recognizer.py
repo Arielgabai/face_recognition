@@ -325,14 +325,24 @@ class FaceRecognizer:
         # Traiter la reconnaissance faciale avec les données ORIGINALES (meilleure détection)
         matches = self.process_photo(original_data, db)
         
-        # Sauvegarder les correspondances
+        # Sauvegarder les correspondances (robuste)
         for match in matches:
-            face_match = FaceMatch(
-                photo_id=photo.id,
-                user_id=match['user_id'],
-                confidence_score=match['confidence_score']
-            )
-            db.add(face_match)
+            try:
+                face_match = FaceMatch(
+                    photo_id=photo.id,
+                    user_id=match['user_id'],
+                    confidence_score=match['confidence_score']
+                )
+                db.add(face_match)
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                try:
+                    db.add(FaceMatch(photo_id=photo.id, user_id=match['user_id'], confidence_score=match['confidence_score']))
+                except Exception:
+                    pass
         # Nettoyage: ne conserver que les correspondances calculées pour cette photo
         try:
             matched_user_ids = {m['user_id'] for m in matches} if matches else set()
@@ -343,10 +353,12 @@ class FaceRecognizer:
                     _not(FaceMatch.user_id.in_(list(matched_user_ids)))
                 ).delete(synchronize_session=False)
             else:
-                # Aucun match retenu: supprimer tous les FaceMatch de cette photo
                 db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete(synchronize_session=False)
         except Exception:
-            pass
+            try:
+                db.rollback()
+            except Exception:
+                pass
         
         # NOUVEAU: Si associée à un événement, réinitialiser la date d'expiration 
         # de TOUTES les photos de cet événement pour qu'elles expirent en même temps
