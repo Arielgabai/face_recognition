@@ -542,10 +542,7 @@ def _gdrive_listener_loop(integ_id: int):
                             _db.commit()
                         except Exception:
                             pass
-                    try:
-                        _rematch_event_via_selfies(int(_integ.event_id))
-                    except Exception:
-                        pass
+                    # (désactivé) Pas de rematch automatique après batch GDrive
                 _integ.last_poll_at = datetime.now(timezone.utc)
                 _db.commit()
             finally:
@@ -937,10 +934,7 @@ async def gdrive_sync_now(
                             except Exception:
                                 pass
                         job["processed"] += 1
-                    try:
-                        _rematch_event_via_selfies(int(_integ.event_id))
-                    except Exception:
-                        pass
+                    # (désactivé) Pas de rematch automatique après sous-batch GDrive
             finally:
                 try:
                     _db.close()
@@ -2319,12 +2313,7 @@ async def upload_multiple_photos(
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
     
-    # Lancer un rematch via selfies pour refléter 'Vos photos' après upload
-    try:
-        if ev is not None and background_tasks:
-            background_tasks.add_task(_rematch_event_via_selfies, ev.id)
-    except Exception:
-        pass
+    # (désactivé) Rematch post-upload supprimé pour réduire les coûts AWS Rekognition
 
     return {
         "message": f"{len(uploaded_photos)} photos upload+�es et trait+�es avec succ+�s",
@@ -2358,13 +2347,7 @@ async def upload_photo(
         photo = face_recognizer.process_and_save_photo(
             temp_path, file.filename, current_user.id, db
         )
-        # Planifier un rematch via selfies pour l'événement de la photo
-        try:
-            ev_id = getattr(photo, 'event_id', None)
-            if ev_id and background_tasks:
-                background_tasks.add_task(_rematch_event_via_selfies, int(ev_id))
-        except Exception:
-            pass
+        # (désactivé) Rematch post-upload supprimé pour réduire les coûts AWS Rekognition
         
         return {
             "message": "Photo upload+�e et trait+�e avec succ+�s",
@@ -2483,12 +2466,6 @@ def _rematch_event_via_selfies(event_id: int):
     try:
         session = next(get_db())
         try:
-            # S'assurer que toutes les photos de l'événement sont indexées dans la collection
-            try:
-                if hasattr(face_recognizer, 'ensure_event_photos_indexed'):
-                    face_recognizer.ensure_event_photos_indexed(event_id, session)
-            except Exception as _e:
-                print(f"[AdminRematch] ensure_event_photos_indexed failed: {_e}")
             # Charger tous les users de l'événement (avec ou sans selfie) puis filtrer
             from sqlalchemy import or_ as _or
             user_events = session.query(UserEvent).filter(UserEvent.event_id == event_id).all()
@@ -3796,13 +3773,7 @@ async def upload_photos_to_event(
     # Après upload: inutile de relancer un matching global qui pourrait écraser l'existant.
     # Le process d'upload gère déjà l'indexation et le matching pour les nouvelles photos.
 
-    # Lancer un rematch via selfies pour refléter 'Vos photos' après upload
-    try:
-        if background_tasks:
-            # Aligner avec async: petit rematch après upload pour refléter "Vos photos"
-            background_tasks.add_task(_rematch_event_via_selfies, event_id)
-    except Exception:
-        pass
+    # (désactivé) Rematch post-upload supprimé pour réduire les coûts AWS Rekognition
 
     return {
         "message": f"{len(uploaded_photos)} photos uploadées et traitées avec succès",
@@ -3899,12 +3870,7 @@ async def upload_photos_to_event_async(
                                     pass
                             job["processed"] += 1
                         # Optionnel: lancer un rematch léger après chaque sous-batch
-                        try:
-                            _bg = getattr(job, "background_tasks", None)
-                            # Ici on déclenche directement en local
-                            _rematch_event_via_selfies(event_id_local)
-                        except Exception:
-                            pass
+                        # (désactivé) Pas de rematch automatique à la fin du sous-batch async
             finally:
                 try:
                     _db.close()
