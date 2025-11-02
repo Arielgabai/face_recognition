@@ -1,0 +1,6 @@
+{
+  "AutoScalingConfigurationName": "findme-autoscaling-v2",
+  "MaxConcurrency": 60,
+  "MinSize": 1,
+  "MaxSize": 5
+}

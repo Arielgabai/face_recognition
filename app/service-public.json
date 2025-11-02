@@ -1,0 +1,13 @@
+{
+  "ServiceName": "apprunner-public-test",
+  "SourceConfiguration": {
+    "ImageRepository": {
+      "ImageIdentifier": "public.ecr.aws/nginx/nginx:latest",
+      "ImageRepositoryType": "ECR_PUBLIC",
+      "ImageConfiguration": { "Port": "80" }
+    },
+    "AutoDeploymentsEnabled": false
+  },
+  "InstanceConfiguration": { "Cpu": "1 vCPU", "Memory": "2 GB" },
+  "HealthCheckConfiguration": { "Protocol": "TCP", "Interval": 10, "Timeout": 10, "HealthyThreshold": 1, "UnhealthyThreshold": 5 }
+}

@@ -61,7 +61,7 @@ RUN mkdir -p static/uploads/selfies static/uploads/photos
 RUN chmod +x start.sh
 
 # Exposer le port (Render utilisera la variable PORT)
-EXPOSE 8000
+EXPOSE 10000
 
 # Utiliser le script de démarrage pour Render
 CMD ["./start.sh"]

@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 echo "🚀 Démarrage de l'application Face Recognition sur Render..."
 
 # Test des importations Python
@@ -42,9 +43,10 @@ fi
 
 # Vérifier les variables d'environnement
 echo "🔧 Configuration :"
-echo "  - PORT: ${PORT:-8000}"
+echo "  - PORT: ${PORT:-10000}"
 echo "  - DATABASE_URL: ${DATABASE_URL:-sqlite:///./face_recognition.db}"
 
+
 # Démarrer l'application
-echo "🌐 Démarrage du serveur sur le port ${PORT:-8000}..."
-exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info 
+echo "🌐 Démarrage du serveur sur le port ${PORT:-10000}..."
+exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000} --log-level info 

@@ -1,0 +1,18 @@
+{
+  "Version": "2008-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAppRunnerRolePull",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::801541932532:role/AppRunnerECRAccessRole"
+      },
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:DescribeImages"
+      ]
+    }
+  ]
+}
