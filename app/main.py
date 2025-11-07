@@ -2221,7 +2221,18 @@ async def upload_selfie(
                     try:
                         from aws_metrics import aws_metrics as _m
                         with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
-                            # Ne pas pré-indexer systématiquement (déjà fait à l'upload). Recherche selfie directe.
+                            # S'assurer que les photos de l'événement sont indexées (une seule fois)
+                            # Nécessaire pour que SearchFaces trouve les photos
+                            try:
+                                if hasattr(face_recognizer, 'ensure_event_photos_indexed_once'):
+                                    face_recognizer.ensure_event_photos_indexed_once(ue.event_id, session)
+                                elif hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                                    # Fallback si la méthode optimisée n'existe pas encore
+                                    if ue.event_id not in getattr(face_recognizer, '_photos_indexed_events', set()):
+                                        face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
+                            except Exception as _e:
+                                print(f"[SelfieUpdate] ensure photos indexed failed: {_e}")
+                            
                             if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
                                 total += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
                             else:

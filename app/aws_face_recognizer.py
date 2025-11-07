@@ -269,6 +269,66 @@ class AwsFaceRecognizer:
                 pass
         # Ne pas mémoriser pour autoriser la réindexation quand de nouvelles photos arrivent
 
+    def ensure_event_photos_indexed_once(self, event_id: int, db: Session):
+        """Indexe les photos de l'événement seulement si elles ne sont pas déjà dans la collection.
+        
+        Vérifie d'abord si des faces photo:{photo_id} existent dans la collection.
+        Si oui, skip. Sinon, indexe toutes les photos.
+        Cache le résultat en mémoire pour éviter les vérifications répétées.
+        """
+        # Vérifier le cache mémoire d'abord
+        if event_id in self._photos_indexed_events:
+            return
+        
+        self.ensure_collection(event_id)
+        coll_id = self._collection_id(event_id)
+        
+        # Vérifier si des faces photo: existent déjà dans la collection
+        try:
+            aws_metrics.inc('ListFaces')
+            resp = self.client.list_faces(CollectionId=coll_id, MaxResults=100)
+            faces = resp.get('Faces', [])
+            
+            # Si on trouve au moins une face photo:, on considère que l'événement est indexé
+            has_photo_faces = any(
+                (f.get('ExternalImageId') or '').startswith('photo:')
+                for f in faces
+            )
+            
+            if has_photo_faces:
+                # Marquer comme indexé et skip
+                self._photos_indexed_events.add(event_id)
+                print(f"[AWS] Event {event_id} photos already indexed in collection, skipping")
+                return
+        except ClientError as e:
+            print(f"[AWS] Could not check collection for event {event_id}: {e}")
+            # En cas d'erreur, on continue avec l'indexation par sécurité
+        
+        # Pas de faces photo trouvées, indexer toutes les photos
+        print(f"[AWS] Indexing photos for event {event_id} (first time)")
+        photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+        for p in photos:
+            photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
+            if not photo_input:
+                continue
+            img_bytes = self._prepare_image_bytes(photo_input)
+            if not img_bytes:
+                continue
+            self._index_photo_faces_and_get_ids(event_id, p.id, img_bytes)
+            # Libérer mémoire intermédiaire
+            try:
+                del photo_input, img_bytes
+            except Exception:
+                pass
+            try:
+                _gc.collect()
+            except Exception:
+                pass
+        
+        # Marquer comme indexé
+        self._photos_indexed_events.add(event_id)
+        print(f"[AWS] Event {event_id} photos indexed successfully")
+
     def ensure_event_users_indexed(self, event_id: int, db: Session):
         """
         Indexe les selfies des utilisateurs d'un événement une seule fois par processus.
