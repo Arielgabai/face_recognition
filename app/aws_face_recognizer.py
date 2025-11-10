@@ -820,10 +820,13 @@ class AwsFaceRecognizer:
             if prev is None or similarity > prev:
                 matched_photo_ids[pid] = similarity
 
+        print(f"[SELFIE-MATCH][user->{user.id}] matched_photo_ids={matched_photo_ids}, threshold={self.search_threshold}")
+
         # Créer des FaceMatch en bulk
         from sqlalchemy import and_ as _and
 
         allowed_ids = set(pid for (pid,) in db.query(Photo.id).filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys()))).all())
+        print(f"[SELFIE-MATCH][user->{user.id}] allowed_ids={allowed_ids}")
         count_matches = 0
         for pid in allowed_ids:
             score = int(matched_photo_ids.get(pid) or 0)
@@ -1067,9 +1070,9 @@ class AwsFaceRecognizer:
         # Seuil commun aligné sur la logique selfie->photos
         try:
             import os as _os
-            env_thr = int(_os.environ.get('AWS_MATCH_MIN_SIMILARITY', '85') or '85')
+            env_thr = int(_os.environ.get('AWS_MATCH_MIN_SIMILARITY', '70') or '70')
         except Exception:
-            env_thr = 85
+            env_thr = 70
         try:
             cfg_thr = int(round(float(getattr(self, 'search_threshold', 0) or 0)))
         except Exception:
@@ -1169,9 +1172,11 @@ class AwsFaceRecognizer:
                         user_best[int(u.id)] = best_sim
         allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
         kept_user_ids: Dict[int, int] = {}
+        print(f"[AWS-MATCH][photo->{photo.id}] user_best={user_best}, threshold={threshold}, allowed={allowed_user_ids}")
         for uid, score in user_best.items():
             if uid in allowed_user_ids:
                 if int(score) < int(threshold):
+                    print(f"[AWS-MATCH][photo->{photo.id}] SKIP user {uid}, score {score} < threshold {threshold}")
                     continue
                 kept_user_ids[uid] = int(score)
                 try:
