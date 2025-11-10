@@ -57,6 +57,17 @@ class AwsFaceRecognizer:
     def __init__(self):
         self.client = boto3.client("rekognition", region_name=AWS_REGION)
         print(f"[FaceRecognition][AWS] Using region: {AWS_REGION}")
+        # Debug credentials
+        try:
+            session = boto3.Session()
+            credentials = session.get_credentials()
+            if credentials:
+                print(f"[FaceRecognition][AWS] Credentials source: {credentials.method}")
+                print(f"[FaceRecognition][AWS] Access key: {credentials.access_key[:8]}...")
+            else:
+                print(f"[FaceRecognition][AWS] ⚠️  No credentials found!")
+        except Exception as e:
+            print(f"[FaceRecognition][AWS] ⚠️  Error checking credentials: {e}")
         # Cache simple en mémoire pour éviter de réindexer à chaque photo
         self._indexed_events: Set[int] = set()
         self._photos_indexed_events: Set[int] = set()
