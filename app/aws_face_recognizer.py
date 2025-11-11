@@ -771,6 +771,7 @@ class AwsFaceRecognizer:
         2) SearchFacesByImage(selfie) sur la collection de l'événement
         3) Filtrer les matches "photo:{photo_id}" et créer FaceMatch en bulk
         """
+        print(f"[MATCH-SELFIE] START user_id={user.id} event_id={event_id}")
         self.ensure_collection(event_id)
         try:
             self._maybe_purge_collection(event_id, db)
@@ -1041,6 +1042,7 @@ class AwsFaceRecognizer:
 
     def process_and_save_photo_for_event(self, photo_path: str, original_filename: str,
                                          photographer_id: int, event_id: int, db: Session) -> Photo:
+        print(f"[PROCESS-PHOTO] START file={original_filename} event_id={event_id}")
         with open(photo_path, 'rb') as f:
             original_data = f.read()
         optimization_result = PhotoOptimizer.optimize_image(
