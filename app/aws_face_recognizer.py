@@ -287,8 +287,10 @@ class AwsFaceRecognizer:
         Si oui, skip. Sinon, indexe toutes les photos.
         Cache le résultat en mémoire pour éviter les vérifications répétées.
         """
+        print(f"[ENSURE-PHOTOS] Checking event {event_id}")
         # Vérifier le cache mémoire d'abord
         if event_id in self._photos_indexed_events:
+            print(f"[ENSURE-PHOTOS] Event {event_id} already in memory cache, skipping")
             return
         
         self.ensure_collection(event_id)
@@ -833,6 +835,9 @@ class AwsFaceRecognizer:
                 matched_photo_ids[pid] = similarity
 
         print(f"[SELFIE-MATCH][user->{user.id}] matched_photo_ids={matched_photo_ids}, threshold={self.search_threshold}")
+        
+        if not matched_photo_ids:
+            print(f"⚠️  [SELFIE-MATCH][user->{user.id}] NO MATCHES FOUND! Photos may not be indexed in collection.")
 
         # Créer des FaceMatch en bulk
         from sqlalchemy import and_ as _and
@@ -857,8 +862,13 @@ class AwsFaceRecognizer:
                 count_matches += 1
 
         # Fallback robuste: si aucun match par collection, utiliser CompareFaces(Selfie vs crops) sur toutes les photos de l'événement
+        # DÉSACTIVÉ par défaut: trop coûteux (peut faire 100+ DetectFaces + 200+ CompareFaces = 0,40$+)
+        # Peut être activé via variable d'environnement ENABLE_COMPARE_FACES_FALLBACK=1
+        # Si count_matches == 0, c'est probablement qu'il n'y a vraiment aucun match
+        enable_fallback = os.environ.get("ENABLE_COMPARE_FACES_FALLBACK", "0") == "1"
         try:
-            if count_matches == 0:
+            if enable_fallback and count_matches == 0:
+                print(f"⚠️  [FALLBACK-COMPAREFACES] Starting expensive fallback for user {user.id} event {event_id}")
                 # Préparer selfie crop
                 selfie_bytes: Optional[bytes] = None
                 if getattr(user, "selfie_data", None):
@@ -1144,8 +1154,12 @@ class AwsFaceRecognizer:
                 print(f"[AWS-MATCH][photo->{photo.id}] candidates (top): {sorted(user_best.items(), key=lambda x: -x[1])[:5]} threshold={threshold}")
             except Exception:
                 pass
-        # 2) CompareFaces fallback pour garantir l’upsert même si la collection rate
-        if not user_best:
+        # 2) CompareFaces fallback pour garantir l'upsert même si la collection rate
+        # DÉSACTIVÉ par défaut: trop coûteux (peut faire N×M CompareFaces où N=users, M=visages)
+        # Peut être activé via variable d'environnement ENABLE_COMPARE_FACES_FALLBACK=1
+        enable_fallback = os.environ.get("ENABLE_COMPARE_FACES_FALLBACK", "0") == "1"
+        if enable_fallback and not user_best:
+            print(f"⚠️  [FALLBACK-COMPAREFACES] Starting expensive fallback for photo {photo.id}")
             from sqlalchemy import or_ as _or
             ues = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
             candidate_users = db.query(User).filter(
