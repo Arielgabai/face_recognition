@@ -2,7 +2,8 @@ import os
 import time
 import json
 import threading
-from typing import Optional, Set
+import hashlib
+from typing import Optional, Set, Dict
 
 import requests
 import mimetypes
@@ -36,6 +37,19 @@ def file_is_stable(path: str, stable_seconds: int = DEFAULT_STABLE_SECONDS) -> b
     except Exception:
         return False
     return size1 == size2
+
+
+def compute_file_hash(path: str) -> Optional[str]:
+    """Calcule le hash SHA256 du contenu du fichier."""
+    try:
+        sha256 = hashlib.sha256()
+        with open(path, "rb") as f:
+            # Lire par blocs pour économiser la mémoire sur gros fichiers
+            for block in iter(lambda: f.read(4096), b""):
+                sha256.update(block)
+        return sha256.hexdigest()
+    except Exception:
+        return None
 
 
 class UploadClient:
@@ -87,24 +101,35 @@ class Manifest:
     def __init__(self, manifest_path: str) -> None:
         self.path = manifest_path
         self._lock = threading.Lock()
-        self._seen: Set[str] = set()
+        # Stocke hash -> {path, timestamp}
+        self._seen: Dict[str, Dict[str, str]] = {}
         self._load()
 
     def _load(self) -> None:
         try:
             with open(self.path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._seen = set(map(str, data.get("uploaded", [])))
+            # Support ancien format (list de paths) et nouveau format (dict de hashs)
+            uploaded = data.get("uploaded", [])
+            if isinstance(uploaded, list):
+                # Ancien format: convertir en dict vide (va se reconstruire au fur et à mesure)
+                self._seen = {}
+            else:
+                # Nouveau format: dict {hash: {path, timestamp}}
+                self._seen = uploaded
         except Exception:
-            self._seen = set()
+            self._seen = {}
 
-    def add(self, absolute_path: str) -> None:
+    def add(self, file_hash: str, absolute_path: str) -> None:
         with self._lock:
-            self._seen.add(os.path.abspath(absolute_path))
+            self._seen[file_hash] = {
+                "path": absolute_path,
+                "timestamp": time.time(),
+            }
             self._save()
 
-    def contains(self, absolute_path: str) -> bool:
-        return os.path.abspath(absolute_path) in self._seen
+    def contains(self, file_hash: str) -> bool:
+        return file_hash in self._seen
 
     def _save(self) -> None:
         try:
@@ -113,7 +138,7 @@ class Manifest:
             pass
         try:
             with open(self.path, "w", encoding="utf-8") as f:
-                json.dump({"uploaded": sorted(self._seen)}, f, ensure_ascii=False, indent=2)
+                json.dump({"uploaded": self._seen}, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
@@ -122,14 +147,26 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
     if not os.path.isfile(path) or not is_image_file(path):
         return
     abspath = os.path.abspath(path)
-    if manifest.contains(abspath):
-        return
+    
+    # Vérifier la stabilité du fichier avant de calculer le hash
     if not file_is_stable(abspath):
         print(f"[skip] not stable yet: {abspath}")
         return
-    print(f"[detected] {abspath}")
+    
+    # Calculer le hash du contenu
+    file_hash = compute_file_hash(abspath)
+    if not file_hash:
+        print(f"[skip] cannot compute hash: {abspath}")
+        return
+    
+    # Vérifier si ce contenu a déjà été uploadé
+    if manifest.contains(file_hash):
+        print(f"[skip] already uploaded (hash={file_hash[:8]}...): {abspath}")
+        return
+    
+    print(f"[detected] {abspath} (hash={file_hash[:8]}...)")
     client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
-    manifest.add(abspath)
+    manifest.add(file_hash, abspath)
     if move_uploaded_dir:
         try:
             os.makedirs(move_uploaded_dir, exist_ok=True)
