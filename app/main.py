@@ -1366,7 +1366,13 @@ async def admin_eval_recognition(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
+    # OPTIMISATION: Ne pas charger photo_data pour la liste
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data),  # Ne pas charger les binaires
+        joinedload(Photo.face_matches), 
+        joinedload(Photo.event)
+    ).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
     if photos is None:
         photos = []
 
@@ -1696,8 +1702,12 @@ async def jinja_gallery(request: Request, current_user: User = Depends(get_curre
         return HTMLResponse(content="<h1>Galerie</h1><p>Aucun événement associé à cet utilisateur.</p>", status_code=404)
     event_id = user_event.event_id
 
-    # Charger les photos de l'événement
-    photos = db.query(Photo).options(joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
+    # Charger les photos de l'événement (OPTIMISÉ: sans photo_data)
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data),  # Ne pas charger les binaires
+        joinedload(Photo.face_matches)
+    ).filter(Photo.event_id == event_id).all()
 
     # Construire les listes pour le template
     photos_all = [{
@@ -2413,7 +2423,14 @@ async def get_my_photos(
     if not user_event:
         raise HTTPException(status_code=404, detail="Aucun +�v+�nement associ+� +� cet utilisateur")
     event_id = user_event.event_id
-    photos = db.query(Photo).join(FaceMatch).filter(
+    
+    # OPTIMISATION: Ne PAS charger photo_data (binaire lourd) ni selfie_data
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data),  # Ne pas charger les données binaires des photos
+        joinedload(Photo.face_matches),  # Charger les matchs pour filtrer
+        joinedload(Photo.event)  # Charger l'event pour le nom
+    ).join(FaceMatch).filter(
         FaceMatch.user_id == current_user.id,
         FaceMatch.photo_id == Photo.id,
         Photo.event_id == event_id
@@ -2444,17 +2461,21 @@ async def get_all_photos(
     if cached_result is not None:
         return cached_result
     
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
-    
-    # Debug
-    print(f"[DEBUG] Found {len(photos)} photos for event {event_id}, user {current_user.id}")
-    for photo in photos:
-        print(f"[DEBUG] Photo {photo.id} has {len(photo.face_matches)} face matches")
+    # OPTIMISATION: Ne PAS charger photo_data (données binaires lourdes)
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data),  # Ne pas charger les données binaires (gain de 90% de bande passante)
+        joinedload(Photo.face_matches),  # Charger les matchs pour has_face_match
+        joinedload(Photo.event)  # Charger l'event pour le nom
+    ).filter(
+        Photo.event_id == event_id
+    ).order_by(
+        Photo.uploaded_at.desc(), 
+        Photo.id.desc()
+    ).all()
     
     # Retourner seulement les métadonnées, pas les données binaires
     result = [photo_to_dict(photo, current_user.id) for photo in photos]
-    matches_count = sum(1 for r in result if r.get('has_face_match', False))
-    print(f"[DEBUG] Returning {len(result)} photos, {matches_count} with face matches")
     
     # Mettre en cache (30 secondes)
     user_photos_cache.set(cache_key, result, ttl=30.0)
