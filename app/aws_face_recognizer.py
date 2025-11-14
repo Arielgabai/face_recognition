@@ -79,6 +79,9 @@ class AwsFaceRecognizer:
         self._photos_indexed_events: Set[int] = set()
         # Cache FaceId par (event_id, user_id) pour accélérer les recherches
         self._user_faceid_cache: Dict[Tuple[int, int], str] = {}
+        # Locks pour thread-safety des caches
+        self._indexed_events_lock = threading.Lock()
+        self._photos_indexed_events_lock = threading.Lock()
         # Seuil Rekognition (0-100) configurable à chaud
         try:
             self.search_threshold: float = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", str(AWS_SEARCH_THRESHOLD)) or AWS_SEARCH_THRESHOLD)
@@ -294,13 +297,18 @@ class AwsFaceRecognizer:
         Vérifie d'abord si des faces photo:{photo_id} existent dans la collection.
         Si oui, skip. Sinon, indexe toutes les photos.
         Cache le résultat en mémoire pour éviter les vérifications répétées.
+        Thread-safe avec lock pour éviter les race conditions en parallèle.
         """
         print(f"[ENSURE-PHOTOS] Checking event {event_id}")
-        # Vérifier le cache mémoire d'abord
-        if event_id in self._photos_indexed_events:
-            print(f"[ENSURE-PHOTOS] Event {event_id} already in memory cache, skipping")
-            return
+        # Lock thread-safe pour éviter que plusieurs workers indexent en même temps
+        with self._photos_indexed_events_lock:
+            if event_id in self._photos_indexed_events:
+                print(f"[ENSURE-PHOTOS] Event {event_id} already in memory cache, skipping")
+                return
+            # Marquer IMMÉDIATEMENT pour éviter que d'autres threads entrent
+            self._photos_indexed_events.add(event_id)
         
+        # Sortir du lock pour faire le vrai travail
         self.ensure_collection(event_id)
         coll_id = self._collection_id(event_id)
         
@@ -317,8 +325,6 @@ class AwsFaceRecognizer:
             )
             
             if has_photo_faces:
-                # Marquer comme indexé et skip
-                self._photos_indexed_events.add(event_id)
                 print(f"[AWS] Event {event_id} photos already indexed in collection, skipping")
                 return
         except ClientError as e:
@@ -346,17 +352,24 @@ class AwsFaceRecognizer:
             except Exception:
                 pass
         
-        # Marquer comme indexé
-        self._photos_indexed_events.add(event_id)
         print(f"[AWS] Event {event_id} photos indexed successfully")
 
     def ensure_event_users_indexed(self, event_id: int, db: Session):
         """
         Indexe les selfies des utilisateurs d'un événement une seule fois par processus.
         Évite les appels IndexFaces répétés lors du traitement de chaque photo.
+        Thread-safe avec lock pour éviter les race conditions en parallèle.
         """
-        if event_id in self._indexed_events:
-            return
+        # Lock thread-safe pour éviter que plusieurs workers indexent en même temps
+        with self._indexed_events_lock:
+            if event_id in self._indexed_events:
+                print(f"[AWS] Event {event_id} users already indexed (cached)")
+                return
+            # Marquer IMMÉDIATEMENT pour éviter que d'autres threads entrent
+            self._indexed_events.add(event_id)
+        
+        # Sortir du lock pour faire le vrai travail (permet aux autres d'attendre proprement)
+        print(f"[AWS] Indexing users for event {event_id}...")
         from sqlalchemy import or_  # local import
         user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
         user_ids = [ue.user_id for ue in user_events]
@@ -365,6 +378,7 @@ class AwsFaceRecognizer:
             User.id.in_(user_ids),
             or_(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
         ).all()
+        print(f"[AWS] Indexing {len(users_with_selfies)} users for event {event_id}")
         for u in users_with_selfies:
             self.index_user_selfie(event_id, u)
 
@@ -415,8 +429,8 @@ class AwsFaceRecognizer:
                     break
         except ClientError:
             pass
-
-        self._indexed_events.add(event_id)
+        
+        print(f"[AWS] Event {event_id} users indexed successfully")
 
     def prepare_event_for_batch(self, event_id: int, db: Session) -> None:
         """Prépare une fois la collection pour un batch d'uploads: ensure + purge + index users."""

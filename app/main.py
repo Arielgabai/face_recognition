@@ -3778,10 +3778,28 @@ async def upload_photos_to_event(
             continue
         
         try:
+            # Lire le contenu du fichier pour calculer le hash
+            content = await file.read()
+            file_hash = hashlib.sha256(content).hexdigest()
+            
+            # Vérifier si déjà en queue (détection doublons du watcher dans les 5 dernières minutes)
+            cache_key = f"upload_hash:{event_id}:{file_hash}"
+            from response_cache import user_cache
+            if user_cache.get(cache_key) is not None:
+                print(f"[Upload] Duplicate detected (hash={file_hash[:8]}...), skipping: {file.filename}")
+                failed_uploads.append({
+                    "filename": file.filename,
+                    "error": "Duplicate photo detected (already uploaded recently)"
+                })
+                continue
+            
+            # Marquer comme uploadé (cache 5 minutes pour éviter les doublons du watcher)
+            user_cache.set(cache_key, True, ttl=300.0)
+            
             # Sauvegarder temporairement le fichier
             temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
             with open(temp_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+                buffer.write(content)
             
             # Créer un job et l'enqueuer
             job_id = str(uuid.uuid4())
