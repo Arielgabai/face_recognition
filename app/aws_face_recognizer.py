@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 from typing import List, Dict, Optional, Set, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -41,6 +42,11 @@ AWS_TINY_FACE_AREA_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_TINY_FACE_A
 MAX_PARALLEL_PER_REQUEST = 2
 AWS_MAX_RETRIES = 2
 AWS_BACKOFF_BASE_SEC = 0.2
+
+# Semaphore global pour limiter la concurrence AWS Rekognition
+# Permet d'éviter de surcharger l'API AWS pendant les uploads massifs
+AWS_CONCURRENT_REQUESTS = int(os.environ.get("AWS_CONCURRENT_REQUESTS", "10"))
+_aws_semaphore = threading.Semaphore(AWS_CONCURRENT_REQUESTS)
 
 
 class AwsFaceRecognizer:
@@ -84,16 +90,17 @@ class AwsFaceRecognizer:
 
     def ensure_collection(self, event_id: int):
         coll_id = self._collection_id(event_id)
-        try:
-            aws_metrics.inc('DescribeCollection')
-            self.client.describe_collection(CollectionId=coll_id)
-        except ClientError as e:
-            code = e.response.get("Error", {}).get("Code")
-            if code == "ResourceNotFoundException":
-                aws_metrics.inc('CreateCollection')
-                self.client.create_collection(CollectionId=coll_id)
-            else:
-                raise
+        with _aws_semaphore:
+            try:
+                aws_metrics.inc('DescribeCollection')
+                self.client.describe_collection(CollectionId=coll_id)
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code")
+                if code == "ResourceNotFoundException":
+                    aws_metrics.inc('CreateCollection')
+                    self.client.create_collection(CollectionId=coll_id)
+                else:
+                    raise
 
     def index_user_selfie(self, event_id: int, user: User):
         coll_id = self._collection_id(event_id)
@@ -148,28 +155,29 @@ class AwsFaceRecognizer:
         best_crop = self._best_face_crop_or_image(prepared)
 
         # Indexer le selfie de l'utilisateur dans la collection de l'événement
-        try:
-            aws_metrics.inc('IndexFaces')
-            resp = self.client.index_faces(
-                CollectionId=coll_id,
-                Image={"Bytes": best_crop},
-                ExternalImageId=f"user:{user.id}",
-                DetectionAttributes=[],
-                QualityFilter="AUTO",
-                MaxFaces=1,
-            )
-            # Mémoriser le FaceId pour accélérer les prochaines recherches
+        with _aws_semaphore:
             try:
-                for rec in (resp.get('FaceRecords') or []):
-                    fid = ((rec or {}).get('Face') or {}).get('FaceId')
-                    if fid:
-                        self._user_faceid_cache[(event_id, user.id)] = fid
-                        break
-            except Exception:
+                aws_metrics.inc('IndexFaces')
+                resp = self.client.index_faces(
+                    CollectionId=coll_id,
+                    Image={"Bytes": best_crop},
+                    ExternalImageId=f"user:{user.id}",
+                    DetectionAttributes=[],
+                    QualityFilter="AUTO",
+                    MaxFaces=1,
+                )
+                # Mémoriser le FaceId pour accélérer les prochaines recherches
+                try:
+                    for rec in (resp.get('FaceRecords') or []):
+                        fid = ((rec or {}).get('Face') or {}).get('FaceId')
+                        if fid:
+                            self._user_faceid_cache[(event_id, user.id)] = fid
+                            break
+                except Exception:
+                    pass
+            except ClientError:
+                # Si l'indexation échoue, on laisse la fonction silencieuse pour ne pas interrompre le flux
                 pass
-        except ClientError:
-            # Si l'indexation échoue, on laisse la fonction silencieuse pour ne pas interrompre le flux
-            pass
 
     def _delete_photo_faces(self, event_id: int, photo_id: int):
         coll_id = self._collection_id(event_id)

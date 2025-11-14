@@ -287,6 +287,26 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 face_recognizer = get_face_recognizer()
 print(f"[FaceRecognition] Provider actif: {type(face_recognizer).__name__}")
 
+# Démarrage de la photo queue au démarrage de l'application
+@app.on_event("startup")
+def _startup_photo_queue():
+    try:
+        from photo_queue import get_photo_queue
+        queue = get_photo_queue()
+        print(f"[Startup] Photo queue initialized with {queue._queue.qsize()} pending jobs")
+    except Exception as e:
+        print(f"[Startup] Warning: could not initialize photo queue: {e}")
+
+# Arrêt propre de la queue
+@app.on_event("shutdown")
+def _shutdown_photo_queue():
+    try:
+        from photo_queue import shutdown_photo_queue
+        shutdown_photo_queue()
+        print("[Shutdown] Photo queue stopped")
+    except Exception as e:
+        print(f"[Shutdown] Warning: could not stop photo queue: {e}")
+
 # Auto-start des listeners GDrive au démarrage de l'application
 @app.on_event("startup")
 def _startup_autostart_gdrive_listeners():
@@ -2377,9 +2397,16 @@ async def get_my_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+�cup+�rer toutes les photos o+� l'utilisateur appara+�t pour son +�v+�nement principal"""
+    """R+�cup+�rer toutes les photos o+� l'utilisateur appara+�t pour son +�v+�nement principal (avec cache)"""
     if current_user.user_type != UserType.USER:
         raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+�der +� cette route")
+    
+    # Vérifier le cache
+    from response_cache import user_photos_cache
+    cache_key = f"my_photos:user:{current_user.id}"
+    cached_result = user_photos_cache.get(cache_key)
+    if cached_result is not None:
+        return cached_result
     
     # Trouver le premier +�v+�nement de l'utilisateur (+�v+�nement principal)
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
@@ -2391,6 +2418,9 @@ async def get_my_photos(
         FaceMatch.photo_id == Photo.id,
         Photo.event_id == event_id
     ).all()
+    
+    # Mettre en cache (30 secondes)
+    user_photos_cache.set(cache_key, photos, ttl=30.0)
     return photos
 
 @app.get("/api/all-photos", response_model=List[PhotoSchema])
@@ -2398,7 +2428,7 @@ async def get_all_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+�cup+�rer toutes les photos de l'+�v+�nement principal de l'utilisateur"""
+    """R+�cup+�rer toutes les photos de l'+�v+�nement principal de l'utilisateur (avec cache)"""
     if current_user.user_type != UserType.USER:
         raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+�der +� cette route")
     
@@ -2406,6 +2436,14 @@ async def get_all_photos(
     if not user_event:
         raise HTTPException(status_code=404, detail="Aucun +�v+�nement associ+� +� cet utilisateur")
     event_id = user_event.event_id
+    
+    # Vérifier le cache
+    from response_cache import user_photos_cache
+    cache_key = f"all_photos:event:{event_id}:user:{current_user.id}"
+    cached_result = user_photos_cache.get(cache_key)
+    if cached_result is not None:
+        return cached_result
+    
     photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
     
     # Debug
@@ -2417,6 +2455,9 @@ async def get_all_photos(
     result = [photo_to_dict(photo, current_user.id) for photo in photos]
     matches_count = sum(1 for r in result if r.get('has_face_match', False))
     print(f"[DEBUG] Returning {len(result)} photos, {matches_count} with face matches")
+    
+    # Mettre en cache (30 secondes)
+    user_photos_cache.set(cache_key, result, ttl=30.0)
     return result
 
 @app.get("/api/my-uploaded-photos", response_model=List[PhotoSchema])
@@ -3694,11 +3735,14 @@ async def upload_photos_to_event(
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = None,
 ):
-    """Upload de photos pour un événement spécifique (batch-friendly).
+    """Upload de photos pour un événement spécifique (version optimisée avec queue asynchrone).
 
     Autorisations:
     - Photographe propriétaire de l'événement
     - Admin: upload au nom du photographe de l'événement
+    
+    Cette version sauvegarde rapidement les fichiers et les met en queue pour traitement asynchrone.
+    Retourne immédiatement avec les job_ids pour permettre le suivi.
     """
     if current_user.user_type not in (UserType.PHOTOGRAPHER, UserType.ADMIN):
         raise HTTPException(status_code=403, detail="Accès réservé")
@@ -3714,82 +3758,82 @@ async def upload_photos_to_event(
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
     
-    uploaded_photos = []
+    # Importer la queue
+    from photo_queue import get_photo_queue, PhotoJob
+    photo_queue = get_photo_queue()
     
-    # Traquer l'action d'upload par événement (pour l'affichage des coûts)
-    from aws_metrics import aws_metrics
-    with aws_metrics.action_context(f"upload_event:{event_id}"):
-        # Aligner la logique sur l'async: préparation de la collection avant traitement
+    enqueued_jobs = []
+    failed_uploads = []
+    
+    # Préparation de la collection (rapide, une seule fois)
+    try:
+        if hasattr(face_recognizer, 'prepare_event_for_batch'):
+            face_recognizer.prepare_event_for_batch(event_id, db)
+    except Exception as e:
+        print(f"[UploadEvent] Warning: prepare_event_for_batch failed: {e}")
+    
+    # Sauvegarder rapidement tous les fichiers et les mettre en queue
+    for file in files:
+        if not file.content_type.startswith("image/"):
+            continue
+        
         try:
-            if hasattr(face_recognizer, 'prepare_event_for_batch'):
-                face_recognizer.prepare_event_for_batch(event_id, db)
-        except Exception:
-            pass
-        # Traiter séquentiellement (le client envoie par batch)
-        for file in files:
-            if not file.content_type.startswith("image/"):
-                continue
-            
             # Sauvegarder temporairement le fichier
             temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             
-            try:
-                # Traiter la photo avec reconnaissance faciale pour l'événement spécifique
-                photo = face_recognizer.process_and_save_photo_for_event(
-                    temp_path, file.filename, effective_photographer_id, event_id, db
-                )
-                # Log local ingestion if watcher is provided
-                try:
-                    if watcher_id is not None:
-                        db.add(LocalIngestionLog(
-                            watcher_id=watcher_id,
-                            event_id=event_id,
-                            file_name=file.filename,
-                            status="ingested",
-                        ))
-                        db.commit()
-                except Exception:
-                    pass
-                uploaded_photos.append({
-                    "filename": photo.filename,
-                    "original_filename": photo.original_filename
+            # Créer un job et l'enqueuer
+            job_id = str(uuid.uuid4())
+            job = PhotoJob(
+                job_id=job_id,
+                event_id=event_id,
+                photographer_id=effective_photographer_id,
+                temp_path=temp_path,
+                filename=file.filename,
+                original_filename=file.filename,
+                watcher_id=watcher_id,
+            )
+            
+            if photo_queue.enqueue(job):
+                enqueued_jobs.append({
+                    "job_id": job_id,
+                    "filename": file.filename,
+                    "status": "queued"
                 })
-            except Exception as e:
-                # Ne pas interrompre tout le batch si une photo échoue (ex: FK sur user inexistant)
-                print(f"[UploadEvent] Erreur traitement {file.filename}: {e}")
-                try:
-                    if watcher_id is not None:
-                        db.add(LocalIngestionLog(
-                            watcher_id=watcher_id,
-                            event_id=event_id,
-                            file_name=file.filename,
-                            status="failed",
-                            error=str(e),
-                        ))
-                        db.commit()
-                except Exception:
-                    pass
-            finally:
+            else:
+                # Queue pleine, nettoyer le fichier temp
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
-                # Libérer mémoire entre fichiers
+                failed_uploads.append({
+                    "filename": file.filename,
+                    "error": "Queue is full, try again later"
+                })
+                
+        except Exception as e:
+            print(f"[UploadEvent] Error saving file {file.filename}: {e}")
+            failed_uploads.append({
+                "filename": file.filename,
+                "error": str(e)
+            })
+            # Nettoyer si le fichier a été créé
+            if 'temp_path' in locals() and os.path.exists(temp_path):
                 try:
-                    import gc as _gc
-                    _gc.collect()
-                except Exception:
+                    os.remove(temp_path)
+                except:
                     pass
     
-    # Après upload: inutile de relancer un matching global qui pourrait écraser l'existant.
-    # Le process d'upload gère déjà l'indexation et le matching pour les nouvelles photos.
-
-    # (désactivé) Rematch post-upload supprimé pour réduire les coûts AWS Rekognition
-
-    return {
-        "message": f"{len(uploaded_photos)} photos uploadées et traitées avec succès",
-        "uploaded_photos": uploaded_photos
+    response = {
+        "message": f"{len(enqueued_jobs)} photos en queue pour traitement",
+        "enqueued": len(enqueued_jobs),
+        "failed": len(failed_uploads),
+        "jobs": enqueued_jobs,
     }
+    
+    if failed_uploads:
+        response["failed_uploads"] = failed_uploads
+    
+    return response
 
 @app.post("/api/photographer/events/{event_id}/upload-photos-async")
 async def upload_photos_to_event_async(
@@ -4950,3 +4994,66 @@ async def reload_models_endpoint(current_user: User = Depends(get_current_user))
             "log": [f"❌ Erreur: {str(e)}"],
             "ready_for_stats": False
         }
+
+# === MONITORING DE LA QUEUE DE TRAITEMENT ===
+
+@app.get("/api/admin/queue/stats")
+async def get_queue_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupère les statistiques de la queue de traitement des photos."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+    
+    from photo_queue import get_photo_queue
+    queue = get_photo_queue()
+    stats = queue.get_stats()
+    
+    # Ajouter les stats du cache
+    from response_cache import get_cache_stats
+    cache_stats = get_cache_stats()
+    
+    return {
+        "queue": stats,
+        "cache": cache_stats,
+    }
+
+@app.get("/api/admin/queue/jobs/{job_id}")
+async def get_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupère le statut d'un job spécifique."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+    
+    from photo_queue import get_photo_queue
+    queue = get_photo_queue()
+    job_status = queue.get_job_status(job_id)
+    
+    if job_status is None:
+        raise HTTPException(status_code=404, detail="Job non trouvé")
+    
+    return job_status
+
+@app.post("/api/admin/cache/clear")
+async def clear_cache(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Vide tous les caches."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+    
+    from response_cache import user_photos_cache, event_cache, user_cache
+    
+    user_photos_cache.clear()
+    event_cache.clear()
+    user_cache.clear()
+    
+    return {
+        "message": "Caches vidés avec succès",
+        "cleared": ["user_photos_cache", "event_cache", "user_cache"]
+    }
