@@ -1366,11 +1366,10 @@ async def admin_eval_recognition(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    # OPTIMISATION: Ne pas charger photo_data pour la liste
+    # OPTIMISATION: Ne pas charger photo_data ni face_matches pour la liste
     from sqlalchemy.orm import defer
     photos = db.query(Photo).options(
         defer(Photo.photo_data),  # Ne pas charger les binaires
-        joinedload(Photo.face_matches), 
         joinedload(Photo.event)
     ).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
     if photos is None:
@@ -1655,14 +1654,23 @@ async def root(request: Request):
                             user_event = _db.query(UserEvent).filter_by(user_id=user.id).first()
                             if user_event:
                                 event_id = user_event.event_id
-                                photos = _db.query(Photo).options(_joinedload(Photo.face_matches)).filter(Photo.event_id == event_id).all()
+                                photos = _db.query(Photo).filter(Photo.event_id == event_id).all()
                                 photos_all = [{
                                     "id": p.id,
                                     "original_filename": p.original_filename or p.filename,
                                 } for p in (photos or [])]
+                                
+                                # Récupérer les matches séparément
+                                user_matched_ids = set([
+                                    fm.photo_id for fm in
+                                    _db.query(FaceMatch.photo_id).filter(
+                                        FaceMatch.user_id == user.id
+                                    ).all()
+                                ])
+                                
                                 photos_match = []
                                 for p in (photos or []):
-                                    if any(m.user_id == user.id for m in (p.face_matches or [])):
+                                    if p.id in user_matched_ids:
                                         photos_match.append({
                                             "id": p.id,
                                             "original_filename": p.original_filename or p.filename,
@@ -1702,11 +1710,10 @@ async def jinja_gallery(request: Request, current_user: User = Depends(get_curre
         return HTMLResponse(content="<h1>Galerie</h1><p>Aucun événement associé à cet utilisateur.</p>", status_code=404)
     event_id = user_event.event_id
 
-    # Charger les photos de l'événement (OPTIMISÉ: sans photo_data)
+    # Charger les photos de l'événement (OPTIMISÉ: sans photo_data ni face_matches)
     from sqlalchemy.orm import defer
     photos = db.query(Photo).options(
-        defer(Photo.photo_data),  # Ne pas charger les binaires
-        joinedload(Photo.face_matches)
+        defer(Photo.photo_data)  # Ne pas charger les binaires
     ).filter(Photo.event_id == event_id).all()
 
     # Construire les listes pour le template
@@ -2424,7 +2431,7 @@ async def get_my_photos(
         raise HTTPException(status_code=404, detail="Aucun +�v+�nement associ+� +� cet utilisateur")
     event_id = user_event.event_id
     
-    # OPTIMISATION: Requête en 2 étapes pour éviter le JOIN lent
+    # OPTIMISATION: Requête en 2 étapes SANS joinedload (évite deadlocks PostgreSQL)
     from sqlalchemy.orm import defer
     
     # Étape 1: Récupérer les IDs des photos qui matchent (RAPIDE - index sur user_id)
@@ -2440,11 +2447,11 @@ async def get_my_photos(
         user_photos_cache.set(cache_key, [], ttl=30.0)
         return []
     
-    # Étape 2: Charger les photos avec ces IDs (RAPIDE - index sur id, pas de JOIN)
+    # Étape 2: Charger UNIQUEMENT les métadonnées des photos (RAPIDE - pas de JOIN)
+    matched_ids_set = set(matched_photo_ids)  # Pour calcul rapide has_face_match
     photos = db.query(Photo).options(
         defer(Photo.photo_data),  # Ne pas charger les binaires
-        joinedload(Photo.face_matches),  # Pour has_face_match
-        joinedload(Photo.event)
+        joinedload(Photo.event)  # Event seulement
     ).filter(
         Photo.id.in_(matched_photo_ids),
         Photo.event_id == event_id
@@ -2453,8 +2460,12 @@ async def get_my_photos(
         Photo.id.desc()
     ).all()
     
-    # Convertir en dictionnaires AVANT de mettre en cache
-    result = [photo_to_dict(p, current_user.id) for p in photos]
+    # Convertir en dictionnaires avec has_face_match calculé en Python
+    result = []
+    for p in photos:
+        photo_dict = photo_to_dict(p, None)  # Ne pas vérifier face_matches dans photo_to_dict
+        photo_dict["has_face_match"] = p.id in matched_ids_set  # Calcul direct (très rapide)
+        result.append(photo_dict)
     
     # Mettre en cache (30 secondes)
     user_photos_cache.set(cache_key, result, ttl=30.0)
@@ -2481,12 +2492,11 @@ async def get_all_photos(
     if cached_result is not None:
         return cached_result
     
-    # OPTIMISATION: Ne PAS charger photo_data (données binaires lourdes)
+    # OPTIMISATION: Ne PAS charger photo_data NI face_matches (évite deadlocks)
     from sqlalchemy.orm import defer
     photos = db.query(Photo).options(
-        defer(Photo.photo_data),  # Ne pas charger les données binaires (gain de 90% de bande passante)
-        joinedload(Photo.face_matches),  # Charger les matchs pour has_face_match
-        joinedload(Photo.event)  # Charger l'event pour le nom
+        defer(Photo.photo_data),  # Ne pas charger les données binaires
+        joinedload(Photo.event)  # Event seulement
     ).filter(
         Photo.event_id == event_id
     ).order_by(
@@ -2494,8 +2504,20 @@ async def get_all_photos(
         Photo.id.desc()
     ).all()
     
-    # Retourner seulement les métadonnées, pas les données binaires
-    result = [photo_to_dict(photo, current_user.id) for photo in photos]
+    # Récupérer les matches pour cet utilisateur (requête séparée, plus stable)
+    user_matched_photo_ids = set([
+        fm.photo_id for fm in
+        db.query(FaceMatch.photo_id).filter(
+            FaceMatch.user_id == current_user.id
+        ).all()
+    ])
+    
+    # Retourner les métadonnées avec has_face_match calculé en Python
+    result = []
+    for photo in photos:
+        photo_dict = photo_to_dict(photo, None)
+        photo_dict["has_face_match"] = photo.id in user_matched_photo_ids
+        result.append(photo_dict)
     
     # Mettre en cache (30 secondes)
     user_photos_cache.set(cache_key, result, ttl=30.0)
@@ -3754,7 +3776,11 @@ async def get_event_photos(
     if not event:
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
     
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).all()
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data),
+        joinedload(Photo.event)
+    ).filter(Photo.event_id == event_id).all()
     
     # Retourner seulement les m+�tadonn+�es, pas les donn+�es binaires
     photo_list = []
@@ -4091,11 +4117,28 @@ async def get_all_event_photos(
     if not user_event:
         raise HTTPException(status_code=403, detail="Vous n'+�tes pas inscrit +� cet +�v+�nement")
     
-    # Récupérer toutes les photos de l'événement
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).all()
+    # Récupérer toutes les photos de l'événement (SANS face_matches pour éviter deadlocks)
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data),
+        joinedload(Photo.event)
+    ).filter(Photo.event_id == event_id).all()
     
-    # Retourner seulement les métadonnées, pas les données binaires
-    return [photo_to_dict(photo, current_user.id) for photo in photos]
+    # Récupérer les matches pour cet utilisateur (requête séparée)
+    user_matched_photo_ids = set([
+        fm.photo_id for fm in
+        db.query(FaceMatch.photo_id).filter(
+            FaceMatch.user_id == current_user.id
+        ).all()
+    ])
+    
+    # Retourner les métadonnées avec has_face_match calculé
+    result = []
+    for photo in photos:
+        photo_dict = photo_to_dict(photo, None)
+        photo_dict["has_face_match"] = photo.id in user_matched_photo_ids
+        result.append(photo_dict)
+    return result
 
 # === ROUTES POUR LES CODES +�V+�NEMENT MANUELS ===
 
@@ -4122,7 +4165,11 @@ async def get_user_event_expiration(
         raise HTTPException(status_code=404, detail="Aucun événement associé à cet utilisateur")
 
     event_id = user_event.event_id
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).all()
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data),
+        joinedload(Photo.event)
+    ).filter(Photo.event_id == event_id).all()
     if not photos:
         return {"event_id": event_id, "expires_at": None, "seconds_remaining": None, "photos_count": 0}
 
@@ -4535,7 +4582,7 @@ async def delete_event(
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
     
     # Supprimer les photos associ+�es +� cet +�v+�nement
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     for photo in photos:
         # Supprimer le fichier physique
         try:
@@ -4616,7 +4663,7 @@ async def admin_delete_event(
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
     
     # Supprimer toutes les photos associ+�es +� cet +�v+�nement
-    photos = db.query(Photo).options(joinedload(Photo.face_matches), joinedload(Photo.event)).filter(Photo.event_id == event_id).all()
+    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
     for photo in photos:
         # Supprimer les correspondances de visages
         db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete()
