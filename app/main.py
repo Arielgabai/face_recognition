@@ -2436,9 +2436,12 @@ async def get_my_photos(
         Photo.event_id == event_id
     ).all()
     
+    # Convertir en dictionnaires AVANT de mettre en cache (évite problèmes de session DB)
+    result = [photo_to_dict(p, current_user.id) for p in photos]
+    
     # Mettre en cache (30 secondes)
-    user_photos_cache.set(cache_key, photos, ttl=30.0)
-    return photos
+    user_photos_cache.set(cache_key, result, ttl=30.0)
+    return result
 
 @app.get("/api/all-photos", response_model=List[PhotoSchema])
 async def get_all_photos(
@@ -2790,8 +2793,27 @@ async def get_photo_by_id(
     photo_id: int,
     db: Session = Depends(get_db)
 ):
-    """Servir une photo depuis la base de donn+�es par son ID"""
-    photo = db.query(Photo).filter(Photo.id == photo_id).first()
+    """Servir une photo depuis la base de donn+�es par son ID (avec cache)"""
+    
+    # Vérifier le cache d'abord (économise énormément de requêtes DB)
+    from response_cache import user_cache
+    cache_key = f"photo_image:{photo_id}"
+    cached_data = user_cache.get(cache_key)
+    if cached_data is not None:
+        return Response(
+            content=cached_data["content"],
+            media_type=cached_data["media_type"],
+            headers={"Cache-Control": "public, max-age=31536000"}
+        )
+    
+    # Charger depuis la DB (requête optimisée)
+    from sqlalchemy.orm import defer
+    photo = db.query(Photo).options(
+        # Charger UNIQUEMENT ce dont on a besoin
+        defer(Photo.photographer_id),
+        defer(Photo.user_id),
+        defer(Photo.event_id),
+    ).filter(Photo.id == photo_id).first()
     
     if not photo:
         raise HTTPException(status_code=404, detail="Photo non trouv+�e")
@@ -2813,6 +2835,12 @@ async def get_photo_by_id(
             content_bytes = None
     if not content_bytes:
         raise HTTPException(status_code=404, detail="Données de photo non disponibles")
+
+    # Mettre en cache (5 minutes) - économise énormément de charge DB
+    user_cache.set(cache_key, {
+        "content": content_bytes,
+        "media_type": photo.content_type or "image/jpeg"
+    }, ttl=300.0)
 
     return Response(
         content=content_bytes,

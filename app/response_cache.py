@@ -101,9 +101,9 @@ class LRUCache:
 
 
 # Caches globaux pour différents types de données
-user_photos_cache = LRUCache(max_size=500, default_ttl=30.0)  # Cache court pour les photos
+user_photos_cache = LRUCache(max_size=500, default_ttl=30.0)  # Cache court pour les métadonnées photos
 event_cache = LRUCache(max_size=200, default_ttl=120.0)  # Cache plus long pour les événements
-user_cache = LRUCache(max_size=1000, default_ttl=60.0)  # Cache pour les infos utilisateur
+user_cache = LRUCache(max_size=200, default_ttl=60.0)  # Cache pour images + infos utilisateur (limité à 200 pour éviter trop de RAM)
 
 
 def cache_response(
