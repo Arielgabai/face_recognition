@@ -2793,27 +2793,12 @@ async def get_photo_by_id(
     photo_id: int,
     db: Session = Depends(get_db)
 ):
-    """Servir une photo depuis la base de donn+�es par son ID (avec cache)"""
+    """Servir une photo depuis la base de donn+�es par son ID (SANS cache serveur, le navigateur cache)"""
     
-    # Vérifier le cache d'abord (économise énormément de requêtes DB)
-    from response_cache import user_cache
-    cache_key = f"photo_image:{photo_id}"
-    cached_data = user_cache.get(cache_key)
-    if cached_data is not None:
-        return Response(
-            content=cached_data["content"],
-            media_type=cached_data["media_type"],
-            headers={"Cache-Control": "public, max-age=31536000"}
-        )
+    # PAS DE CACHE SERVEUR - évite les problèmes de mémoire
+    # Le navigateur cache avec Cache-Control (plus efficace et stable)
     
-    # Charger depuis la DB (requête optimisée)
-    from sqlalchemy.orm import defer
-    photo = db.query(Photo).options(
-        # Charger UNIQUEMENT ce dont on a besoin
-        defer(Photo.photographer_id),
-        defer(Photo.user_id),
-        defer(Photo.event_id),
-    ).filter(Photo.id == photo_id).first()
+    photo = db.query(Photo).filter(Photo.id == photo_id).first()
     
     if not photo:
         raise HTTPException(status_code=404, detail="Photo non trouv+�e")
@@ -2836,16 +2821,13 @@ async def get_photo_by_id(
     if not content_bytes:
         raise HTTPException(status_code=404, detail="Données de photo non disponibles")
 
-    # Mettre en cache (5 minutes) - économise énormément de charge DB
-    user_cache.set(cache_key, {
-        "content": content_bytes,
-        "media_type": photo.content_type or "image/jpeg"
-    }, ttl=300.0)
-
     return Response(
         content=content_bytes,
         media_type=photo.content_type or "image/jpeg",
-        headers={"Cache-Control": "public, max-age=31536000"}
+        headers={
+            "Cache-Control": "public, max-age=31536000",  # Navigateur cache 1 an
+            "ETag": f'"{photo_id}"'  # Pour validation cache
+        }
     )
 
 @app.get("/api/photo/{photo_id}/faces")
@@ -3827,28 +3809,10 @@ async def upload_photos_to_event(
             continue
         
         try:
-            # Lire le contenu du fichier pour calculer le hash
-            content = await file.read()
-            file_hash = hashlib.sha256(content).hexdigest()
-            
-            # Vérifier si déjà en queue (détection doublons du watcher dans les 5 dernières minutes)
-            cache_key = f"upload_hash:{event_id}:{file_hash}"
-            from response_cache import user_cache
-            if user_cache.get(cache_key) is not None:
-                print(f"[Upload] Duplicate detected (hash={file_hash[:8]}...), skipping: {file.filename}")
-                failed_uploads.append({
-                    "filename": file.filename,
-                    "error": "Duplicate photo detected (already uploaded recently)"
-                })
-                continue
-            
-            # Marquer comme uploadé (cache 5 minutes pour éviter les doublons du watcher)
-            user_cache.set(cache_key, True, ttl=300.0)
-            
-            # Sauvegarder temporairement le fichier
+            # Sauvegarder temporairement le fichier (méthode stable)
             temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
             with open(temp_path, "wb") as buffer:
-                buffer.write(content)
+                shutil.copyfileobj(file.file, buffer)
             
             # Créer un job et l'enqueuer
             job_id = str(uuid.uuid4())
