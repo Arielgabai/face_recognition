@@ -358,79 +358,79 @@ class AwsFaceRecognizer:
         """
         Indexe les selfies des utilisateurs d'un événement une seule fois par processus.
         Évite les appels IndexFaces répétés lors du traitement de chaque photo.
-        Thread-safe avec lock pour éviter les race conditions en parallèle.
+        Thread-safe avec lock GLOBAL pour toute la fonction (évite race conditions).
         """
-        # Lock thread-safe pour éviter que plusieurs workers indexent en même temps
+        # Lock thread-safe pour TOUTE la fonction - les autres workers attendent
         with self._indexed_events_lock:
             if event_id in self._indexed_events:
                 print(f"[AWS] Event {event_id} users already indexed (cached)")
                 return
-            # Marquer IMMÉDIATEMENT pour éviter que d'autres threads entrent
-            self._indexed_events.add(event_id)
-        
-        # Sortir du lock pour faire le vrai travail (permet aux autres d'attendre proprement)
-        print(f"[AWS] Indexing users for event {event_id}...")
-        from sqlalchemy import or_  # local import
-        user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
-        user_ids = [ue.user_id for ue in user_events]
-        # Restreindre aux utilisateurs existants et ayant un selfie
-        users_with_selfies = db.query(User).filter(
-            User.id.in_(user_ids),
-            or_(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
-        ).all()
-        print(f"[AWS] Indexing {len(users_with_selfies)} users for event {event_id}")
-        for u in users_with_selfies:
-            self.index_user_selfie(event_id, u)
+            
+            # Indexer DANS le lock pour garantir qu'un seul worker le fait
+            print(f"[AWS] Indexing users for event {event_id}...")
+            from sqlalchemy import or_  # local import
+            user_events = db.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+            user_ids = [ue.user_id for ue in user_events]
+            # Restreindre aux utilisateurs existants et ayant un selfie
+            users_with_selfies = db.query(User).filter(
+                User.id.in_(user_ids),
+                or_(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
+            ).all()
+            print(f"[AWS] Indexing {len(users_with_selfies)} users for event {event_id}")
+            for u in users_with_selfies:
+                self.index_user_selfie(event_id, u)
 
-        # Nettoyer la collection des visages orphelins: 
-        # - Conserver toutes les faces "photo:{photo_id}" (appartiennent à l'événement)
-        # - Conserver les faces des users de l'événement sous formes "user:{id}" ou legacy "{id}"
-        # - Supprimer uniquement les faces "user:*" dont l'id n'est pas dans la liste des users de l'événement
-        try:
-            allowed_user_ids = set(str(uid) for uid in user_ids)
-            coll_id = self._collection_id(event_id)
-            next_token = None
-            while True:
-                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
-                if next_token:
-                    kwargs["NextToken"] = next_token
-                faces = self.client.list_faces(**kwargs)
-                stale_face_ids = []
-                for f in faces.get('Faces', []) or []:
-                    ext = (f.get('ExternalImageId') or "").strip()
-                    face_id = f.get('FaceId')
-                    if ext.startswith('photo:'):
-                        continue  # ne pas supprimer les faces des photos ici
-                    if ext.startswith('user:'):
-                        try:
-                            uid = ext.split(':', 1)[1]
-                        except Exception:
-                            uid = None
-                        if not uid or uid not in allowed_user_ids:
-                            if face_id:
-                                stale_face_ids.append(face_id)
-                    else:
-                        # legacy: ext est un id numérique
-                        if ext and ext.isdigit():
-                            if ext not in allowed_user_ids and face_id:
-                                stale_face_ids.append(face_id)
+            # Nettoyer la collection des visages orphelins (toujours dans le lock)
+            # - Conserver toutes les faces "photo:{photo_id}" (appartiennent à l'événement)
+            # - Conserver les faces des users de l'événement sous formes "user:{id}" ou legacy "{id}"
+            # - Supprimer uniquement les faces "user:*" dont l'id n'est pas dans la liste des users de l'événement
+            try:
+                allowed_user_ids = set(str(uid) for uid in user_ids)
+                coll_id = self._collection_id(event_id)
+                next_token = None
+                while True:
+                    kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
+                    if next_token:
+                        kwargs["NextToken"] = next_token
+                    faces = self.client.list_faces(**kwargs)
+                    stale_face_ids = []
+                    for f in faces.get('Faces', []) or []:
+                        ext = (f.get('ExternalImageId') or "").strip()
+                        face_id = f.get('FaceId')
+                        if ext.startswith('photo:'):
+                            continue  # ne pas supprimer les faces des photos ici
+                        if ext.startswith('user:'):
+                            try:
+                                uid = ext.split(':', 1)[1]
+                            except Exception:
+                                uid = None
+                            if not uid or uid not in allowed_user_ids:
+                                if face_id:
+                                    stale_face_ids.append(face_id)
                         else:
-                            # ext inconnu -> supprimer prudemment
-                            if face_id:
-                                stale_face_ids.append(face_id)
-                if stale_face_ids:
-                    try:
-                        aws_metrics.inc('DeleteFaces')
-                        self.client.delete_faces(CollectionId=coll_id, FaceIds=stale_face_ids)
-                    except ClientError:
-                        pass
-                next_token = faces.get("NextToken")
-                if not next_token:
-                    break
-        except ClientError:
-            pass
-        
-        print(f"[AWS] Event {event_id} users indexed successfully")
+                            # legacy: ext est un id numérique
+                            if ext and ext.isdigit():
+                                if ext not in allowed_user_ids and face_id:
+                                    stale_face_ids.append(face_id)
+                            else:
+                                # ext inconnu -> supprimer prudemment
+                                if face_id:
+                                    stale_face_ids.append(face_id)
+                    if stale_face_ids:
+                        try:
+                            aws_metrics.inc('DeleteFaces')
+                            self.client.delete_faces(CollectionId=coll_id, FaceIds=stale_face_ids)
+                        except ClientError:
+                            pass
+                    next_token = faces.get("NextToken")
+                    if not next_token:
+                        break
+            except ClientError:
+                pass
+            
+            print(f"[AWS] Event {event_id} users indexed successfully")
+            # Marquer comme indexé à la FIN seulement (toujours dans le lock)
+            self._indexed_events.add(event_id)
 
     def prepare_event_for_batch(self, event_id: int, db: Session) -> None:
         """Prépare une fois la collection pour un batch d'uploads: ensure + purge + index users."""

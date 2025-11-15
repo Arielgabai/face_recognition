@@ -2424,19 +2424,36 @@ async def get_my_photos(
         raise HTTPException(status_code=404, detail="Aucun +�v+�nement associ+� +� cet utilisateur")
     event_id = user_event.event_id
     
-    # OPTIMISATION: Ne PAS charger photo_data (binaire lourd) ni selfie_data
+    # OPTIMISATION: Requête en 2 étapes pour éviter le JOIN lent
     from sqlalchemy.orm import defer
+    
+    # Étape 1: Récupérer les IDs des photos qui matchent (RAPIDE - index sur user_id)
+    matched_photo_ids = [
+        fm.photo_id for fm in 
+        db.query(FaceMatch.photo_id).filter(
+            FaceMatch.user_id == current_user.id
+        ).distinct().all()
+    ]
+    
+    if not matched_photo_ids:
+        # Pas de photos pour cet utilisateur
+        user_photos_cache.set(cache_key, [], ttl=30.0)
+        return []
+    
+    # Étape 2: Charger les photos avec ces IDs (RAPIDE - index sur id, pas de JOIN)
     photos = db.query(Photo).options(
-        defer(Photo.photo_data),  # Ne pas charger les données binaires des photos
-        joinedload(Photo.face_matches),  # Charger les matchs pour filtrer
-        joinedload(Photo.event)  # Charger l'event pour le nom
-    ).join(FaceMatch).filter(
-        FaceMatch.user_id == current_user.id,
-        FaceMatch.photo_id == Photo.id,
+        defer(Photo.photo_data),  # Ne pas charger les binaires
+        joinedload(Photo.face_matches),  # Pour has_face_match
+        joinedload(Photo.event)
+    ).filter(
+        Photo.id.in_(matched_photo_ids),
         Photo.event_id == event_id
+    ).order_by(
+        Photo.uploaded_at.desc(),
+        Photo.id.desc()
     ).all()
     
-    # Convertir en dictionnaires AVANT de mettre en cache (évite problèmes de session DB)
+    # Convertir en dictionnaires AVANT de mettre en cache
     result = [photo_to_dict(p, current_user.id) for p in photos]
     
     # Mettre en cache (30 secondes)
@@ -3818,12 +3835,12 @@ async def upload_photos_to_event(
             job_id = str(uuid.uuid4())
             job = PhotoJob(
                 job_id=job_id,
-                event_id=event_id,
+                            event_id=event_id,
                 photographer_id=effective_photographer_id,
                 temp_path=temp_path,
                 filename=file.filename,
                 original_filename=file.filename,
-                watcher_id=watcher_id,
+                            watcher_id=watcher_id,
             )
             
             if photo_queue.enqueue(job):
@@ -5087,4 +5104,4 @@ async def clear_cache(
     return {
         "message": "Caches vidés avec succès",
         "cleared": ["user_photos_cache", "event_cache", "user_cache"]
-    }
+        }
