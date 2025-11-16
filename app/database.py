@@ -42,5 +42,9 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        # En cas d'exception non gérée, s'assurer que la transaction est rollback
+        db.rollback()
+        raise
     finally:
         db.close()
