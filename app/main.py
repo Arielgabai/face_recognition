@@ -2414,45 +2414,26 @@ async def get_my_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+�cup+�rer toutes les photos o+� l'utilisateur appara+�t pour son +�v+�nement principal (avec cache)"""
+    """Version simplifi�e SANS cache pour diagnostiquer les plantages."""
     if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+�der +� cette route")
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc�der � cette route")
     
-    # Vérifier le cache
-    from response_cache import user_photos_cache
-    cache_key = f"my_photos:user:{current_user.id}"
-    cached_result = user_photos_cache.get(cache_key)
-    if cached_result is not None:
-        return cached_result
-    
-    # Trouver le premier +�v+�nement de l'utilisateur (+�v+�nement principal)
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
     if not user_event:
-        raise HTTPException(status_code=404, detail="Aucun +�v+�nement associ+� +� cet utilisateur")
+        raise HTTPException(status_code=404, detail="Aucun �v�nement associ� � cet utilisateur")
     event_id = user_event.event_id
     
-    # OPTIMISATION: Requête en 2 étapes SANS joinedload (évite deadlocks PostgreSQL)
-    from sqlalchemy.orm import defer
-    
-    # Étape 1: Récupérer les IDs des photos qui matchent (RAPIDE - index sur user_id)
     matched_photo_ids = [
-        fm.photo_id for fm in 
+        photo_id for (photo_id,) in
         db.query(FaceMatch.photo_id).filter(
             FaceMatch.user_id == current_user.id
-        ).distinct().all()
+        ).all()
     ]
-    
     if not matched_photo_ids:
-        # Pas de photos pour cet utilisateur
-        user_photos_cache.set(cache_key, [], ttl=30.0)
         return []
     
-    # Étape 2: Charger UNIQUEMENT les métadonnées des photos (RAPIDE - pas de JOIN)
-    matched_ids_set = set(matched_photo_ids)  # Pour calcul rapide has_face_match
-    photos = db.query(Photo).options(
-        defer(Photo.photo_data),  # Ne pas charger les binaires
-        joinedload(Photo.event)  # Event seulement
-    ).filter(
+    matched_ids_set = set(matched_photo_ids)
+    photos = db.query(Photo).filter(
         Photo.id.in_(matched_photo_ids),
         Photo.event_id == event_id
     ).order_by(
@@ -2460,15 +2441,23 @@ async def get_my_photos(
         Photo.id.desc()
     ).all()
     
-    # Convertir en dictionnaires avec has_face_match calculé en Python
     result = []
-    for p in photos:
-        photo_dict = photo_to_dict(p, None)  # Ne pas vérifier face_matches dans photo_to_dict
-        photo_dict["has_face_match"] = p.id in matched_ids_set  # Calcul direct (très rapide)
-        result.append(photo_dict)
+    for photo in photos:
+        result.append({
+            "id": photo.id,
+            "filename": photo.filename,
+            "original_filename": photo.original_filename or photo.filename,
+            "file_path": photo.file_path,
+            "content_type": photo.content_type,
+            "photo_type": photo.photo_type,
+            "user_id": photo.user_id,
+            "photographer_id": photo.photographer_id,
+            "uploaded_at": photo.uploaded_at,
+            "event_id": photo.event_id,
+            "event_name": photo.event.name if photo.event else None,
+            "has_face_match": photo.id in matched_ids_set,
+        })
     
-    # Mettre en cache (30 secondes)
-    user_photos_cache.set(cache_key, result, ttl=30.0)
     return result
 
 @app.get("/api/all-photos", response_model=List[PhotoSchema])
@@ -2476,51 +2465,46 @@ async def get_all_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+�cup+�rer toutes les photos de l'+�v+�nement principal de l'utilisateur (avec cache)"""
+    """Version simplifi�e SANS cache pour diagnostiquer les plantages."""
     if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+�der +� cette route")
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc�der � cette route")
     
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
     if not user_event:
-        raise HTTPException(status_code=404, detail="Aucun +�v+�nement associ+� +� cet utilisateur")
+        raise HTTPException(status_code=404, detail="Aucun �v�nement associ� � cet utilisateur")
     event_id = user_event.event_id
     
-    # Vérifier le cache
-    from response_cache import user_photos_cache
-    cache_key = f"all_photos:event:{event_id}:user:{current_user.id}"
-    cached_result = user_photos_cache.get(cache_key)
-    if cached_result is not None:
-        return cached_result
-    
-    # OPTIMISATION: Ne PAS charger photo_data NI face_matches (évite deadlocks)
-    from sqlalchemy.orm import defer
-    photos = db.query(Photo).options(
-        defer(Photo.photo_data),  # Ne pas charger les données binaires
-        joinedload(Photo.event)  # Event seulement
-    ).filter(
+    photos = db.query(Photo).filter(
         Photo.event_id == event_id
     ).order_by(
-        Photo.uploaded_at.desc(), 
+        Photo.uploaded_at.desc(),
         Photo.id.desc()
     ).all()
     
-    # Récupérer les matches pour cet utilisateur (requête séparée, plus stable)
-    user_matched_photo_ids = set([
-        fm.photo_id for fm in
+    matched_photo_ids = {
+        photo_id for (photo_id,) in
         db.query(FaceMatch.photo_id).filter(
             FaceMatch.user_id == current_user.id
         ).all()
-    ])
+    }
     
-    # Retourner les métadonnées avec has_face_match calculé en Python
     result = []
     for photo in photos:
-        photo_dict = photo_to_dict(photo, None)
-        photo_dict["has_face_match"] = photo.id in user_matched_photo_ids
-        result.append(photo_dict)
+        result.append({
+            "id": photo.id,
+            "filename": photo.filename,
+            "original_filename": photo.original_filename or photo.filename,
+            "file_path": photo.file_path,
+            "content_type": photo.content_type,
+            "photo_type": photo.photo_type,
+            "user_id": photo.user_id,
+            "photographer_id": photo.photographer_id,
+            "uploaded_at": photo.uploaded_at,
+            "event_id": photo.event_id,
+            "event_name": photo.event.name if photo.event else None,
+            "has_face_match": photo.id in matched_photo_ids,
+        })
     
-    # Mettre en cache (30 secondes)
-    user_photos_cache.set(cache_key, result, ttl=30.0)
     return result
 
 @app.get("/api/my-uploaded-photos", response_model=List[PhotoSchema])
