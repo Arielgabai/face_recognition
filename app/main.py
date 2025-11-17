@@ -2432,8 +2432,17 @@ async def get_my_photos(
     if not matched_photo_ids:
         return []
     
+    # Charger l'event UNE SEULE FOIS (évite N+1 lazy load)
+    event = db.query(Event).filter_by(id=event_id).first()
+    event_name = event.name if event else None
+    
     matched_ids_set = set(matched_photo_ids)
-    photos = db.query(Photo).filter(
+    
+    # CRITIQUE: Utiliser defer() pour ne PAS charger les binaires (2-3MB par photo)
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data)  # Ne pas charger les données binaires
+    ).filter(
         Photo.id.in_(matched_photo_ids),
         Photo.event_id == event_id
     ).order_by(
@@ -2454,7 +2463,7 @@ async def get_my_photos(
             "photographer_id": photo.photographer_id,
             "uploaded_at": photo.uploaded_at,
             "event_id": photo.event_id,
-            "event_name": photo.event.name if photo.event else None,
+            "event_name": event_name,  # Utiliser la valeur préchargée (pas de lazy load)
             "has_face_match": photo.id in matched_ids_set,
         })
     
@@ -2474,19 +2483,28 @@ async def get_all_photos(
         raise HTTPException(status_code=404, detail="Aucun �v�nement associ� � cet utilisateur")
     event_id = user_event.event_id
     
-    photos = db.query(Photo).filter(
-        Photo.event_id == event_id
-    ).order_by(
-        Photo.uploaded_at.desc(),
-        Photo.id.desc()
-    ).all()
+    # Charger l'event UNE SEULE FOIS (évite N+1 lazy load)
+    event = db.query(Event).filter_by(id=event_id).first()
+    event_name = event.name if event else None
     
+    # Récupérer les matches pour cet utilisateur (requête séparée, plus stable)
     matched_photo_ids = {
         photo_id for (photo_id,) in
         db.query(FaceMatch.photo_id).filter(
             FaceMatch.user_id == current_user.id
         ).all()
     }
+    
+    # CRITIQUE: Utiliser defer() pour ne PAS charger les binaires (2-3MB par photo)
+    from sqlalchemy.orm import defer
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data)  # Ne pas charger les données binaires
+    ).filter(
+        Photo.event_id == event_id
+    ).order_by(
+        Photo.uploaded_at.desc(),
+        Photo.id.desc()
+    ).all()
     
     result = []
     for photo in photos:
@@ -2501,7 +2519,7 @@ async def get_all_photos(
             "photographer_id": photo.photographer_id,
             "uploaded_at": photo.uploaded_at,
             "event_id": photo.event_id,
-            "event_name": photo.event.name if photo.event else None,
+            "event_name": event_name,  # Utiliser la valeur préchargée (pas de lazy load)
             "has_face_match": photo.id in matched_photo_ids,
         })
     
