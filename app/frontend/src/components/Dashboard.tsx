@@ -240,11 +240,12 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
                 />
               )}
               
-              {/* Image */}
+              {/* Image avec lazy loading pour charger progressivement */}
               <Box
                 component="img"
                 src={photoService.getImage(photo.filename)}
                 alt={photo.original_filename || 'Photo'}
+                loading="lazy"
                 sx={{
                   width: '100%',
                   height: '100%',
@@ -451,25 +452,42 @@ const Dashboard: React.FC = () => {
     loadDashboardData();
   };
 
-  // Précharger une liste d'URLs d'images et résoudre uniquement quand tout est chargé (ou timeout)
-  const preloadImages = (urls: string[], timeoutMs = 20000): Promise<void> => {
+  // Précharger une liste d'URLs d'images de manière non-bloquante
+  // Ne pas attendre que toutes les images soient chargées - juste démarrer le chargement
+  const preloadImages = (urls: string[], timeoutMs = 3000): Promise<void> => {
     return new Promise((resolve) => {
       try {
         if (!urls || urls.length === 0) { resolve(); return; }
-        let remaining = urls.length;
+        
+        // Limiter le nombre d'images à précharger simultanément (évite de surcharger le navigateur)
+        const maxConcurrent = 10;
+        const urlsToPreload = urls.slice(0, 100); // Précharger seulement les 100 premières images
+        
+        let loaded = 0;
         let done = false;
         const finish = () => {
           if (!done) { done = true; resolve(); }
         };
-        const onSettled = () => { remaining -= 1; if (remaining <= 0) finish(); };
-        urls.forEach((u) => {
-          const img = new Image();
-          img.onload = onSettled;
-          img.onerror = onSettled;
-          // Empêcher le cache agressif
-          const bust = `${u}${u.includes('?') ? '&' : '?'}t=${Date.now()}`;
-          img.src = bust;
-        });
+        
+        // Précharger par batch pour ne pas surcharger
+        const preloadBatch = (batch: string[]) => {
+          batch.forEach((u) => {
+            const img = new Image();
+            img.onload = () => { loaded++; };
+            img.onerror = () => { loaded++; };
+            // Empêcher le cache agressif
+            const bust = `${u}${u.includes('?') ? '&' : '?'}t=${Date.now()}`;
+            img.src = bust;
+          });
+        };
+        
+        // Précharger par batch de maxConcurrent images
+        for (let i = 0; i < urlsToPreload.length; i += maxConcurrent) {
+          const batch = urlsToPreload.slice(i, i + maxConcurrent);
+          setTimeout(() => preloadBatch(batch), i * 50); // Espacer les batches de 50ms
+        }
+        
+        // Résoudre rapidement (ne pas attendre que toutes les images soient chargées)
         setTimeout(finish, timeoutMs);
       } catch {
         resolve();
@@ -477,12 +495,12 @@ const Dashboard: React.FC = () => {
     });
   };
 
-  // Attendre qu'il y ait une croissance (nouvelles correspondances) puis que les images soient chargées
-  const waitForDashboardGrowthAndImages = async (baselineMyLen: number, baselineMatches: number, timeoutMs = 90000, intervalMs = 2000) => {
-    // Toujours repartir d'un refetch complet (éviter cache)
+  // Attendre qu'il y ait une croissance (nouvelles correspondances) puis précharger les images en arrière-plan
+  // Ne bloque PAS le loader - les images se chargent progressivement
+  const waitForDashboardGrowthAndImages = async (baselineMyLen: number, baselineMatches: number, timeoutMs = 30000, intervalMs = 2000) => {
     const start = Date.now();
     try {
-      setLoading(true);
+      // Ne pas remettre setLoading(true) - les données sont déjà chargées
       setError(null);
       while (Date.now() - start < timeoutMs) {
         if (user?.user_type === 'user' && currentEventId) {
@@ -494,13 +512,12 @@ const Dashboard: React.FC = () => {
           const myNow = myPhotosData.data ?? [];
           setProfile(profileData.data);
           setMyPhotos(myNow);
-          // Si croissance détectée, précharger et terminer
+          // Si croissance détectée, précharger en arrière-plan et terminer
           if (matchesNow > baselineMatches || myNow.length > baselineMyLen) {
             const myUrls = myNow.map((p: any) => photoService.getImage(p.filename));
-            await preloadImages(myUrls);
-            await new Promise((r) => setTimeout(r, 150));
+            // Précharger en arrière-plan sans bloquer
+            preloadImages(myUrls).catch(() => {}); // Ignorer les erreurs
             try {
-              // Indicateur global (optionnel) pour ré-ouv. ultérieure des onglets : primed
               (window as any).__myPhotosPrimedReact = true;
             } catch {}
             return;
@@ -516,8 +533,8 @@ const Dashboard: React.FC = () => {
           setMyPhotos(myNow);
           if (matchesNow > baselineMatches || myNow.length > baselineMyLen) {
             const myUrls = myNow.map((p: any) => photoService.getImage(p.filename));
-            await preloadImages(myUrls);
-            await new Promise((r) => setTimeout(r, 150));
+            // Précharger en arrière-plan sans bloquer
+            preloadImages(myUrls).catch(() => {}); // Ignorer les erreurs
             try { (window as any).__myPhotosPrimedReact = true; } catch {}
             return;
           }
@@ -525,9 +542,10 @@ const Dashboard: React.FC = () => {
         await new Promise((r) => setTimeout(r, intervalMs));
       }
       // Timeout: pas de croissance -> on considère qu'il n'y a pas de photos à afficher
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error('waitForDashboardGrowthAndImages error:', err);
     }
+    // Ne pas mettre setLoading(false) ici - le loader est déjà masqué
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {

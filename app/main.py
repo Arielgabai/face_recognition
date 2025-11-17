@@ -47,10 +47,18 @@ from collections import OrderedDict
 from urllib.parse import urlencode
 from base64 import urlsafe_b64encode
 
-# Créer les tables au démarrage
-create_tables()
-
 app = FastAPI(title="Face Recognition API", version="1.0.0")
+
+# Créer les tables au démarrage (non-bloquant)
+@app.on_event("startup")
+def _startup_create_tables():
+    """Créer les tables au démarrage, mais ne pas bloquer si la DB est indisponible."""
+    try:
+        create_tables()
+        print("[Startup] Database tables created/verified")
+    except Exception as e:
+        # Ne pas bloquer le démarrage si la DB est indisponible
+        print(f"[Startup] Warning: Could not create tables (non-critical): {e}")
 logger = logging.getLogger("app")
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -61,13 +69,47 @@ logger.setLevel(logging.INFO)
 templates = Jinja2Templates(directory="templates")
 
 def _ensure_local_watchers_schema(db: Session) -> None:
-    """Assure que le schéma local_watchers existe. Utilise un verrou PostgreSQL pour éviter les conflits."""
+    """Assure que le schéma local_watchers existe. Vérifie d'abord les colonnes pour éviter les locks inutiles."""
     try:
+        # Créer la table si elle n'existe pas (rapide, pas de lock)
+        db.execute(_text("""
+            CREATE TABLE IF NOT EXISTS local_watchers (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER NOT NULL REFERENCES events(id),
+                label TEXT NULL,
+                expected_path TEXT NULL,
+                move_uploaded_dir TEXT NULL,
+                machine_label TEXT NULL,
+                listening BOOLEAN NOT NULL DEFAULT TRUE,
+                status TEXT NULL,
+                last_error TEXT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ
+            )
+        """))
+        db.commit()
+        
+        # Vérifier si les colonnes existent AVANT d'essayer de les ajouter (évite le lock)
+        # Cette requête est rapide et ne nécessite pas de lock exclusif
+        columns_check = db.execute(_text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'local_watchers'
+        """)).fetchall()
+        existing_columns = {row[0] for row in columns_check}
+        
+        # Si toutes les colonnes existent déjà, on n'a rien à faire
+        required_columns = {'machine_label', 'listening', 'status', 'last_error', 'updated_at'}
+        missing_columns = required_columns - existing_columns
+        
+        if not missing_columns:
+            # Tout est déjà à jour, pas besoin de migration
+            return
+        
+        # Il manque des colonnes, on doit faire une migration
         # Utiliser un advisory lock pour éviter que plusieurs instances fassent la migration en même temps
-        # Lock ID = 123456 (arbitraire mais unique pour cette migration)
         lock_acquired = False
         try:
-            # Essayer d'acquérir le lock (non-bloquant avec timeout de 1 seconde)
             result = db.execute(_text("SELECT pg_try_advisory_lock(123456)"))
             lock_acquired = result.scalar()
             
@@ -76,25 +118,7 @@ def _ensure_local_watchers_schema(db: Session) -> None:
                 print("[Schema] Another instance is running migration, skipping...")
                 return
             
-            # Créer la table si elle n'existe pas
-            db.execute(_text("""
-                CREATE TABLE IF NOT EXISTS local_watchers (
-                    id SERIAL PRIMARY KEY,
-                    event_id INTEGER NOT NULL REFERENCES events(id),
-                    label TEXT NULL,
-                    expected_path TEXT NULL,
-                    move_uploaded_dir TEXT NULL,
-                    machine_label TEXT NULL,
-                    listening BOOLEAN NOT NULL DEFAULT TRUE,
-                    status TEXT NULL,
-                    last_error TEXT NULL,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ
-                )
-            """))
-            
-            # Vérifier si les colonnes existent AVANT d'essayer de les ajouter (évite le lock)
-            # Cette requête est rapide et ne nécessite pas de lock exclusif
+            # Vérifier à nouveau (race condition possible)
             columns_check = db.execute(_text("""
                 SELECT column_name 
                 FROM information_schema.columns 
@@ -116,14 +140,27 @@ def _ensure_local_watchers_schema(db: Session) -> None:
             
             db.commit()
             print("[Schema] local_watchers schema ensured successfully")
+        except Exception as e:
+            db.rollback()
+            print(f"[Schema] Error during migration (non-critical): {e}")
         finally:
-            # Toujours libérer le lock
+            # Libérer le lock seulement si on l'a acquis ET si la transaction est toujours active
             if lock_acquired:
-                db.execute(_text("SELECT pg_advisory_unlock(123456)"))
-                db.commit()
+                try:
+                    # Vérifier si on possède toujours le lock avant de le libérer
+                    result = db.execute(_text("SELECT pg_advisory_lock_held(123456)"))
+                    if result.scalar():
+                        db.execute(_text("SELECT pg_advisory_unlock(123456)"))
+                        db.commit()
+                except Exception:
+                    # Ignorer les erreurs de libération de lock (peut être déjà libéré par rollback)
+                    db.rollback()
     except Exception as e:
         # En cas d'erreur, rollback et continuer (ne pas bloquer l'app)
-        db.rollback()
+        try:
+            db.rollback()
+        except Exception:
+            pass
         print(f"[Schema] Error ensuring local_watchers schema (non-critical): {e}")
 
 # Base URL du site pour les liens envoyés par email
@@ -458,10 +495,40 @@ def _gdrive_headers(access_token: str) -> Dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 def _gdrive_ensure_integration_schema(db: Session) -> None:
-    """Ensure gdrive_integrations has recent columns (idempotent). Utilise un verrou PostgreSQL pour éviter les conflits."""
+    """Ensure gdrive_integrations has recent columns (idempotent). Vérifie d'abord les colonnes pour éviter les locks inutiles."""
     try:
+        # Vérifier si les colonnes existent AVANT d'essayer de les ajouter (évite le lock)
+        columns_check = db.execute(_text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'gdrive_integrations'
+        """)).fetchall()
+        existing_columns = {row[0] for row in columns_check}
+        
+        # Si toutes les colonnes existent déjà, on n'a rien à faire (sauf event_id qui peut nécessiter un ALTER)
+        required_columns = {'listening', 'poll_interval_sec', 'batch_size', 'last_poll_at'}
+        missing_columns = required_columns - existing_columns
+        
+        # Vérifier si event_id est NOT NULL (nécessite un ALTER)
+        event_id_nullable = True
+        try:
+            result = db.execute(_text("""
+                SELECT is_nullable 
+                FROM information_schema.columns 
+                WHERE table_name = 'gdrive_integrations' AND column_name = 'event_id'
+            """))
+            row = result.fetchone()
+            if row:
+                event_id_nullable = row[0] == 'YES'
+        except Exception:
+            pass
+        
+        if not missing_columns and event_id_nullable:
+            # Tout est déjà à jour, pas besoin de migration
+            return
+        
+        # Il manque des colonnes ou event_id n'est pas nullable, on doit faire une migration
         # Utiliser un advisory lock pour éviter que plusieurs instances fassent la migration en même temps
-        # Lock ID = 123457 (arbitraire mais unique pour cette migration)
         lock_acquired = False
         try:
             result = db.execute(_text("SELECT pg_try_advisory_lock(123457)"))
@@ -471,7 +538,7 @@ def _gdrive_ensure_integration_schema(db: Session) -> None:
                 print("[Schema] Another instance is running gdrive migration, skipping...")
                 return
             
-            # Vérifier si les colonnes existent AVANT d'essayer de les ajouter
+            # Vérifier à nouveau (race condition possible)
             columns_check = db.execute(_text("""
                 SELECT column_name 
                 FROM information_schema.columns 
@@ -498,19 +565,35 @@ def _gdrive_ensure_integration_schema(db: Session) -> None:
                 ))
             
             # Relax event_id NOT NULL if still present (toujours essayer, c'est idempotent)
-            try:
-                db.execute(_text("ALTER TABLE gdrive_integrations ALTER COLUMN event_id DROP NOT NULL"))
-            except Exception:
-                pass  # Colonne déjà nullable ou n'existe pas
+            if not event_id_nullable:
+                try:
+                    db.execute(_text("ALTER TABLE gdrive_integrations ALTER COLUMN event_id DROP NOT NULL"))
+                except Exception:
+                    pass  # Colonne déjà nullable ou n'existe pas
             
             db.commit()
             print("[Schema] gdrive_integrations schema ensured successfully")
+        except Exception as e:
+            db.rollback()
+            print(f"[Schema] Error during gdrive migration (non-critical): {e}")
         finally:
+            # Libérer le lock seulement si on l'a acquis ET si la transaction est toujours active
             if lock_acquired:
-                db.execute(_text("SELECT pg_advisory_unlock(123457)"))
-                db.commit()
+                try:
+                    # Vérifier si on possède toujours le lock avant de le libérer
+                    result = db.execute(_text("SELECT pg_advisory_lock_held(123457)"))
+                    if result.scalar():
+                        db.execute(_text("SELECT pg_advisory_unlock(123457)"))
+                        db.commit()
+                except Exception:
+                    # Ignorer les erreurs de libération de lock (peut être déjà libéré par rollback)
+                    db.rollback()
     except Exception as e:
-        db.rollback()
+        # En cas d'erreur, rollback et continuer (ne pas bloquer l'app)
+        try:
+            db.rollback()
+        except Exception:
+            pass
         print(f"[Schema] Error ensuring gdrive_integrations schema (non-critical): {e}")
 
 def _gdrive_list_folder_files(access_token: str, folder_id: str) -> List[Dict[str, Any]]:
@@ -2494,32 +2577,25 @@ async def get_my_photos(
         raise HTTPException(status_code=404, detail="Aucun �v�nement associ� � cet utilisateur")
     event_id = user_event.event_id
     
-    matched_photo_ids = [
-        photo_id for (photo_id,) in
-        db.query(FaceMatch.photo_id).filter(
-            FaceMatch.user_id == current_user.id
-        ).all()
-    ]
-    if not matched_photo_ids:
-        return []
-    
     # Charger l'event UNE SEULE FOIS (évite N+1 lazy load)
     event = db.query(Event).filter_by(id=event_id).first()
     event_name = event.name if event else None
     
-    matched_ids_set = set(matched_photo_ids)
-    
-    # CRITIQUE: Utiliser defer() pour ne PAS charger les binaires (2-3MB par photo)
+    # OPTIMISATION CRITIQUE: Utiliser un JOIN direct au lieu de Photo.id.in_(list)
+    # Photo.id.in_(list) peut être TRÈS lent avec beaucoup de photos car PostgreSQL
+    # doit parser une liste très longue. Un JOIN est beaucoup plus rapide.
     from sqlalchemy.orm import defer
     photos = db.query(Photo).options(
         defer(Photo.photo_data)  # Ne pas charger les données binaires
+    ).join(
+        FaceMatch, Photo.id == FaceMatch.photo_id
     ).filter(
-        Photo.id.in_(matched_photo_ids),
+        FaceMatch.user_id == current_user.id,
         Photo.event_id == event_id
-    ).order_by(
+    ).distinct().order_by(
         Photo.uploaded_at.desc(),
         Photo.id.desc()
-    ).all()
+    ).limit(1000).all()  # Limite de sécurité pour éviter les requêtes trop longues
     
     result = []
     for photo in photos:
@@ -2534,8 +2610,8 @@ async def get_my_photos(
             "photographer_id": photo.photographer_id,
             "uploaded_at": photo.uploaded_at,
             "event_id": photo.event_id,
-            "event_name": event_name,  # Utiliser la valeur préchargée (pas de lazy load)
-            "has_face_match": photo.id in matched_ids_set,
+            "event_name": event_name,
+            "has_face_match": True,  # Toujours True car on filtre par FaceMatch
         })
     
     return result
@@ -2558,7 +2634,10 @@ async def get_all_photos(
     event = db.query(Event).filter_by(id=event_id).first()
     event_name = event.name if event else None
     
-    # Récupérer les matches pour cet utilisateur (requête séparée, plus stable)
+    # OPTIMISATION: Récupérer les matches en une seule requête rapide
+    from sqlalchemy.orm import defer
+    
+    # Récupérer les IDs des photos matcheés (requête rapide avec index)
     matched_photo_ids = {
         photo_id for (photo_id,) in
         db.query(FaceMatch.photo_id).filter(
@@ -2566,8 +2645,7 @@ async def get_all_photos(
         ).all()
     }
     
-    # CRITIQUE: Utiliser defer() pour ne PAS charger les binaires (2-3MB par photo)
-    from sqlalchemy.orm import defer
+    # Charger les photos avec limite pour éviter les requêtes trop longues
     photos = db.query(Photo).options(
         defer(Photo.photo_data)  # Ne pas charger les données binaires
     ).filter(
@@ -2575,7 +2653,7 @@ async def get_all_photos(
     ).order_by(
         Photo.uploaded_at.desc(),
         Photo.id.desc()
-    ).all()
+    ).limit(1000).all()  # Limite de sécurité pour éviter les requêtes trop longues
     
     result = []
     for photo in photos:
