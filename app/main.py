@@ -61,30 +61,70 @@ logger.setLevel(logging.INFO)
 templates = Jinja2Templates(directory="templates")
 
 def _ensure_local_watchers_schema(db: Session) -> None:
+    """Assure que le schéma local_watchers existe. Utilise un verrou PostgreSQL pour éviter les conflits."""
     try:
-        db.execute(_text("""
-            CREATE TABLE IF NOT EXISTS local_watchers (
-                id SERIAL PRIMARY KEY,
-                event_id INTEGER NOT NULL REFERENCES events(id),
-                label TEXT NULL,
-                expected_path TEXT NULL,
-                move_uploaded_dir TEXT NULL,
-                machine_label TEXT NULL,
-                listening BOOLEAN NOT NULL DEFAULT TRUE,
-                status TEXT NULL,
-                last_error TEXT NULL,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ
-            )
-        """))
-        # Idempotent add columns (for existing deployments)
-        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS machine_label TEXT"))
-        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS listening BOOLEAN NOT NULL DEFAULT TRUE"))
-        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS status TEXT"))
-        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS last_error TEXT"))
-        db.execute(_text("ALTER TABLE local_watchers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ"))
-    except Exception:
-        pass
+        # Utiliser un advisory lock pour éviter que plusieurs instances fassent la migration en même temps
+        # Lock ID = 123456 (arbitraire mais unique pour cette migration)
+        lock_acquired = False
+        try:
+            # Essayer d'acquérir le lock (non-bloquant avec timeout de 1 seconde)
+            result = db.execute(_text("SELECT pg_try_advisory_lock(123456)"))
+            lock_acquired = result.scalar()
+            
+            if not lock_acquired:
+                # Une autre instance est en train de faire la migration, on skip
+                print("[Schema] Another instance is running migration, skipping...")
+                return
+            
+            # Créer la table si elle n'existe pas
+            db.execute(_text("""
+                CREATE TABLE IF NOT EXISTS local_watchers (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    label TEXT NULL,
+                    expected_path TEXT NULL,
+                    move_uploaded_dir TEXT NULL,
+                    machine_label TEXT NULL,
+                    listening BOOLEAN NOT NULL DEFAULT TRUE,
+                    status TEXT NULL,
+                    last_error TEXT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ
+                )
+            """))
+            
+            # Vérifier si les colonnes existent AVANT d'essayer de les ajouter (évite le lock)
+            # Cette requête est rapide et ne nécessite pas de lock exclusif
+            columns_check = db.execute(_text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'local_watchers'
+            """)).fetchall()
+            existing_columns = {row[0] for row in columns_check}
+            
+            # Ajouter les colonnes seulement si elles n'existent pas
+            if 'machine_label' not in existing_columns:
+                db.execute(_text("ALTER TABLE local_watchers ADD COLUMN machine_label TEXT"))
+            if 'listening' not in existing_columns:
+                db.execute(_text("ALTER TABLE local_watchers ADD COLUMN listening BOOLEAN NOT NULL DEFAULT TRUE"))
+            if 'status' not in existing_columns:
+                db.execute(_text("ALTER TABLE local_watchers ADD COLUMN status TEXT"))
+            if 'last_error' not in existing_columns:
+                db.execute(_text("ALTER TABLE local_watchers ADD COLUMN last_error TEXT"))
+            if 'updated_at' not in existing_columns:
+                db.execute(_text("ALTER TABLE local_watchers ADD COLUMN updated_at TIMESTAMPTZ"))
+            
+            db.commit()
+            print("[Schema] local_watchers schema ensured successfully")
+        finally:
+            # Toujours libérer le lock
+            if lock_acquired:
+                db.execute(_text("SELECT pg_advisory_unlock(123456)"))
+                db.commit()
+    except Exception as e:
+        # En cas d'erreur, rollback et continuer (ne pas bloquer l'app)
+        db.rollback()
+        print(f"[Schema] Error ensuring local_watchers schema (non-critical): {e}")
 
 # Base URL du site pour les liens envoyés par email
 SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "https://facerecognition-d0r8.onrender.com")
@@ -418,29 +458,60 @@ def _gdrive_headers(access_token: str) -> Dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 def _gdrive_ensure_integration_schema(db: Session) -> None:
-    """Ensure gdrive_integrations has recent columns (idempotent)."""
+    """Ensure gdrive_integrations has recent columns (idempotent). Utilise un verrou PostgreSQL pour éviter les conflits."""
     try:
-        # Add newly introduced columns if they are missing
-        db.execute(_text(
-            "ALTER TABLE gdrive_integrations ADD COLUMN IF NOT EXISTS listening BOOLEAN NOT NULL DEFAULT false"
-        ))
-        db.execute(_text(
-            "ALTER TABLE gdrive_integrations ADD COLUMN IF NOT EXISTS poll_interval_sec INTEGER"
-        ))
-        db.execute(_text(
-            "ALTER TABLE gdrive_integrations ADD COLUMN IF NOT EXISTS batch_size INTEGER"
-        ))
-        db.execute(_text(
-            "ALTER TABLE gdrive_integrations ADD COLUMN IF NOT EXISTS last_poll_at TIMESTAMPTZ"
-        ))
-        # Relax event_id NOT NULL if still present
+        # Utiliser un advisory lock pour éviter que plusieurs instances fassent la migration en même temps
+        # Lock ID = 123457 (arbitraire mais unique pour cette migration)
+        lock_acquired = False
         try:
-            db.execute(_text("ALTER TABLE gdrive_integrations ALTER COLUMN event_id DROP NOT NULL"))
-        except Exception:
-            pass
-        db.commit()
-    except Exception:
+            result = db.execute(_text("SELECT pg_try_advisory_lock(123457)"))
+            lock_acquired = result.scalar()
+            
+            if not lock_acquired:
+                print("[Schema] Another instance is running gdrive migration, skipping...")
+                return
+            
+            # Vérifier si les colonnes existent AVANT d'essayer de les ajouter
+            columns_check = db.execute(_text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'gdrive_integrations'
+            """)).fetchall()
+            existing_columns = {row[0] for row in columns_check}
+            
+            # Add newly introduced columns if they are missing
+            if 'listening' not in existing_columns:
+                db.execute(_text(
+                    "ALTER TABLE gdrive_integrations ADD COLUMN listening BOOLEAN NOT NULL DEFAULT false"
+                ))
+            if 'poll_interval_sec' not in existing_columns:
+                db.execute(_text(
+                    "ALTER TABLE gdrive_integrations ADD COLUMN poll_interval_sec INTEGER"
+                ))
+            if 'batch_size' not in existing_columns:
+                db.execute(_text(
+                    "ALTER TABLE gdrive_integrations ADD COLUMN batch_size INTEGER"
+                ))
+            if 'last_poll_at' not in existing_columns:
+                db.execute(_text(
+                    "ALTER TABLE gdrive_integrations ADD COLUMN last_poll_at TIMESTAMPTZ"
+                ))
+            
+            # Relax event_id NOT NULL if still present (toujours essayer, c'est idempotent)
+            try:
+                db.execute(_text("ALTER TABLE gdrive_integrations ALTER COLUMN event_id DROP NOT NULL"))
+            except Exception:
+                pass  # Colonne déjà nullable ou n'existe pas
+            
+            db.commit()
+            print("[Schema] gdrive_integrations schema ensured successfully")
+        finally:
+            if lock_acquired:
+                db.execute(_text("SELECT pg_advisory_unlock(123457)"))
+                db.commit()
+    except Exception as e:
         db.rollback()
+        print(f"[Schema] Error ensuring gdrive_integrations schema (non-critical): {e}")
 
 def _gdrive_list_folder_files(access_token: str, folder_id: str) -> List[Dict[str, Any]]:
     # Images only, support My Drive + Shared Drives, paginate
