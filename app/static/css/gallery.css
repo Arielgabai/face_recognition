@@ -424,7 +424,6 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         height: 40px;
         font-size: 24px;
     }
-}
 
 @media (max-width: 480px) {
     /* Technique identique à la bannière tabs */
@@ -474,7 +473,7 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         top: 10px;
         right: 10px;
     }
-}
+
 
 /* Thèmes de couleur alternatifs */
 .gallery-theme-dark {
