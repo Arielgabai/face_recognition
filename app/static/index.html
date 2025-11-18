@@ -2367,13 +2367,15 @@
 
 
 
-        function renderPhotosModern(container, photos, galleryId) {
+function renderPhotosModern(container, photos, galleryId, options = {}) {
+    const { cacheBust = false } = options;
             try {
                 const target = (typeof container === 'string') ? document.querySelector(container) : container;
                 if (!target) return;
-                const images = photos.map((p, idx) => ({
+        const timestamp = cacheBust ? Date.now() : null;
+        const images = photos.map((p, idx) => ({
                     id: p.id,
-                    src: `/api/photo/${p.id}`,
+            src: cacheBust ? `/api/photo/${p.id}?cb=${timestamp}` : `/api/photo/${p.id}`,
                     alt: p.original_filename || `Photo ${idx + 1}`,
                     hasFaceMatch: !!(p.has_face_match || p.hasFaceMatch)
                 }));
@@ -3697,46 +3699,10 @@
                 }
             }
             
-            // Afficher via la galerie moderne et forcer un cache-busting
-            const useModern = typeof window.ModernGallery !== 'undefined';
-            if (useModern) {
-                try {
-                    const images = photos.map((p, idx) => ({
-                        src: `/api/photo/${p.id}?t=${Date.now()}`,
-                        alt: p.original_filename || `Photo ${idx + 1}`
-                    }));
-                    container.innerHTML = '<div id="myModernGallery"></div>';
-                    const g = new ModernGallery('#myModernGallery', { lightbox: true, keyboardNavigation: true, lazy: false });
-                    g.loadImages(images);
-                } catch (e) {
-                    console.error('ModernGallery error (update):', e);
-                    container.innerHTML = `
-                        <div class="masonry">
-                            ${photos.map(photo => `
-                                <div class="masonry-item" style="position: relative;">
-                                    <img src="/api/photo/${photo.id}?t=${Date.now()}" alt="Photo">
-                                    ${photo.has_face_match ? `
-                                        <div style="position: absolute; top: 8px; right: 8px; background: #4caf50; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 4px; z-index: 10;">
-                                            <span>👤</span> Match
-                                        </div>
-                                    ` : ''}
-                                </div>
-                            `).join('')}
-                        </div>
-                    `;
-                }
-            } else {
-                container.innerHTML = `
-                    <div class="masonry">
-                        ${photos.map(photo => `
-                            <div class="masonry-item"><img src="/api/photo/${photo.id}?t=${Date.now()}" alt="Photo"></div>
-                        `).join('')}
-                    </div>
-                `;
-            }
-            // Attendre que toutes les images soient chargées avant de signaler la fin
+            // Afficher via la galerie moderne pour profiter du layout optimisé
+            renderPhotosModern('#myPhotosList', photos, 'myModernGallery', { cacheBust: true });
             try {
-                waitForAllImagesIn(container).then(() => {
+                waitForAllImagesIn('#myPhotosList').then(() => {
                     try { window.__myPhotosPrimed = true; window.__myPhotosHash = idsHash(photos); } catch {}
                     dispatchMyPhotosLoaded();
                 });
