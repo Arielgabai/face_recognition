@@ -3120,9 +3120,15 @@
                     // Mettre à jour les informations du menu hamburger
                     updateMenuUserInfo(currentUser);
                     
-                    // Charger les données - "Toutes les photos" par défaut
-                    await loadAllPhotos();
+                    // Charger les données : lancer "Toutes les photos" mais ne pas bloquer "Vos photos"
+                    const allPhotosPromise = loadAllPhotos().catch(err => console.error('loadAllPhotos error:', err));
                     await loadMyPhotos();
+                    // Laisser le chargement "Toutes les photos" finir en arrière-plan
+                    allPhotosPromise.finally(() => {
+                        try {
+                            console.log('Chargement de "Toutes les photos" terminé');
+                        } catch {}
+                    });
 
                     // Initialiser le compte à rebours d'expiration
                     try { initExpirationCountdown(); } catch (e) { console.warn('Countdown init error', e); }
