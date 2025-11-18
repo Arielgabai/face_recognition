@@ -538,7 +538,7 @@ class ModernGallery {
         card.setAttribute('data-index', index);
         try { card.style.position = 'relative'; } catch {}
         
-        const estimatedRatio = image.aspectRatio || this.estimateAspectRatio(image) || 1.5;
+        const estimatedRatio = image.aspectRatio || this.estimateAspectRatio(image) || (image.hasFaceMatch ? 0.9 : 1.5);
         card.dataset.aspectRatio = String(estimatedRatio);
         card.dataset.loaded = '0';
         
