@@ -3700,13 +3700,9 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
             }
             
             // Afficher via la galerie moderne pour profiter du layout optimisé
-            renderPhotosModern('#myPhotosList', photos, 'myModernGallery', { cacheBust: true });
-            try {
-                waitForAllImagesIn('#myPhotosList').then(() => {
-                    try { window.__myPhotosPrimed = true; window.__myPhotosHash = idsHash(photos); } catch {}
-                    dispatchMyPhotosLoaded();
-                });
-            } catch {}
+            renderPhotosModern('#myPhotosList', photos, 'myModernGallery');
+            try { window.__myPhotosPrimed = true; window.__myPhotosHash = idsHash(photos); } catch {}
+            dispatchMyPhotosLoaded();
             
             console.log(`Affichage mis à jour avec succès: ${photos.length} photos`);
         }

@@ -138,10 +138,13 @@
     box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4), 0 0 20px rgba(138, 43, 226, 0.3);
 }
 
-.gallery-photo-card img {
+.gallery-photo-card img,
+#myModernGallery .gallery-photo-card img,
+#allModernGallery .gallery-photo-card img {
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
+    object-fit: cover;
     transition: transform 0.3s ease;
 }
 
