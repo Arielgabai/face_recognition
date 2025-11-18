@@ -142,9 +142,8 @@
 #myModernGallery .gallery-photo-card img,
 #allModernGallery .gallery-photo-card img {
     width: 100%;
-    height: 100%;
+    height: auto;
     display: block;
-    object-fit: cover;
     transition: transform 0.3s ease;
 }
 
