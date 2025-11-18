@@ -2719,12 +2719,9 @@
             
             // NOUVEAU: Si on clique sur "Vos Photos", recharger avec le bon layout (toujours refetch)
             if (tabName === 'my-photos') {
-                console.log('🔄 Rechargement de "Vos Photos" avec layout optimisé');
-                showGlobalLoading('Chargement de vos photos...');
+                console.log('🔄 Rechargement de "Vos Photos" (sans blocage global)');
                 setTimeout(() => {
-                    loadMyPhotos().finally(() => {
-                        hideGlobalLoading();
-                    });
+                    loadMyPhotos().catch(err => console.error('loadMyPhotos error:', err));
                 }, 50);
             }
         }

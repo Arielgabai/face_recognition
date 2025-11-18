@@ -131,87 +131,75 @@ class ModernGallery {
     
     adjustRowHeights(retryCount = 0) {
         const cards = this.container.querySelectorAll('.gallery-photo-card');
-        if (cards.length === 0) return;
-        
-        // Compter les images chargées
-        let loadedImages = 0;
-        let totalImages = 0;
-        
-        Array.from(cards).forEach(card => {
-            const img = card.querySelector('img');
-            if (img) {
-                totalImages++;
-                if (img.complete && img.naturalHeight > 0) {
-                    loadedImages++;
-                }
-            }
-        });
-        
-        console.log(`📊 Images chargées: ${loadedImages}/${totalImages} (tentative ${retryCount + 1})`);
-        
-        // GARANTIR 100% : Attendre jusqu'à ce que TOUTES les images soient chargées
-        if (loadedImages < totalImages) {
-            // Augmenter l'intervalle progressivement pour être patient
-            const waitTime = Math.min(500 + (retryCount * 100), 2000);
-            console.log(`⏳ Attente ${waitTime}ms pour chargement complet...`);
-            setTimeout(() => this.adjustRowHeights(retryCount + 1), waitTime);
-            return;
-        }
-        
-        console.log('✅ Toutes les images chargées - Application du layout parfait');
-        
-        // Maintenant on est sûr que toutes les images sont chargées
-        
-        // S'assurer que les styles mobiles sont appliqués
+        if (!cards || cards.length === 0) return;
+
         const galleryGrid = this.container.querySelector('.modern-gallery');
         if (galleryGrid) {
             this.applyMobileStyles(galleryGrid);
         }
-        
-        // Grouper les cartes par ligne (même offsetTop avec tolérance)
+
+        // Grouper les cartes par ligne (offsetTop approché)
         const rows = {};
         cards.forEach(card => {
-            const top = Math.round(card.offsetTop / 10) * 10; // Tolérance de 10px
+            const top = Math.round(card.offsetTop / 10) * 10;
             if (!rows[top]) rows[top] = [];
             rows[top].push(card);
         });
-        
-        // Pour chaque ligne, trouver la hauteur max et ajuster
+
         Object.values(rows).forEach(rowCards => {
             let maxHeight = 0;
-            
-            // Trouver la hauteur maximale de la ligne
+
             rowCards.forEach(card => {
                 const img = card.querySelector('img');
-                if (img) {
-                    const imgHeight = img.offsetHeight || img.naturalHeight || 150;
-                    maxHeight = Math.max(maxHeight, imgHeight);
-                }
+                const effectiveHeight = this.getEffectiveHeight(card, img);
+                maxHeight = Math.max(maxHeight, effectiveHeight);
             });
-            
-            // S'assurer qu'on a une hauteur minimum
-            maxHeight = Math.max(maxHeight, 100);
-            
-            // Appliquer la hauteur max à toutes les cartes de la ligne
+
+            maxHeight = Math.max(maxHeight, 110);
+
             rowCards.forEach(card => {
                 const img = card.querySelector('img');
+                card.style.height = `${Math.round(maxHeight)}px`;
                 if (img) {
-                    const imgHeight = img.offsetHeight || img.naturalHeight || 150;
-                    
-                    card.style.height = `${maxHeight}px`;
-                    
-                    // Ajouter le centrage seulement si la photo est plus petite
-                    if (imgHeight < maxHeight * 0.95) { // Tolérance de 5%
-                        card.classList.add('needs-centering');
-                        // Appliquer l'image en arrière-plan flou
+                    img.style.width = '100%';
+                    img.style.height = `${Math.round(maxHeight)}px`;
+                    img.style.objectFit = 'cover';
+                }
+
+                const imgHeight = img ? (img.offsetHeight || img.naturalHeight || maxHeight) : maxHeight;
+                if (imgHeight < maxHeight * 0.95) {
+                    card.classList.add('needs-centering');
+                    if (img) {
                         card.style.setProperty('--bg-image', `url(${img.src})`);
-                    } else {
-                        card.classList.remove('needs-centering');
-                        card.style.removeProperty('--bg-image');
                     }
+                } else {
+                    card.classList.remove('needs-centering');
+                    card.style.removeProperty('--bg-image');
                 }
             });
         });
+
+        const needsRetry = Array.from(cards).some(card => card.dataset.loaded !== '1');
+        if (needsRetry && retryCount < 8) {
+            const waitTime = Math.min(400 + retryCount * 120, 1500);
+            setTimeout(() => this.adjustRowHeights(retryCount + 1), waitTime);
+        }
+    }
+
+    getEffectiveHeight(card, img) {
+        if (!card) return 150;
+        const width = card.clientWidth || (img ? img.clientWidth : 200) || 200;
+        let ratio = parseFloat(card.dataset.aspectRatio || '0');
+        if (!ratio || !isFinite(ratio)) {
+            ratio = 1.5;
+        }
+        if (img) {
+            const natural = img.naturalHeight || img.offsetHeight;
+            if (natural && natural > 1) {
+                return natural;
+            }
+        }
+        return width / ratio;
     }
     
     renderDesktopStyle(galleryGrid) {
@@ -550,8 +538,15 @@ class ModernGallery {
         card.setAttribute('data-index', index);
         try { card.style.position = 'relative'; } catch {}
         
+        const estimatedRatio = image.aspectRatio || this.estimateAspectRatio(image) || 1.5;
+        card.dataset.aspectRatio = String(estimatedRatio);
+        card.dataset.loaded = '0';
+        
         const img = document.createElement('img');
         img.alt = image.alt || `Image ${index + 1}`;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
         
         if (this.options.lazy) {
             img.loading = 'lazy';
@@ -560,8 +555,12 @@ class ModernGallery {
         // Gestion du chargement d'image
         img.onload = () => {
             // Calculer et stocker l'aspect ratio réel
-            const aspectRatio = img.naturalWidth / img.naturalHeight;
+            const aspectRatio = img.naturalWidth && img.naturalHeight
+                ? (img.naturalWidth / img.naturalHeight)
+                : estimatedRatio;
             image.aspectRatio = aspectRatio;
+            card.dataset.aspectRatio = String(aspectRatio);
+            card.dataset.loaded = '1';
             
             if (this.options.autoDetectRatio) {
                 this.detectAndApplyRatio(img, card);
