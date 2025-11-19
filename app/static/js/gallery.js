@@ -155,7 +155,10 @@ class ModernGallery {
                 maxHeight = Math.max(maxHeight, effectiveHeight);
             });
 
-            maxHeight = Math.max(maxHeight, 110);
+            // Assurer une hauteur minimale raisonnable selon l'appareil
+            const isMobile = window.innerWidth <= 768;
+            const minRowHeight = isMobile ? 120 : 150;
+            maxHeight = Math.max(maxHeight, minRowHeight);
 
             rowCards.forEach(card => {
                 const img = card.querySelector('img');
@@ -201,18 +204,32 @@ class ModernGallery {
 
     getEffectiveHeight(card, img) {
         if (!card) return 150;
-        const width = card.clientWidth || (img ? img.clientWidth : 200) || 200;
+        const cardWidth = card.clientWidth || 200;
+        
+        // Obtenir le ratio d'aspect réel de l'image
         let ratio = parseFloat(card.dataset.aspectRatio || '0');
-        if (!ratio || !isFinite(ratio)) {
-            ratio = 1.5;
+        
+        if (img && img.naturalWidth && img.naturalHeight) {
+            // Utiliser les dimensions natives pour calculer le ratio
+            ratio = img.naturalWidth / img.naturalHeight;
+            card.dataset.aspectRatio = String(ratio);
         }
-        if (img) {
-            const natural = img.naturalHeight || img.offsetHeight;
-            if (natural && natural > 1) {
-                return natural;
-            }
+        
+        if (!ratio || !isFinite(ratio) || ratio <= 0) {
+            ratio = 1.5; // Ratio par défaut
         }
-        return width / ratio;
+        
+        // Calculer la hauteur proportionnelle à la largeur de la carte
+        let calculatedHeight = cardWidth / ratio;
+        
+        // Limiter les hauteurs extrêmes pour un affichage harmonieux
+        const isMobile = window.innerWidth <= 768;
+        const minHeight = isMobile ? 100 : 120;
+        const maxHeight = isMobile ? 300 : 400;
+        
+        calculatedHeight = Math.max(minHeight, Math.min(maxHeight, calculatedHeight));
+        
+        return calculatedHeight;
     }
     
     renderDesktopStyle(galleryGrid) {
