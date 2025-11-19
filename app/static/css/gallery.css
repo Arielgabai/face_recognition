@@ -58,6 +58,7 @@
     grid-row-gap: 8px;
     align-items: start;
     width: 100%;
+    grid-auto-rows: auto;
 }
 
 /* Couleur du titre d'événement pour matcher le fond countdown */
@@ -142,9 +143,10 @@
 #myModernGallery .gallery-photo-card img,
 #allModernGallery .gallery-photo-card img {
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
     transition: transform 0.3s ease;
+    object-fit: contain;
 }
 
 .gallery-photo-card:hover img {

@@ -249,7 +249,7 @@ const Gallery: React.FC<GalleryProps> = ({
                 sx={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover',
+                  objectFit: 'contain',
                   display: 'block',
                   opacity: isLoaded ? 1 : 0,
                   transition: 'opacity 0.3s ease',

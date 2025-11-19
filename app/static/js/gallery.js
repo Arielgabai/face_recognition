@@ -160,14 +160,27 @@ class ModernGallery {
             rowCards.forEach(card => {
                 const img = card.querySelector('img');
                 card.style.height = `${Math.round(maxHeight)}px`;
+                
                 if (img) {
-                    img.style.width = '100%';
-                    img.style.height = `${Math.round(maxHeight)}px`;
-                    img.style.objectFit = 'cover';
+                    // CORRECTION CLÉ: utiliser contain au lieu de cover pour éviter la déformation
+                    img.style.width = 'auto';
+                    img.style.height = 'auto';
+                    img.style.maxWidth = '100%';
+                    img.style.maxHeight = '100%';
+                    img.style.objectFit = 'contain';
                 }
 
-                const imgHeight = img ? (img.offsetHeight || img.naturalHeight || maxHeight) : maxHeight;
-                if (imgHeight < maxHeight * 0.95) {
+                // Si l'image est plus petite que le conteneur, activer le fond flouté
+                const imgHeight = img ? (img.naturalHeight || img.offsetHeight || maxHeight) : maxHeight;
+                const imgWidth = img ? (img.naturalWidth || img.offsetWidth || card.offsetWidth) : card.offsetWidth;
+                const cardWidth = card.offsetWidth;
+                
+                // Calculer si l'image remplit le conteneur
+                const heightRatio = imgHeight / maxHeight;
+                const widthRatio = imgWidth / cardWidth;
+                
+                // Activer le fond flouté si l'image ne remplit pas le conteneur
+                if (heightRatio < 0.95 || widthRatio < 0.95) {
                     card.classList.add('needs-centering');
                     if (img) {
                         card.style.setProperty('--bg-image', `url(${img.src})`);
@@ -546,7 +559,7 @@ class ModernGallery {
         img.alt = image.alt || `Image ${index + 1}`;
         img.style.width = '100%';
         img.style.height = '100%';
-        img.style.objectFit = 'cover';
+        img.style.objectFit = 'contain';
         
         if (this.options.lazy) {
             img.loading = 'lazy';
