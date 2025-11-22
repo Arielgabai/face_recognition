@@ -397,7 +397,12 @@ const Dashboard: React.FC = () => {
   const [myPhotos, setMyPhotos] = useState<Photo[]>([]);
   const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  
+  // États de chargement séparés pour améliorer la réactivité
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [loadingMyPhotos, setLoadingMyPhotos] = useState(false);
+  const [loadingAllPhotos, setLoadingAllPhotos] = useState(false);
+  
   const [error, setError] = useState<string | null>(null);
   const [currentEventId, setCurrentEventId] = useState<number | null>(null);
 
@@ -407,39 +412,52 @@ const Dashboard: React.FC = () => {
 
   const loadDashboardData = async () => {
     try {
-      setLoading(true);
+      // Ne pas bloquer l'interface globale
+      setError(null);
+      setLoadingProfile(true);
+      setLoadingMyPhotos(true);
+      setLoadingAllPhotos(true);
       
+      // 1. Charger le profil (très rapide)
+      photoService.getProfile()
+        .then(res => setProfile(res.data))
+        .catch(err => console.error("Erreur profil", err))
+        .finally(() => setLoadingProfile(false));
+
       if (user?.user_type === 'user' && currentEventId) {
-        // Pour les utilisateurs, charger les photos de l'événement sélectionné
-        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
-          photoService.getProfile(),
-          photoService.getUserEventPhotos(currentEventId),
-          photoService.getAllEventPhotos(currentEventId),
-        ]);
-        
-        setProfile(profileData.data);
-        setMyPhotos(myPhotosData.data);
-        setAllPhotos(allPhotosData.data);
-        console.log('[DEBUG] All photos loaded (event):', allPhotosData.data.length);
-        console.log('[DEBUG] Photos with face match (event):', allPhotosData.data.filter(p => p.has_face_match).length);
+        // 2. Charger MES photos (prioritaire)
+        photoService.getUserEventPhotos(currentEventId)
+          .then(res => setMyPhotos(res.data))
+          .catch(err => console.error("Erreur mes photos", err))
+          .finally(() => setLoadingMyPhotos(false));
+
+        // 3. Charger TOUTES les photos (peut être lent, ne bloque pas le reste)
+        photoService.getAllEventPhotos(currentEventId)
+          .then(res => {
+            setAllPhotos(res.data);
+            console.log('[DEBUG] All photos loaded:', res.data.length);
+          })
+          .catch(err => console.error("Erreur toutes les photos", err))
+          .finally(() => setLoadingAllPhotos(false));
+          
       } else {
-        // Chargement normal pour les photographes ou sans événement sélectionné
-        const [profileData, myPhotosData, allPhotosData] = await Promise.all([
-          photoService.getProfile(),
-          photoService.getMyPhotos(),
-          photoService.getAllPhotos(),
-        ]);
-        
-        setProfile(profileData.data);
-        setMyPhotos(myPhotosData.data);
-        setAllPhotos(allPhotosData.data);
-        console.log('[DEBUG] All photos loaded (normal):', allPhotosData.data.length);
-        console.log('[DEBUG] Photos with face match (normal):', allPhotosData.data.filter(p => p.has_face_match).length);
+        // Mode photographe ou sans événement
+        photoService.getMyPhotos()
+          .then(res => setMyPhotos(res.data))
+          .catch(err => console.error("Erreur mes photos", err))
+          .finally(() => setLoadingMyPhotos(false));
+
+        photoService.getAllPhotos()
+          .then(res => setAllPhotos(res.data))
+          .catch(err => console.error("Erreur toutes les photos", err))
+          .finally(() => setLoadingAllPhotos(false));
       }
+      
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Erreur lors du chargement des données');
-    } finally {
-      setLoading(false);
+      setError(err.response?.data?.detail || 'Erreur lors de l\'initialisation');
+      setLoadingProfile(false);
+      setLoadingMyPhotos(false);
+      setLoadingAllPhotos(false);
     }
   };
 
@@ -556,7 +574,7 @@ const Dashboard: React.FC = () => {
     logout();
   };
 
-  if (loading) {
+  if (false) { // Désactivation du loader global bloquant
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
         <CircularProgress />
@@ -583,13 +601,22 @@ const Dashboard: React.FC = () => {
         )}
 
         <Paper sx={{ mb: 3, p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Bonjour, {user?.username} !
-          </Typography>
-          {profile && (
-            <Typography variant="body2" color="text.secondary">
-              Vous avez {profile.photos_with_face} photos où vous apparaissez sur un total de {profile.total_photos} photos.
-            </Typography>
+          {loadingProfile && !profile ? (
+             <Box display="flex" alignItems="center" gap={2}>
+               <CircularProgress size={20} />
+               <Typography variant="body2">Chargement du profil...</Typography>
+             </Box>
+          ) : (
+            <>
+              <Typography variant="h6" gutterBottom>
+                Bonjour, {user?.username} !
+              </Typography>
+              {profile && (
+                <Typography variant="body2" color="text.secondary">
+                  Vous avez {profile.photos_with_face} photos où vous apparaissez sur un total de {profile.total_photos} photos.
+                </Typography>
+              )}
+            </>
           )}
         </Paper>
 
@@ -609,8 +636,8 @@ const Dashboard: React.FC = () => {
 
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={tabValue} onChange={handleTabChange}>
-            <Tab label="Mes Photos" />
-            <Tab label="Général" />
+            <Tab label={`Mes Photos ${loadingMyPhotos ? '...' : ''}`} />
+            <Tab label={`Général ${loadingAllPhotos ? '...' : ''}`} />
             <Tab label="Upload Selfie" />
             {user?.user_type === 'photographer' && (
               <Tab label="Upload Photo" />
@@ -623,7 +650,7 @@ const Dashboard: React.FC = () => {
           <ModernGallery 
             photos={myPhotos}
             title={`📸 Vos photos (${myPhotos.length})`}
-            loading={loading && myPhotos.length === 0}
+            loading={loadingMyPhotos}
             error={error}
           />
         </TabPanel>
@@ -632,7 +659,7 @@ const Dashboard: React.FC = () => {
           <ModernGallery 
             photos={allPhotos}
             title={`🖼 Toutes les photos disponibles (${allPhotos.length})`}
-            loading={loading && allPhotos.length === 0}
+            loading={loadingAllPhotos}
             error={error}
           />
         </TabPanel>
@@ -648,10 +675,10 @@ const Dashboard: React.FC = () => {
         {user?.user_type === 'photographer' && (
           <TabPanel value={tabValue} index={3}>
             <PhotoUpload onSuccess={async () => {
-              // Recharger toutes les photos + mes photos, attendre images
+              // Recharger les données en arrière-plan
               const baselineMyLen = myPhotos.length;
               const baselineMatches = profile?.photos_with_face ?? baselineMyLen;
-              await loadDashboardData();
+              loadDashboardData(); // Ne plus attendre ici pour ne pas bloquer
               await waitForDashboardGrowthAndImages(baselineMyLen, baselineMatches);
             }} eventId={currentEventId ?? undefined} />
           </TabPanel>
