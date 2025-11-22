@@ -104,27 +104,21 @@ class ModernGallery {
     applyMobileStyles(galleryGrid) {
         const width = window.innerWidth;
         
-        if (width <= 480) {
-            // Mobile - appliquer les styles directement
+        if (width <= 768) {
+            // Mobile & Tablette - 2 colonnes strictes
             galleryGrid.style.display = 'grid';
-            galleryGrid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(150px, 1fr))';
-            galleryGrid.style.gap = '1px';
-            galleryGrid.style.gridRowGap = '1px';
-            galleryGrid.style.width = '100vw';
-            galleryGrid.style.marginLeft = '-20px';
-            galleryGrid.style.marginRight = '-20px';
-            galleryGrid.style.padding = '0 20px';
-            galleryGrid.style.alignItems = 'start';
-        } else if (width <= 768) {
-            // Tablette - appliquer les styles directement
-            galleryGrid.style.display = 'grid';
-            galleryGrid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(160px, 1fr))';
-            galleryGrid.style.gap = '2px';
-            galleryGrid.style.gridRowGap = '2px';
-            galleryGrid.style.width = '100vw';
-            galleryGrid.style.marginLeft = '-20px';
-            galleryGrid.style.marginRight = '-20px';
-            galleryGrid.style.padding = '0 20px';
+            galleryGrid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+            galleryGrid.style.gap = '4px';
+            galleryGrid.style.gridRowGap = '4px';
+            
+            // Ajustements de marges pour mobile
+            if (width <= 480) {
+                galleryGrid.style.width = '100vw';
+                galleryGrid.style.marginLeft = '-20px';
+                galleryGrid.style.marginRight = '-20px';
+                galleryGrid.style.padding = '0 4px';
+            }
+            
             galleryGrid.style.alignItems = 'start';
         }
     }
@@ -133,59 +127,69 @@ class ModernGallery {
         const cards = this.container.querySelectorAll('.gallery-photo-card');
         if (!cards || cards.length === 0) return;
 
-        const galleryGrid = this.container.querySelector('.modern-gallery');
-        if (galleryGrid) {
-            this.applyMobileStyles(galleryGrid);
-        }
-
-        // Grouper les cartes par ligne (offsetTop approché)
+        // 1. Grouper les cartes par ligne visuelle
         const rows = {};
         cards.forEach(card => {
+            // Utiliser offsetTop pour déterminer la ligne
             const top = Math.round(card.offsetTop / 10) * 10;
             if (!rows[top]) rows[top] = [];
             rows[top].push(card);
         });
 
+        // 2. Traiter chaque ligne
         Object.values(rows).forEach(rowCards => {
-            let maxHeight = 0;
+            let maxRowHeight = 0;
+            const cardWidth = rowCards[0].offsetWidth; // Largeur fixe imposée par le CSS Grid
 
+            // A. Calculer la hauteur que chaque image AURAIT avec cette largeur
+            // Hauteur = Largeur / Ratio
             rowCards.forEach(card => {
-                const img = card.querySelector('img');
-                const effectiveHeight = this.getEffectiveHeight(card, img);
-                maxHeight = Math.max(maxHeight, effectiveHeight);
-            });
-
-            // Assurer une hauteur minimale raisonnable selon l'appareil
-            const isMobile = window.innerWidth <= 768;
-            const minRowHeight = isMobile ? 120 : 150;
-            maxHeight = Math.max(maxHeight, minRowHeight);
-
-            rowCards.forEach(card => {
-                const img = card.querySelector('img');
-                card.style.height = `${Math.round(maxHeight)}px`;
+                let ratio = parseFloat(card.dataset.aspectRatio || '1.5');
                 
-                if (img) {
-                    // CORRECTION CLÉ: utiliser contain au lieu de cover pour éviter la déformation
-                    img.style.width = 'auto';
-                    img.style.height = 'auto';
-                    img.style.maxWidth = '100%';
-                    img.style.maxHeight = '100%';
-                    img.style.objectFit = 'contain';
+                // Fallback si ratio invalide
+                if (!ratio || ratio <= 0) {
+                    const img = card.querySelector('img');
+                    if (img && img.naturalWidth && img.naturalHeight) {
+                        ratio = img.naturalWidth / img.naturalHeight;
+                        card.dataset.aspectRatio = ratio;
+                    } else {
+                        ratio = 1.5;
+                    }
                 }
 
-                // Si l'image est plus petite que le conteneur, activer le fond flouté
-                const imgHeight = img ? (img.naturalHeight || img.offsetHeight || maxHeight) : maxHeight;
-                const imgWidth = img ? (img.naturalWidth || img.offsetWidth || card.offsetWidth) : card.offsetWidth;
-                const cardWidth = card.offsetWidth;
+                // Calcul de la hauteur projetée pour cette largeur fixe
+                const projectedHeight = cardWidth / ratio;
+                maxRowHeight = Math.max(maxRowHeight, projectedHeight);
+            });
+            
+            // Limiter la hauteur max pour éviter des images verticales géantes (ex: panoramas verticaux)
+            // On limite à 1.5x la largeur (format portrait 2:3)
+            // maxRowHeight = Math.min(maxRowHeight, cardWidth * 1.8); 
+
+            // B. Appliquer la hauteur MAXIMALE à toutes les cartes de la ligne
+            rowCards.forEach(card => {
+                card.style.height = `${Math.round(maxRowHeight)}px`;
                 
-                // Calculer si l'image remplit le conteneur
-                const heightRatio = imgHeight / maxHeight;
-                const widthRatio = imgWidth / cardWidth;
-                
-                // Activer le fond flouté si l'image ne remplit pas le conteneur
-                if (heightRatio < 0.95 || widthRatio < 0.95) {
+                const img = card.querySelector('img');
+                let ratio = parseFloat(card.dataset.aspectRatio || '1.5');
+                const projectedHeight = cardWidth / ratio;
+
+                if (img) {
+                    // L'image prend toute la largeur
+                    img.style.width = '100%';
+                    // Hauteur auto pour respecter le ratio
+                    img.style.height = 'auto'; 
+                    img.style.objectFit = 'contain';
+                    img.style.position = 'relative';
+                    img.style.zIndex = '1';
+                }
+
+                // C. Si l'image est plus petite que la hauteur max, ajouter le fond flouté
+                // Différence significative (> 2px)
+                if (maxRowHeight - projectedHeight > 2) {
                     card.classList.add('needs-centering');
                     if (img) {
+                        // Créer l'effet flouté
                         card.style.setProperty('--bg-image', `url(${img.src})`);
                     }
                 } else {
@@ -195,6 +199,7 @@ class ModernGallery {
             });
         });
 
+        // Retry si des images ne sont pas encore chargées (ratio inconnu)
         const needsRetry = Array.from(cards).some(card => card.dataset.loaded !== '1');
         if (needsRetry && retryCount < 8) {
             const waitTime = Math.min(400 + retryCount * 120, 1500);

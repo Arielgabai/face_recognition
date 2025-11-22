@@ -48,27 +48,29 @@
     text-shadow: 0 0 10px rgba(138, 43, 226, 0.35);
 }
 
-/* Layout CSS Grid avec hauteurs dynamiques */
+/* Layout CSS Grid avec largeurs fixes */
 .modern-gallery,
 #myModernGallery,
 #allModernGallery {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    /* Colonnes de largeur égale et fixe (responsive) */
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 8px;
     grid-row-gap: 8px;
     align-items: start;
     width: 100%;
-    grid-auto-rows: auto;
 }
 
-/* Couleur du titre d'événement pour matcher le fond countdown */
-.event-title {
-    color: rgba(255,255,255,0.92) !important;
-    text-shadow: none !important;
-    -webkit-text-stroke: none !important;
+/* Mobile : 2 colonnes strictes */
+@media (max-width: 768px) {
+    .modern-gallery,
+    #myModernGallery,
+    #allModernGallery {
+        grid-template-columns: repeat(2, 1fr) !important; /* 2 colonnes de largeur égale */
+        gap: 4px !important;
+    }
 }
 
-/* Photos dans layout grid */
 .gallery-photo-card,
 #myModernGallery .gallery-photo-card,
 #allModernGallery .gallery-photo-card {
@@ -77,11 +79,14 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
-    background: transparent;
+    background: #000; /* Fond noir pour l'effet flouté */
     animation: fadeInUp 0.6s ease forwards;
     opacity: 0;
     transform: translateY(20px);
-    display: block;
+    display: flex; /* Flex pour centrer l'image */
+    flex-direction: column;
+    justify-content: center; /* Centrage vertical */
+    align-items: center;     /* Centrage horizontal */
     width: 100%;
 }
 
