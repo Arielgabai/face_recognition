@@ -24,7 +24,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
-    return <div>Chargement...</div>;
+    // Affichage vide pendant le chargement pour éviter le flash de texte
+    return null;
   }
 
   if (!user) {

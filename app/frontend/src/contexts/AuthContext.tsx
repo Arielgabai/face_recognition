@@ -28,19 +28,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (savedToken && savedUser) {
         try {
+          // Restauration optimiste de la session
           setToken(savedToken);
-          setUser(JSON.parse(savedUser));
+          const parsedUser = JSON.parse(savedUser);
+          setUser(parsedUser);
           
-          // Vérifier si le token est toujours valide
-          await authService.getCurrentUser();
+          // On considère l'utilisateur connecté immédiatement pour éviter la redirection
+          setIsLoading(false);
+          
+          // Vérification du token en arrière-plan
+          try {
+            await authService.getCurrentUser();
+          } catch (error) {
+            // Si le token n'est plus valide côté serveur, on déconnecte proprement
+            console.error("Session expirée ou invalide", error);
+            logout();
+          }
+          return;
         } catch (error) {
-          // Token invalide, nettoyer le localStorage
+          // Erreur de parsing des données locales
+          console.error("Erreur de lecture du localStorage", error);
           localStorage.removeItem('token');
           localStorage.removeItem('user');
-          setToken(null);
-          setUser(null);
         }
       }
+      // Si pas de données sauvegardées ou erreur de parsing
       setIsLoading(false);
     };
 
