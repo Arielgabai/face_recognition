@@ -4029,7 +4029,8 @@ async def get_event_photos(
             "user_id": photo.user_id,
             "photographer_id": photo.photographer_id,
             "uploaded_at": photo.uploaded_at,
-            "event_id": photo.event_id
+            "event_id": photo.event_id,
+            "show_in_general": photo.show_in_general
         })
     
     return photo_list
