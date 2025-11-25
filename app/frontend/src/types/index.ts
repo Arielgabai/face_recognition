@@ -18,6 +18,7 @@ export interface Photo {
   photographer_id?: number;
   uploaded_at: string;
   has_face_match?: boolean;
+  show_in_general?: boolean | null;
 }
 
 export interface FaceMatch {

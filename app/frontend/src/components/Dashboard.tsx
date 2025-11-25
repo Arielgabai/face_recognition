@@ -62,13 +62,15 @@ interface ModernGalleryProps {
   title?: string;
   loading?: boolean;
   error?: string | null;
+  showMatchTag?: boolean;
 }
 
 const ModernGallery: React.FC<ModernGalleryProps> = ({ 
   photos, 
   title, 
   loading = false, 
-  error 
+  error,
+  showMatchTag = true
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<number | null>(null);
   
@@ -219,8 +221,8 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
               }}
               onClick={() => openLightbox(index)}
             >
-              {/* Tag de matching */}
-              {photo.has_face_match && (
+              {/* Tag de matching (uniquement dans l'onglet Général) */}
+              {showMatchTag && photo.has_face_match && (
                 <Chip
                   icon={<FaceIcon />}
                   label="Match"
@@ -649,18 +651,20 @@ const Dashboard: React.FC = () => {
         <TabPanel value={tabValue} index={0}>
           <ModernGallery 
             photos={myPhotos}
-            title={`📸 Vos photos (${myPhotos.length})`}
+            title={`Mes photos (${myPhotos.length})`}
             loading={loadingMyPhotos}
             error={error}
+            showMatchTag={false}
           />
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
           <ModernGallery 
             photos={allPhotos}
-            title={`🖼 Toutes les photos disponibles (${allPhotos.length})`}
+            title={`Général (${allPhotos.length})`}
             loading={loadingAllPhotos}
             error={error}
+            showMatchTag={true}
           />
         </TabPanel>
 

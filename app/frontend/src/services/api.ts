@@ -105,6 +105,13 @@ export const photoService = {
   getUserEventPhotos: (eventId: number) => api.get(`/user/events/${eventId}/photos`),
   getAllEventPhotos: (eventId: number) => api.get(`/user/events/${eventId}/all-photos`),
   deletePhotosBulk: (photoIds: number[]) => api.delete('/photos', { params: { photo_ids: photoIds.join(',') } }),
+  
+  // Gestion de la visibilité dans l'onglet "Général"
+  togglePhotoShowInGeneral: (photoId: number, showInGeneral: boolean) => 
+    api.put(`/photos/${photoId}/show-in-general`, { show_in_general: showInGeneral }),
+  bulkTogglePhotosShowInGeneral: (photoIds: number[], showInGeneral: boolean) =>
+    api.put('/photos/bulk/show-in-general', { photo_ids: photoIds, show_in_general: showInGeneral }),
+  
   joinEvent: (eventCode: string) => api.post('/join-event', { event_code: eventCode }),
   registerWithEventCode: (userData: any, eventCode: string) => 
     api.post('/register-with-event-code', { user_data: userData, event_code: eventCode }),

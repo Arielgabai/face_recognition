@@ -2090,7 +2090,7 @@
             </div>
             
                         <div class="tabs">
-                <button class="tab" onclick="showTab('my-photos')" id="myPhotosTab">Vos Photos (0)</button>
+                <button class="tab" onclick="showTab('my-photos')" id="myPhotosTab">Mes photos (0)</button>
                 <button class="tab active" onclick="showTab('all-photos')" id="allPhotosTab">Général (0)</button>
                 <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤</button>
             </div>
@@ -2469,7 +2469,7 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                         // Mettre à jour le nombre de photos dans l'onglet
                         const myPhotosTab = document.getElementById('myPhotosTab');
                         if (myPhotosTab) {
-                            myPhotosTab.textContent = `Vos Photos (${photos.length})`;
+                            myPhotosTab.textContent = `Mes photos (${photos.length})`;
                         }
                         
                         // Utiliser la même fonction que pour les mises à jour (qui fonctionne)

@@ -2623,7 +2623,12 @@ async def get_all_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Version simplifi�e SANS cache pour diagnostiquer les plantages."""
+    """Version simplifi�e SANS cache pour diagnostiquer les plantages.
+    
+    NOUVELLE LOGIQUE (onglet "Général"):
+    - Si des photos ont show_in_general=True, retourner UNIQUEMENT celles-là
+    - Sinon (aucune photo sélectionnée), retourner TOUTES les photos (fallback)
+    """
     if current_user.user_type != UserType.USER:
         raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc�der � cette route")
     
@@ -2647,12 +2652,25 @@ async def get_all_photos(
         ).all()
     }
     
-    # Charger les photos avec limite pour éviter les requêtes trop longues
-    photos = db.query(Photo).options(
+    # Vérifier s'il existe des photos explicitement sélectionnées pour "Général"
+    selected_count = db.query(Photo).filter(
+        Photo.event_id == event_id,
+        Photo.show_in_general == True
+    ).count()
+    
+    # Construire la requête de base
+    query = db.query(Photo).options(
         defer(Photo.photo_data)  # Ne pas charger les données binaires
     ).filter(
         Photo.event_id == event_id
-    ).order_by(
+    )
+    
+    # Si des photos sont sélectionnées, filtrer par show_in_general=True
+    if selected_count > 0:
+        query = query.filter(Photo.show_in_general == True)
+    
+    # Charger les photos avec limite pour éviter les requêtes trop longues
+    photos = query.order_by(
         Photo.uploaded_at.desc(),
         Photo.id.desc()
     ).limit(1000).all()  # Limite de sécurité pour éviter les requêtes trop longues
@@ -3338,6 +3356,69 @@ async def delete_multiple_photos(
         db.rollback()
         logger.exception("delete_multiple_photos: failed")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression: {str(e)}")
+
+@app.put("/api/photos/{photo_id}/show-in-general")
+async def toggle_photo_show_in_general(
+    photo_id: int,
+    show_in_general: bool = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Toggle la visibilité d'une photo dans l'onglet "Général" (photographes seulement)"""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent modifier cette option")
+    
+    photo = db.query(Photo).filter(
+        Photo.id == photo_id,
+        Photo.photographer_id == current_user.id
+    ).first()
+    
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo non trouvée ou non autorisée")
+    
+    photo.show_in_general = show_in_general
+    db.commit()
+    
+    return {
+        "message": "Photo mise à jour avec succès",
+        "photo_id": photo_id,
+        "show_in_general": show_in_general
+    }
+
+@app.put("/api/photos/bulk/show-in-general")
+async def bulk_toggle_photos_show_in_general(
+    photo_ids: List[int] = Body(...),
+    show_in_general: bool = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Toggle la visibilité de plusieurs photos dans l'onglet "Général" (photographes seulement)"""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent modifier cette option")
+    
+    if not photo_ids:
+        raise HTTPException(status_code=400, detail="Aucune photo sélectionnée")
+    
+    photos = db.query(Photo).filter(
+        Photo.id.in_(photo_ids),
+        Photo.photographer_id == current_user.id
+    ).all()
+    
+    if not photos:
+        raise HTTPException(status_code=404, detail="Aucune photo trouvée")
+    
+    updated_count = 0
+    for photo in photos:
+        photo.show_in_general = show_in_general
+        updated_count += 1
+    
+    db.commit()
+    
+    return {
+        "message": f"{updated_count} photos mises à jour avec succès",
+        "updated_count": updated_count,
+        "show_in_general": show_in_general
+    }
 
 # === ADMINISTRATION ===
 
@@ -4257,7 +4338,12 @@ async def get_all_event_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+�cup+�rer toutes les photos d'un +�v+�nement pour un utilisateur"""
+    """R+�cup+�rer toutes les photos d'un +�v+�nement pour un utilisateur (onglet "Général")
+    
+    NOUVELLE LOGIQUE:
+    - Si des photos ont show_in_general=True, retourner UNIQUEMENT celles-là
+    - Sinon (aucune photo sélectionnée), retourner TOUTES les photos (fallback)
+    """
     if current_user.user_type != UserType.USER:
         raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+�der +� cette route")
     
@@ -4270,12 +4356,30 @@ async def get_all_event_photos(
     if not user_event:
         raise HTTPException(status_code=403, detail="Vous n'+�tes pas inscrit +� cet +�v+�nement")
     
-    # Récupérer toutes les photos de l'événement (SANS face_matches pour éviter deadlocks)
     from sqlalchemy.orm import defer
-    photos = db.query(Photo).options(
-        defer(Photo.photo_data),
-        joinedload(Photo.event)
-    ).filter(Photo.event_id == event_id).all()
+    
+    # Vérifier s'il existe des photos explicitement sélectionnées pour "Général"
+    selected_count = db.query(Photo).filter(
+        Photo.event_id == event_id,
+        Photo.show_in_general == True
+    ).count()
+    
+    # Si des photos sont sélectionnées, n'afficher que celles-là
+    # Sinon, afficher toutes les photos (fallback)
+    if selected_count > 0:
+        photos = db.query(Photo).options(
+            defer(Photo.photo_data),
+            joinedload(Photo.event)
+        ).filter(
+            Photo.event_id == event_id,
+            Photo.show_in_general == True
+        ).all()
+    else:
+        # Fallback: afficher toutes les photos si aucune sélection
+        photos = db.query(Photo).options(
+            defer(Photo.photo_data),
+            joinedload(Photo.event)
+        ).filter(Photo.event_id == event_id).all()
     
     # Récupérer les matches pour cet utilisateur (requête séparée)
     user_matched_photo_ids = set([

@@ -75,6 +75,9 @@ class Photo(Base):
     expires_at = Column(DateTime(timezone=True), nullable=True)
     quality_level = Column(String, nullable=True, default="medium")
     
+    # Visibilité dans l'onglet "Général"
+    show_in_general = Column(Boolean, nullable=True, default=None)
+    
     # Relations
     owner = relationship("User", back_populates="photos", foreign_keys=[user_id])
     photographer = relationship("User", back_populates="uploaded_photos", foreign_keys=[photographer_id])

@@ -271,9 +271,52 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
               </Alert>
             )}
             {eventPhotos.length > 0 && (
-              <Box display="flex" gap={1} mb={2}>
+              <Box display="flex" gap={1} mb={2} flexWrap="wrap">
                 <Button variant="outlined" onClick={() => setSelectedIds([])} disabled={bulkBusy}>Désélectionner</Button>
                 <Button variant="outlined" onClick={() => setSelectedIds(eventPhotos.map(p => p.id))} disabled={bulkBusy}>Tout sélectionner</Button>
+                
+                <Button 
+                  variant="contained" 
+                  color="success"
+                  disabled={bulkBusy || selectedIds.length === 0}
+                  onClick={async () => {
+                    if (!selectedEventId || selectedIds.length === 0) return;
+                    if (!confirm(`Afficher ${selectedIds.length} photo(s) dans l'onglet "Général" ?`)) return;
+                    try {
+                      setBulkBusy(true);
+                      await photoService.bulkTogglePhotosShowInGeneral(selectedIds, true);
+                      await loadEventPhotos(selectedEventId);
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setBulkBusy(false);
+                    }
+                  }}
+                >
+                  ✓ Afficher dans Général ({selectedIds.length})
+                </Button>
+                
+                <Button 
+                  variant="contained" 
+                  color="warning"
+                  disabled={bulkBusy || selectedIds.length === 0}
+                  onClick={async () => {
+                    if (!selectedEventId || selectedIds.length === 0) return;
+                    if (!confirm(`Masquer ${selectedIds.length} photo(s) de l'onglet "Général" ?`)) return;
+                    try {
+                      setBulkBusy(true);
+                      await photoService.bulkTogglePhotosShowInGeneral(selectedIds, false);
+                      await loadEventPhotos(selectedEventId);
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setBulkBusy(false);
+                    }
+                  }}
+                >
+                  ✗ Masquer de Général ({selectedIds.length})
+                </Button>
+                
                 <Button 
                   variant="contained" 
                   color="error" 
@@ -292,8 +335,9 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
                     }
                   }}
                 >
-                  Supprimer sélection ({selectedIds.length})
+                  🗑 Supprimer ({selectedIds.length})
                 </Button>
+                
                 <Button
                   variant="outlined"
                   size="small"
@@ -317,9 +361,45 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
               <Grid container spacing={2}>
                 {eventPhotos.map((photo) => {
                   const checked = selectedIds.includes(photo.id);
+                  const showInGeneral = photo.show_in_general;
+                  
                   return (
                     <Grid item xs={12} sm={6} md={4} key={photo.id}>
-                      <Card sx={{ position: 'relative', outline: checked ? '3px solid #d32f2f' : 'none' }}>
+                      <Card sx={{ 
+                        position: 'relative', 
+                        outline: checked ? '3px solid #d32f2f' : 'none',
+                        border: showInGeneral === true ? '2px solid #4caf50' : 
+                                showInGeneral === false ? '2px solid #ff9800' : 'none'
+                      }}>
+                        {/* Badge pour indiquer si la photo est dans "Général" */}
+                        {showInGeneral === true && (
+                          <Chip
+                            label="Visible dans Général"
+                            size="small"
+                            color="success"
+                            sx={{
+                              position: 'absolute',
+                              top: 8,
+                              right: 8,
+                              zIndex: 1,
+                              fontWeight: 'bold'
+                            }}
+                          />
+                        )}
+                        {showInGeneral === false && (
+                          <Chip
+                            label="Masqué de Général"
+                            size="small"
+                            color="warning"
+                            sx={{
+                              position: 'absolute',
+                              top: 8,
+                              right: 8,
+                              zIndex: 1,
+                              fontWeight: 'bold'
+                            }}
+                          />
+                        )}
                         <CardMedia
                           component="img"
                           height="200"
@@ -331,15 +411,22 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
                           style={{ cursor: 'pointer' }}
                         />
                         <CardContent>
-                          <Box display="flex" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" color="text.secondary">
+                          <Box display="flex" justifyContent="space-between" alignItems="center" flexDirection="column" gap={1}>
+                            <Typography variant="body2" color="text.secondary" sx={{ width: '100%', textAlign: 'center' }}>
                               {photo.original_filename}
                             </Typography>
-                            <Button size="small" onClick={() => {
-                              setSelectedIds(prev => checked ? prev.filter(id => id !== photo.id) : [...prev, photo.id]);
-                            }}>
-                              {checked ? 'Retirer' : 'Sélectionner'}
-                            </Button>
+                            <Box display="flex" gap={1} width="100%">
+                              <Button 
+                                size="small" 
+                                variant={checked ? "contained" : "outlined"}
+                                onClick={() => {
+                                  setSelectedIds(prev => checked ? prev.filter(id => id !== photo.id) : [...prev, photo.id]);
+                                }}
+                                fullWidth
+                              >
+                                {checked ? '✓ Sélectionné' : 'Sélectionner'}
+                              </Button>
+                            </Box>
                           </Box>
                         </CardContent>
                       </Card>
