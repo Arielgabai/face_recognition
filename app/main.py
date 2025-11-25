@@ -3362,10 +3362,19 @@ async def delete_multiple_photos(
         logger.exception("delete_multiple_photos: failed")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression: {str(e)}")
 
+from pydantic import BaseModel
+
+class ShowInGeneralRequest(BaseModel):
+    show_in_general: bool
+
+class BulkShowInGeneralRequest(BaseModel):
+    photo_ids: List[int]
+    show_in_general: bool
+
 @app.put("/api/photos/{photo_id}/show-in-general")
 async def toggle_photo_show_in_general(
     photo_id: int,
-    show_in_general: bool = Body(...),
+    request: ShowInGeneralRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -3381,19 +3390,18 @@ async def toggle_photo_show_in_general(
     if not photo:
         raise HTTPException(status_code=404, detail="Photo non trouvée ou non autorisée")
     
-    photo.show_in_general = show_in_general
+    photo.show_in_general = request.show_in_general
     db.commit()
     
     return {
         "message": "Photo mise à jour avec succès",
         "photo_id": photo_id,
-        "show_in_general": show_in_general
+        "show_in_general": request.show_in_general
     }
 
 @app.put("/api/photos/bulk/show-in-general")
 async def bulk_toggle_photos_show_in_general(
-    photo_ids: List[int] = Body(...),
-    show_in_general: bool = Body(...),
+    request: BulkShowInGeneralRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -3401,11 +3409,11 @@ async def bulk_toggle_photos_show_in_general(
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent modifier cette option")
     
-    if not photo_ids:
+    if not request.photo_ids:
         raise HTTPException(status_code=400, detail="Aucune photo sélectionnée")
     
     photos = db.query(Photo).filter(
-        Photo.id.in_(photo_ids),
+        Photo.id.in_(request.photo_ids),
         Photo.photographer_id == current_user.id
     ).all()
     
@@ -3414,7 +3422,7 @@ async def bulk_toggle_photos_show_in_general(
     
     updated_count = 0
     for photo in photos:
-        photo.show_in_general = show_in_general
+        photo.show_in_general = request.show_in_general
         updated_count += 1
     
     db.commit()
@@ -3422,7 +3430,7 @@ async def bulk_toggle_photos_show_in_general(
     return {
         "message": f"{updated_count} photos mises à jour avec succès",
         "updated_count": updated_count,
-        "show_in_general": show_in_general
+        "show_in_general": request.show_in_general
     }
 
 # === ADMINISTRATION ===
