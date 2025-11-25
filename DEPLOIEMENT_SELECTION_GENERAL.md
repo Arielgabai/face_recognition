@@ -29,19 +29,27 @@ Au redémarrage de votre application, SQLAlchemy va **automatiquement** :
 
 ### Pourquoi c'est automatique ?
 
-Votre application utilise déjà `create_tables()` au démarrage (dans `main.py`, ligne 58) :
+Votre application exécute un script de migration au démarrage (dans `main.py`, ligne 58) :
 
 ```python
 @app.on_event("startup")
 def _startup_create_tables():
     try:
-        create_tables()  # ← Crée automatiquement les colonnes manquantes
+        create_tables()
         print("[Startup] Database tables created/verified")
+        
+        # Ajouter la colonne show_in_general si elle n'existe pas
+        from add_show_in_general_column import add_show_in_general_column
+        add_show_in_general_column()  # ← Ajoute automatiquement la colonne
+        
     except Exception as e:
         print(f"[Startup] Warning: Could not create tables (non-critical): {e}")
 ```
 
-Cette fonction appelle `Base.metadata.create_all(bind=engine)` qui utilise SQLAlchemy pour synchroniser automatiquement votre schéma de base de données avec vos modèles Python.
+Au démarrage, l'application :
+1. Crée les tables si nécessaire
+2. Vérifie si la colonne `show_in_general` existe
+3. Si elle n'existe pas, l'ajoute automatiquement avec `ALTER TABLE`
 
 ## ✨ Utilisation pour les photographes
 

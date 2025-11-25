@@ -57,6 +57,11 @@ def _startup_create_tables():
     try:
         create_tables()
         print("[Startup] Database tables created/verified")
+        
+        # Ajouter la colonne show_in_general si elle n'existe pas
+        from add_show_in_general_column import add_show_in_general_column
+        add_show_in_general_column()
+        
     except Exception as e:
         # Ne pas bloquer le démarrage si la DB est indisponible
         print(f"[Startup] Warning: Could not create tables (non-critical): {e}")
