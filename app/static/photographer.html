@@ -355,7 +355,9 @@
                     <div class="select-bar" id="selectBar" style="display:none;">
                         <button onclick="selectAllPhotos()">Tout sélectionner</button>
                         <button onclick="clearSelection()">Désélectionner</button>
-                        <button class="danger" onclick="deleteSelectedPhotos()">Supprimer sélection (<span id="selCount">0</span>)</button>
+                        <button class="success" onclick="showInGeneral()">✓ Afficher dans Général (<span id="selCount">0</span>)</button>
+                        <button style="background: #ff9800;" onclick="hideFromGeneral()">✗ Masquer de Général (<span id="selCount2">0</span>)</button>
+                        <button class="danger" onclick="deleteSelectedPhotos()">🗑 Supprimer (<span id="selCount3">0</span>)</button>
                     </div>
                     <div id="myPhotosList">Chargement...</div>
                 </div>
@@ -661,8 +663,19 @@
                         document.getElementById('selectBar').style.display = 'flex';
                         container.innerHTML = `
                             <div class="photo-grid">
-                                ${photos.map(photo => `
-                                    <div class="photo-item" data-id="${photo.id}">
+                                ${photos.map(photo => {
+                                    let badge = '';
+                                    let borderColor = '';
+                                    if (photo.show_in_general === true) {
+                                        badge = '<span style="position:absolute;top:8px;right:8px;background:#4caf50;color:white;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:bold;z-index:2;">✓ Visible</span>';
+                                        borderColor = 'border: 3px solid #4caf50;';
+                                    } else if (photo.show_in_general === false) {
+                                        badge = '<span style="position:absolute;top:8px;right:8px;background:#ff9800;color:white;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:bold;z-index:2;">✗ Masqué</span>';
+                                        borderColor = 'border: 3px solid #ff9800;';
+                                    }
+                                    return `
+                                    <div class="photo-item" data-id="${photo.id}" style="${borderColor}">
+                                        ${badge}
                                         <img src="/api/photo/${photo.id}" alt="Photo" onclick="togglePhotoSelect(${photo.id})">
                                         <div class="photo-actions">
                                             <button onclick="deletePhoto(${photo.id})" class="danger">🗑️</button>
@@ -673,7 +686,8 @@
                                             <p><strong>Date:</strong> ${new Date(photo.uploaded_at).toLocaleDateString()}</p>
                                         </div>
                                     </div>
-                                `).join('')}
+                                    `;
+                                }).join('')}
                             </div>
                         `;
                         // Appliquer la classe selected aux éléments déjà sélectionnés (au cas où)
@@ -691,8 +705,13 @@
         }
 
         function updateSelectionCount() {
+            const count = selectedPhotoIds.length;
             const el = document.getElementById('selCount');
-            if (el) el.textContent = String(selectedPhotoIds.length);
+            const el2 = document.getElementById('selCount2');
+            const el3 = document.getElementById('selCount3');
+            if (el) el.textContent = String(count);
+            if (el2) el2.textContent = String(count);
+            if (el3) el3.textContent = String(count);
         }
 
         function togglePhotoSelect(photoId) {
@@ -718,6 +737,74 @@
             selectedPhotoIds = [];
             document.querySelectorAll('#myPhotosList .photo-item').forEach(el => el.classList.remove('selected'));
             updateSelectionCount();
+        }
+
+        async function showInGeneral() {
+            if (!selectedPhotoIds || selectedPhotoIds.length === 0) {
+                showAlert('Veuillez sélectionner au moins une photo', 'error');
+                return;
+            }
+            if (!confirm(`Afficher ${selectedPhotoIds.length} photo(s) dans l'onglet "Général" ?`)) return;
+            
+            try {
+                const resp = await fetch(`/api/photos/bulk/show-in-general`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        photo_ids: selectedPhotoIds,
+                        show_in_general: true
+                    })
+                });
+                
+                if (resp.ok) {
+                    showAlert('Photos configurées pour être visibles dans "Général" !', 'success');
+                    clearSelection();
+                    loadMyPhotos();
+                    loadStats();
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    showAlert(data.detail || 'Erreur lors de la mise à jour', 'error');
+                }
+            } catch (e) {
+                showAlert('Erreur lors de la mise à jour', 'error');
+            }
+        }
+
+        async function hideFromGeneral() {
+            if (!selectedPhotoIds || selectedPhotoIds.length === 0) {
+                showAlert('Veuillez sélectionner au moins une photo', 'error');
+                return;
+            }
+            if (!confirm(`Masquer ${selectedPhotoIds.length} photo(s) de l'onglet "Général" ?`)) return;
+            
+            try {
+                const resp = await fetch(`/api/photos/bulk/show-in-general`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        photo_ids: selectedPhotoIds,
+                        show_in_general: false
+                    })
+                });
+                
+                if (resp.ok) {
+                    showAlert('Photos masquées de l\'onglet "Général" !', 'success');
+                    clearSelection();
+                    loadMyPhotos();
+                    loadStats();
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    showAlert(data.detail || 'Erreur lors de la mise à jour', 'error');
+                }
+            } catch (e) {
+                showAlert('Erreur lors de la mise à jour', 'error');
+            }
         }
 
         async function deleteSelectedPhotos() {
