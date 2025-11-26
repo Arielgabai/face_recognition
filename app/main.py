@@ -32,6 +32,16 @@ import threading
 
 load_dotenv()
 
+FRONTEND_MODE = os.getenv("FRONTEND_MODE", "html").lower()
+REACT_BUILD_PATH = os.path.join("frontend", "build", "index.html")
+
+def should_use_react_frontend() -> bool:
+    return FRONTEND_MODE == "react" and os.path.exists(REACT_BUILD_PATH)
+
+def serve_react_frontend():
+    with open(REACT_BUILD_PATH, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
 from database import get_db, create_tables
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher, LocalIngestionLog
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog
@@ -1796,6 +1806,9 @@ os.makedirs("static/uploads/photos", exist_ok=True)
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """Servir le frontend HTML selon le type d'utilisateur"""
+    if should_use_react_frontend():
+        return serve_react_frontend()
+
     try:
         # Vrifier si l'utilisateur est connect et son type
         token = request.headers.get('authorization')
@@ -1916,10 +1929,8 @@ async def jinja_galerie_alias(request: Request, current_user: User = Depends(get
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_interface():
     """Servir l'interface d'administration - React si disponible"""
-    react_index = os.path.join("frontend", "build", "index.html")
-    if os.path.exists(react_index):
-        with open(react_index, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+    if should_use_react_frontend():
+        return serve_react_frontend()
     try:
         with open("static/admin.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
@@ -1929,10 +1940,8 @@ async def admin_interface():
 @app.get("/photographer", response_class=HTMLResponse)
 async def photographer_interface():
     """Servir l'interface photographe - React si disponible"""
-    react_index = os.path.join("frontend", "build", "index.html")
-    if os.path.exists(react_index):
-        with open(react_index, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+    if should_use_react_frontend():
+        return serve_react_frontend()
     try:
         with open("static/photographer.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
@@ -5111,6 +5120,8 @@ async def catch_all(full_path: str):
     
     # Si c'est une route valide, servir le frontend appropri+�
     if full_path in valid_frontend_routes:
+        if should_use_react_frontend():
+            return serve_react_frontend()
         try:
             if full_path == "admin":
                 with open("static/admin.html", "r", encoding="utf-8") as f:
