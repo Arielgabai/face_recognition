@@ -20,8 +20,8 @@ show_in_general = Column(Boolean, nullable=True, default=None)
 **Fichier modifié :** `face_recognition/app/main.py`
 
 **Endpoints modifiés :**
-- `GET /api/all-photos` - Applique la logique de sélection avec fallback
-- `GET /api/user/events/{event_id}/all-photos` - Applique la logique de sélection avec fallback
+- `GET /api/all-photos` - Retourne uniquement les photos explicitement autorisées
+- `GET /api/user/events/{event_id}/all-photos` - Retourne uniquement les photos explicitement autorisées
 
 **Nouveaux endpoints :**
 - `PUT /api/photos/{photo_id}/show-in-general` - Toggle une photo individuelle
@@ -92,7 +92,7 @@ git commit -m "feat: Add manual photo selection for Général tab
 
 - Add show_in_general column to photos table
 - Add photographer UI to select photos for Général tab
-- Update API endpoints with selection logic and fallback
+- Update API endpoints with explicit selection logic
 - Change Vos photos to Mes photos
 - Add visual indicators in photographer interface"
 
@@ -121,7 +121,7 @@ Selon votre plateforme de déploiement, redémarrez l'application backend.
 - [ ] Application redémarrée
 - [ ] Tests effectués avec un compte photographe
 - [ ] Tests effectués avec un compte utilisateur
-- [ ] Vérification du fallback (aucune photo sélectionnée = toutes affichées)
+- [ ] Vérification que l'onglet "Général" est vide tant qu'aucune photo n'est sélectionnée
 - [ ] Vérification de la sélection (photos sélectionnées = seulement celles-là affichées)
 
 ## 🔍 Résolution de problèmes
@@ -163,10 +163,7 @@ Photographe sélectionne photos
          ↓
 API /api/all-photos
          ↓
-   Count(show_in_general = TRUE) > 0 ?
-         ↓
-    Oui → Retourner SEULEMENT les photos avec show_in_general = TRUE
-    Non → Retourner TOUTES les photos (fallback)
+    Retourner uniquement les photos avec show_in_general = TRUE
          ↓
    Affichage dans "Général"
 ```
@@ -205,8 +202,8 @@ API /api/all-photos
 Onglet "Mes photos": Photos où l'utilisateur apparaît
                      (inchangé, toujours toutes ses photos)
 
-Onglet "Général": Photos sélectionnées par le photographe
-                  OU toutes les photos si aucune sélection
+Onglet "Général": Photos sélectionnées par le photographe uniquement
+                  (vide tant que rien n'est sélectionné)
                   + Badge "Match" sur les photos où l'utilisateur apparaît
 ```
 
@@ -214,22 +211,22 @@ Onglet "Général": Photos sélectionnées par le photographe
 
 ### Cas 1 : Mariage - Sélection progressive
 
-1. **Pendant l'événement** : Le photographe upload toutes les photos → tous les invités voient tout
+1. **Pendant l'événement** : Le photographe upload toutes les photos, mais rien n'apparaît dans "Général"
 2. **Après l'événement** : Le photographe sélectionne les 50 meilleures photos
 3. **Résultat** : Les invités voient maintenant seulement les 50 meilleures dans "Général", mais gardent toutes leurs photos personnelles dans "Mes photos"
 
 ### Cas 2 : Soirée d'entreprise - Contrôle de la qualité
 
 1. Le photographe upload 200 photos
-2. Il remarque que 20 photos sont floues ou ratées
-3. Il sélectionne ces 20 photos et clique sur "Masquer de Général"
+2. Il sélectionne uniquement les 180 photos présentables
+3. Les 20 restantes restent masquées (valeur False)
 4. Les participants ne voient que les 180 bonnes photos dans "Général"
 
-### Cas 3 : Événement sportif - Affichage complet par défaut
+### Cas 3 : Événement sportif - Affichage complet par sélection
 
 1. Le photographe upload toutes les photos
-2. Il ne sélectionne rien
-3. Tous les participants voient toutes les photos (comportement par défaut)
+2. Il utilise "Tout sélectionner" puis "✓ Afficher dans Général" pour tout rendre visible
+3. Tous les participants voient toutes les photos (affichage explicite)
 4. Chacun retrouve ses photos dans "Mes photos"
 
 ## ✨ Améliorations futures possibles

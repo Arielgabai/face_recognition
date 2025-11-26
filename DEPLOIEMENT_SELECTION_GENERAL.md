@@ -7,7 +7,7 @@ Les photographes peuvent maintenant **sélectionner manuellement** quelles photo
 
 **Comportement :**
 - Si le photographe sélectionne des photos → seules ces photos apparaissent dans "Général"
-- Si aucune sélection → toutes les photos apparaissent (fallback automatique)
+- Si aucune sélection → aucune photo n'apparaît (comportement par défaut sécurisé)
 - "Mes photos" continue de fonctionner exactement comme avant
 
 ## 🔧 Déploiement (SUPER SIMPLE)
@@ -108,9 +108,9 @@ show_in_general  | boolean   | YES         | NULL
    - Vérifiez que "Général" n'affiche que les photos sélectionnées
    - Vérifiez que "Mes photos" affiche toutes vos photos personnelles
 
-### 3. Tester le fallback
+### 3. Tester le comportement
 
-- **Sans sélection** : "Général" doit afficher toutes les photos
+- **Sans sélection** : "Général" doit être vide (photos masquées par défaut)
 - **Avec sélection** : "Général" doit afficher uniquement les photos sélectionnées
 
 ## 🐛 Résolution de problèmes

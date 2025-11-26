@@ -7,7 +7,7 @@
 - **Nouveaux endpoints** :
   - `PUT /api/photos/{photo_id}/show-in-general` - Toggle une photo
   - `PUT /api/photos/bulk/show-in-general` - Toggle plusieurs photos en masse
-- **Logique modifiée** : `/api/all-photos` et `/api/user/events/{event_id}/all-photos` utilisent maintenant la sélection avec fallback
+- **Logique modifiée** : `/api/all-photos` et `/api/user/events/{event_id}/all-photos` retournent uniquement les photos explicitement sélectionnées
 
 ### ✅ Frontend React
 - **Nouveaux boutons** dans l'interface photographe pour sélectionner/masquer des photos
@@ -35,7 +35,7 @@ git push origin main
 
 ### Onglet "Général"
 - **Si des photos sont sélectionnées** → affiche uniquement ces photos
-- **Si aucune sélection** → affiche toutes les photos (fallback)
+- **Si aucune sélection** → affiche aucune photo (par défaut)
 
 ## Utilisation photographe
 

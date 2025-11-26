@@ -2666,23 +2666,14 @@ async def get_all_photos(
         ).all()
     }
     
-    # Vérifier s'il existe des photos explicitement sélectionnées pour "Général"
-    selected_count = db.query(Photo).filter(
-        Photo.event_id == event_id,
-        Photo.show_in_general == True
-    ).count()
-    
-    # Construire la requête de base
+    # Construire la requête filtrée sur les photos explicitement autorisées
     query = db.query(Photo).options(
         defer(Photo.photo_data)  # Ne pas charger les données binaires
     ).filter(
-        Photo.event_id == event_id
+        Photo.event_id == event_id,
+        Photo.show_in_general.is_(True)
     )
-    
-    # Si des photos sont sélectionnées, filtrer par show_in_general=True
-    if selected_count > 0:
-        query = query.filter(Photo.show_in_general == True)
-    
+
     # Charger les photos avec limite pour éviter les requêtes trop longues
     photos = query.order_by(
         Photo.uploaded_at.desc(),
@@ -4372,28 +4363,13 @@ async def get_all_event_photos(
     
     from sqlalchemy.orm import defer
     
-    # Vérifier s'il existe des photos explicitement sélectionnées pour "Général"
-    selected_count = db.query(Photo).filter(
+    photos = db.query(Photo).options(
+        defer(Photo.photo_data),
+        joinedload(Photo.event)
+    ).filter(
         Photo.event_id == event_id,
-        Photo.show_in_general == True
-    ).count()
-    
-    # Si des photos sont sélectionnées, n'afficher que celles-là
-    # Sinon, afficher toutes les photos (fallback)
-    if selected_count > 0:
-        photos = db.query(Photo).options(
-            defer(Photo.photo_data),
-            joinedload(Photo.event)
-        ).filter(
-            Photo.event_id == event_id,
-            Photo.show_in_general == True
-        ).all()
-    else:
-        # Fallback: afficher toutes les photos si aucune sélection
-        photos = db.query(Photo).options(
-            defer(Photo.photo_data),
-            joinedload(Photo.event)
-        ).filter(Photo.event_id == event_id).all()
+        Photo.show_in_general.is_(True)
+    ).all()
     
     # Récupérer les matches pour cet utilisateur (requête séparée)
     user_matched_photo_ids = set([
