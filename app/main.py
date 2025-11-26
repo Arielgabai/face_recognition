@@ -38,6 +38,15 @@ from models import GoogleDriveIntegration, GoogleDriveIngestionLog
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
+from pydantic import BaseModel
+
+# Modèles Pydantic pour les requêtes
+class ShowInGeneralRequest(BaseModel):
+    show_in_general: bool
+
+class BulkShowInGeneralRequest(BaseModel):
+    photo_ids: List[int]
+    show_in_general: bool
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
 from recognizer_factory import get_face_recognizer
 from photo_optimizer import PhotoOptimizer
@@ -3362,43 +3371,6 @@ async def delete_multiple_photos(
         logger.exception("delete_multiple_photos: failed")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression: {str(e)}")
 
-from pydantic import BaseModel
-
-class ShowInGeneralRequest(BaseModel):
-    show_in_general: bool
-
-class BulkShowInGeneralRequest(BaseModel):
-    photo_ids: List[int]
-    show_in_general: bool
-
-@app.put("/api/photos/{photo_id}/show-in-general")
-async def toggle_photo_show_in_general(
-    photo_id: int,
-    request: ShowInGeneralRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Toggle la visibilité d'une photo dans l'onglet "Général" (photographes seulement)"""
-    if current_user.user_type != UserType.PHOTOGRAPHER:
-        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent modifier cette option")
-    
-    photo = db.query(Photo).filter(
-        Photo.id == photo_id,
-        Photo.photographer_id == current_user.id
-    ).first()
-    
-    if not photo:
-        raise HTTPException(status_code=404, detail="Photo non trouvée ou non autorisée")
-    
-    photo.show_in_general = request.show_in_general
-    db.commit()
-    
-    return {
-        "message": "Photo mise à jour avec succès",
-        "photo_id": photo_id,
-        "show_in_general": request.show_in_general
-    }
-
 @app.put("/api/photos/bulk/show-in-general")
 async def bulk_toggle_photos_show_in_general(
     request: BulkShowInGeneralRequest,
@@ -3430,6 +3402,34 @@ async def bulk_toggle_photos_show_in_general(
     return {
         "message": f"{updated_count} photos mises à jour avec succès",
         "updated_count": updated_count,
+        "show_in_general": request.show_in_general
+    }
+
+@app.put("/api/photos/{photo_id}/show-in-general")
+async def toggle_photo_show_in_general(
+    photo_id: int,
+    request: ShowInGeneralRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Toggle la visibilité d'une photo dans l'onglet "Général" (photographes seulement)"""
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent modifier cette option")
+    
+    photo = db.query(Photo).filter(
+        Photo.id == photo_id,
+        Photo.photographer_id == current_user.id
+    ).first()
+    
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo non trouvée ou non autorisée")
+    
+    photo.show_in_general = request.show_in_general
+    db.commit()
+    
+    return {
+        "message": "Photo mise à jour avec succès",
+        "photo_id": photo_id,
         "show_in_general": request.show_in_general
     }
 
