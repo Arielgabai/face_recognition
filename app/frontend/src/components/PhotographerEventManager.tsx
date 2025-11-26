@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Card,
@@ -14,7 +14,20 @@ import {
   Chip,
   Grid,
   CardMedia,
+  ToggleButton,
+  ToggleButtonGroup,
+  Checkbox,
+  Snackbar,
+  IconButton,
 } from '@mui/material';
+import MuiAlert, { AlertColor } from '@mui/material/Alert';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import SelectAllIcon from '@mui/icons-material/SelectAll';
+import DeselectIcon from '@mui/icons-material/IndeterminateCheckBox';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { useAuth } from '../contexts/AuthContext';
 import { photoService, gdriveService } from '../services/api';
 import { Photo } from '../types';
@@ -37,6 +50,7 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
   onEventChange, 
   currentEventId 
 }) => {
+  type FilterMode = 'all' | 'visible' | 'hidden';
   const { user } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<number | ''>('');
@@ -49,6 +63,33 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
   const [gIntegrationId, setGIntegrationId] = useState<number | null>(null);
   const [gFolderId, setGFolderId] = useState<string>('');
   const [gSyncJob, setGSyncJob] = useState<{ id: string; status: string; processed: number; total: number; failed: number } | null>(null);
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: AlertColor }>({
+    open: false,
+    message: '',
+    severity: 'success',
+  });
+
+  const filteredPhotos = useMemo(() => {
+    return eventPhotos.filter((photo) => {
+      if (filterMode === 'visible') {
+        return photo.show_in_general === true;
+      }
+      if (filterMode === 'hidden') {
+        return photo.show_in_general !== true;
+      }
+      return true;
+    });
+  }, [eventPhotos, filterMode]);
+
+  const visibleCount = useMemo(
+    () => eventPhotos.filter((photo) => photo.show_in_general === true).length,
+    [eventPhotos]
+  );
+
+  useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => eventPhotos.some((photo) => photo.id === id)));
+  }, [eventPhotos]);
 
   useEffect(() => {
     loadEvents();
@@ -98,6 +139,61 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
       loadEventPhotos(selectedEventId);
     }
   };
+
+  const showMessage = (message: string, severity: AlertColor = 'success') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  const updatePhotoLocal = (photoId: number, showInGeneral: boolean) => {
+    setEventPhotos((prev) =>
+      prev.map((photo) =>
+        photo.id === photoId ? { ...photo, show_in_general: showInGeneral } : photo
+      )
+    );
+  };
+
+  const handleSingleToggle = async (photo: Photo, desired: boolean) => {
+    try {
+      updatePhotoLocal(photo.id, desired);
+      await photoService.togglePhotoShowInGeneral(photo.id, desired);
+      showMessage(
+        desired ? 'Photo ajoutée à l’onglet Général' : 'Photo masquée de l’onglet Général',
+        'success'
+      );
+    } catch (e) {
+      console.error(e);
+      updatePhotoLocal(photo.id, !!photo.show_in_general);
+      showMessage('Erreur lors de la mise à jour de la photo', 'error');
+    }
+  };
+
+  const applyBulkShowInGeneral = async (ids: number[], desired: boolean) => {
+    if (!selectedEventId || ids.length === 0) return;
+    try {
+      setBulkBusy(true);
+      await photoService.bulkTogglePhotosShowInGeneral(ids, desired);
+      setEventPhotos((prev) =>
+        prev.map((photo) =>
+          ids.includes(photo.id) ? { ...photo, show_in_general: desired } : photo
+        )
+      );
+      setSelectedIds([]);
+      showMessage(
+        desired
+          ? `${ids.length} photo(s) ajoutée(s) à l’onglet Général`
+          : `${ids.length} photo(s) masquée(s) de l’onglet Général`,
+        'success'
+      );
+    } catch (e) {
+      console.error(e);
+      showMessage('Erreur lors de la mise à jour des photos', 'error');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const selectableIds = useMemo(() => filteredPhotos.map((photo) => photo.id), [filteredPhotos]);
+  const selectedCount = selectedIds.length;
 
   if (loading) {
     return (
@@ -270,60 +366,100 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
                 Drive job {gSyncJob.id}: {gSyncJob.processed}/{gSyncJob.total} • échecs: {gSyncJob.failed} • statut: {gSyncJob.status}
               </Alert>
             )}
+            <Box
+              display="flex"
+              flexWrap="wrap"
+              gap={2}
+              alignItems="center"
+              justifyContent="space-between"
+              sx={{ mb: 2 }}
+            >
+              <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
+                <FilterListIcon color="action" />
+                <ToggleButtonGroup
+                  size="small"
+                  value={filterMode}
+                  exclusive
+                  onChange={(_, value) => value && setFilterMode(value)}
+                >
+                  <ToggleButton value="all">Toutes</ToggleButton>
+                  <ToggleButton value="visible">Général</ToggleButton>
+                  <ToggleButton value="hidden">Masquées</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+              <Typography variant="body2" color="text.secondary">
+                {visibleCount} photo(s) visible(s) / {eventPhotos.length} total
+              </Typography>
+            </Box>
             {eventPhotos.length > 0 && (
               <Box display="flex" gap={1} mb={2} flexWrap="wrap">
-                <Button variant="outlined" onClick={() => setSelectedIds([])} disabled={bulkBusy}>Désélectionner</Button>
-                <Button variant="outlined" onClick={() => setSelectedIds(eventPhotos.map(p => p.id))} disabled={bulkBusy}>Tout sélectionner</Button>
-                
+                <Button
+                  variant="outlined"
+                  startIcon={<SelectAllIcon />}
+                  onClick={() => setSelectedIds(selectableIds)}
+                  disabled={bulkBusy || selectableIds.length === 0}
+                >
+                  Sélectionner la vue ({selectableIds.length})
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<DeselectIcon />}
+                  onClick={() => setSelectedIds([])}
+                  disabled={bulkBusy || selectedCount === 0}
+                >
+                  Aucun
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="success"
+                  startIcon={<VisibilityIcon />}
+                  onClick={() => applyBulkShowInGeneral(selectableIds, true)}
+                  disabled={bulkBusy || selectableIds.length === 0}
+                >
+                  Afficher toute la vue
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<VisibilityOffIcon />}
+                  onClick={() => applyBulkShowInGeneral(selectableIds, false)}
+                  disabled={bulkBusy || selectableIds.length === 0}
+                >
+                  Masquer toute la vue
+                </Button>
                 <Button 
                   variant="contained" 
                   color="success"
-                  disabled={bulkBusy || selectedIds.length === 0}
+                  disabled={bulkBusy || selectedCount === 0}
                   onClick={async () => {
-                    if (!selectedEventId || selectedIds.length === 0) return;
-                    if (!confirm(`Afficher ${selectedIds.length} photo(s) dans l'onglet "Général" ?`)) return;
-                    try {
-                      setBulkBusy(true);
-                      await photoService.bulkTogglePhotosShowInGeneral(selectedIds, true);
-                      await loadEventPhotos(selectedEventId);
-                    } catch (e) {
-                      console.error(e);
-                    } finally {
-                      setBulkBusy(false);
-                    }
+                    if (selectedCount === 0) return;
+                    if (!confirm(`Afficher ${selectedCount} photo(s) dans l'onglet "Général" ?`)) return;
+                    await applyBulkShowInGeneral(selectedIds, true);
                   }}
                 >
-                  ✓ Afficher dans Général ({selectedIds.length})
+                  ✓ Afficher sélection ({selectedCount})
                 </Button>
                 
                 <Button 
                   variant="contained" 
                   color="warning"
-                  disabled={bulkBusy || selectedIds.length === 0}
+                  disabled={bulkBusy || selectedCount === 0}
                   onClick={async () => {
-                    if (!selectedEventId || selectedIds.length === 0) return;
-                    if (!confirm(`Masquer ${selectedIds.length} photo(s) de l'onglet "Général" ?`)) return;
-                    try {
-                      setBulkBusy(true);
-                      await photoService.bulkTogglePhotosShowInGeneral(selectedIds, false);
-                      await loadEventPhotos(selectedEventId);
-                    } catch (e) {
-                      console.error(e);
-                    } finally {
-                      setBulkBusy(false);
-                    }
+                    if (selectedCount === 0) return;
+                    if (!confirm(`Masquer ${selectedCount} photo(s) de l'onglet "Général" ?`)) return;
+                    await applyBulkShowInGeneral(selectedIds, false);
                   }}
                 >
-                  ✗ Masquer de Général ({selectedIds.length})
+                  ✗ Masquer sélection ({selectedCount})
                 </Button>
                 
                 <Button 
                   variant="contained" 
                   color="error" 
-                  disabled={bulkBusy || selectedIds.length === 0}
+                  disabled={bulkBusy || selectedCount === 0}
                   onClick={async () => {
-                    if (!selectedEventId || selectedIds.length === 0) return;
-                    if (!confirm(`Supprimer ${selectedIds.length} photo(s) ?`)) return;
+                    if (selectedCount === 0) return;
+                    if (!confirm(`Supprimer ${selectedCount} photo(s) ?`)) return;
                     try {
                       setBulkBusy(true);
                       await photoService.deletePhotosBulk(selectedIds);
@@ -359,7 +495,7 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
               </Typography>
             ) : (
               <Grid container spacing={2}>
-                {eventPhotos.map((photo) => {
+                {filteredPhotos.map((photo) => {
                   const checked = selectedIds.includes(photo.id);
                   const showInGeneral = photo.show_in_general;
                   
@@ -400,6 +536,23 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
                             }}
                           />
                         )}
+                        <IconButton
+                          size="small"
+                          onClick={() => handleSingleToggle(photo, !(showInGeneral === true))}
+                          sx={{
+                            position: 'absolute',
+                            top: 8,
+                            left: 8,
+                            zIndex: 1,
+                            backgroundColor: 'rgba(255,255,255,0.8)',
+                          }}
+                        >
+                          {showInGeneral === true ? (
+                            <CheckCircleIcon color="success" />
+                          ) : (
+                            <RadioButtonUncheckedIcon color="disabled" />
+                          )}
+                        </IconButton>
                         <CardMedia
                           component="img"
                           height="200"
@@ -452,6 +605,21 @@ const PhotographerEventManager: React.FC<PhotographerEventManagerProps> = ({
           </CardContent>
         </Card>
       )}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <MuiAlert
+          elevation={6}
+          variant="filled"
+          severity={snackbar.severity}
+          onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+        >
+          {snackbar.message}
+        </MuiAlert>
+      </Snackbar>
     </Box>
   );
 };
