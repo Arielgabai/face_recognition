@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>Face Recognition App</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Neonderthaw&family=Great+Vibes&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/gallery.css">
@@ -58,6 +58,11 @@
                 0 0 48px var(--neon-pink);
         }
 
+        html {
+            width: 100%;
+            overflow-x: hidden;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
             background: radial-gradient(60% 120% at 20% 10%, rgba(138, 43, 226, 0.15) 0%, rgba(0,0,0,0) 60%),
@@ -66,10 +71,14 @@
             color: var(--text);
             min-height: 100vh;
             line-height: 1.6;
+            width: 100%;
+            overflow-x: hidden;
+            position: relative;
         }
 
         .container {
             max-width: 1200px;
+            width: 100%;
             margin: 0 auto;
             padding: 20px;
             min-height: 100vh;
@@ -1510,10 +1519,25 @@
         /* Tab Content */
         .tab-content {
             display: none;
+            width: 100%;
+            max-width: 100%;
+            position: relative;
         }
 
         .tab-content.active {
             display: block;
+        }
+        
+        /* Conteneurs de galerie */
+        #my-photos, #all-photos, #upload-photos {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+        
+        #myPhotosList, #allPhotosList {
+            width: 100%;
+            max-width: 100%;
         }
 
         /* Upload Area - Design moderne */
@@ -2828,6 +2852,45 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
             if (menu) {
                 menu.classList.remove('active');
                 closeMenu(); // Force la fermeture
+            }
+            
+            // Réinitialiser le layout au chargement pour éviter les problèmes de zoom
+            resetPageLayout();
+        });
+        
+        // Fonction pour réinitialiser le layout de la page
+        function resetPageLayout() {
+            try {
+                // Réinitialiser les transforms éventuels sur body et html
+                document.documentElement.style.transform = 'none';
+                document.body.style.transform = 'none';
+                document.body.style.transformOrigin = 'center center';
+                document.documentElement.style.transformOrigin = 'center center';
+                
+                // Garantir que body et html sont à 100% width
+                document.documentElement.style.width = '100%';
+                document.documentElement.style.maxWidth = '100%';
+                document.body.style.width = '100%';
+                document.body.style.maxWidth = '100%';
+                
+                // Réinitialiser le scroll au top si on vient de charger
+                if (window.scrollY === 0) {
+                    document.body.style.overflowX = 'hidden';
+                    document.documentElement.style.overflowX = 'hidden';
+                }
+            } catch (e) {
+                console.warn('resetPageLayout error:', e);
+            }
+        }
+        
+        // Détecter les changements de zoom du navigateur et réinitialiser
+        let lastZoom = window.devicePixelRatio || 1;
+        window.addEventListener('resize', function() {
+            const currentZoom = window.devicePixelRatio || 1;
+            if (Math.abs(currentZoom - lastZoom) > 0.01) {
+                // Le zoom a changé, réinitialiser le layout
+                lastZoom = currentZoom;
+                setTimeout(() => resetPageLayout(), 100);
             }
         });
 

@@ -876,11 +876,33 @@ class ModernGallery {
         this.lightboxElement.classList.remove('active');
         document.body.style.overflow = 'auto';
         document.body.classList.remove('lightbox-open');
+        
         // Réafficher le hamburger proprement
         try {
             const menu = document.getElementById('hamburgerMenu');
             if (menu) menu.style.display = '';
         } catch {}
+        
+        // Réinitialiser le layout après fermeture du lightbox
+        // pour éviter les problèmes de zoom/décalage
+        setTimeout(() => {
+            try {
+                // Réinitialiser les transforms éventuels
+                document.body.style.transform = 'none';
+                document.documentElement.style.transform = 'none';
+                
+                // Garantir le centrage
+                document.body.style.width = '100%';
+                document.body.style.maxWidth = '100%';
+                document.body.style.margin = '0';
+                document.body.style.position = '';
+                
+                // Forcer un reflow
+                void document.body.offsetHeight;
+            } catch (e) {
+                console.warn('Layout reset error:', e);
+            }
+        }, 50);
     }
     
     previousImage() {

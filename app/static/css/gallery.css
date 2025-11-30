@@ -7,11 +7,19 @@
     box-sizing: border-box;
 }
 
+html, body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
 .gallery-container {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     max-width: 1400px;
+    width: 100%;
     margin: 0 auto;
     padding: 0 20px;
+    position: relative;
 }
 
 .gallery-header {
@@ -59,6 +67,9 @@
     grid-row-gap: 8px;
     align-items: start;
     width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    position: relative;
 }
 
 /* Mobile : 2 colonnes strictes */
