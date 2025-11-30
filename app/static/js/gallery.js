@@ -91,6 +91,11 @@ class ModernGallery {
         this.container.innerHTML = '';
         this.container.appendChild(galleryGrid);
         
+        // Setup progressive loading si lazy est activé
+        if (this.options.lazy) {
+            this.setupProgressiveLoading(galleryGrid);
+        }
+        
         // Après le rendu, ajuster les hauteurs de ligne
         setTimeout(() => {
             this.adjustRowHeights();
@@ -98,6 +103,55 @@ class ModernGallery {
         
         if (this.options.animations) {
             this.animateCards();
+        }
+    }
+    
+    setupProgressiveLoading(galleryGrid) {
+        // Charger les images par batch pour un rendu progressif
+        const cards = Array.from(galleryGrid.querySelectorAll('.gallery-photo-card'));
+        const batchSize = this.options.batchSize || 10;
+        
+        // Charger les premiers immédiatement (visibles)
+        const firstBatch = cards.slice(0, batchSize);
+        firstBatch.forEach(card => {
+            const img = card.querySelector('img');
+            if (img && img.dataset.lazySrc) {
+                img.src = img.dataset.lazySrc;
+                delete img.dataset.lazySrc;
+            }
+        });
+        
+        // Utiliser IntersectionObserver pour charger les autres au scroll
+        if ('IntersectionObserver' in window) {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const card = entry.target;
+                        const img = card.querySelector('img');
+                        if (img && img.dataset.lazySrc) {
+                            img.src = img.dataset.lazySrc;
+                            delete img.dataset.lazySrc;
+                        }
+                        observer.unobserve(card);
+                    }
+                });
+            }, {
+                rootMargin: '200px' // Charger 200px avant d'être visible
+            });
+            
+            // Observer toutes les cartes après la première batch
+            cards.slice(batchSize).forEach(card => observer.observe(card));
+        } else {
+            // Fallback: charger toutes progressivement avec délai
+            cards.slice(batchSize).forEach((card, idx) => {
+                setTimeout(() => {
+                    const img = card.querySelector('img');
+                    if (img && img.dataset.lazySrc) {
+                        img.src = img.dataset.lazySrc;
+                        delete img.dataset.lazySrc;
+                    }
+                }, idx * 50); // 50ms entre chaque
+            });
         }
     }
     
@@ -614,15 +668,18 @@ class ModernGallery {
             card.innerHTML = '<div class="gallery-photo-loading">❌ Erreur de chargement</div>';
         };
         
-        img.src = image.src;
-        
-        // Ajouter un indicateur de chargement
+        // Si lazy loading, stocker l'URL et ne pas charger immédiatement
         if (this.options.lazy) {
+            img.dataset.lazySrc = image.src;
             card.classList.add('loading');
             const loader = document.createElement('div');
             loader.className = 'gallery-photo-loading';
-            loader.innerHTML = '⏳ Chargement...';
+            loader.innerHTML = '⏳';
             card.appendChild(loader);
+            // Ne pas définir img.src maintenant, ça sera fait par setupProgressiveLoading
+        } else {
+            // Chargement immédiat si lazy désactivé
+            img.src = image.src;
         }
         
         // Overlay d'interaction
@@ -686,15 +743,17 @@ class ModernGallery {
 
         // Télécharger l'image courante
         if (downloadBtn) {
-            downloadBtn.addEventListener('click', (e) => {
+            const handleDownload = (e) => {
                 e.stopPropagation();
                 e.preventDefault();
                 this.downloadCurrentImage();
-            });
-            // Éviter que le clic sur le bouton ne ferme le lightbox
-            downloadBtn.addEventListener('pointerdown', (e) => {
-                e.stopPropagation();
-            });
+                return false;
+            };
+            downloadBtn.addEventListener('click', handleDownload);
+            downloadBtn.addEventListener('touchend', handleDownload);
+            // Éviter que le clic ne ferme le lightbox
+            downloadBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+            downloadBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
         }
 
         // Gestes tactiles: swipe gauche/droite pour naviguer (mais PAS pendant le zoom)
@@ -854,42 +913,43 @@ class ModernGallery {
         }
     }
 
-    async downloadCurrentImage() {
-        try {
-            const image = this.images[this.currentIndex];
-            if (!image) return;
-            
-            // Fetch rapide sans feedback bloquant
-            const response = await fetch(image.src, { cache: 'no-store' });
-            const blob = await response.blob();
-            const fileName = (image.alt || 'photo') + '.jpg';
-
-            // Utiliser l'API Web Share si disponible (meilleure expérience mobile)
-            const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: 'Photo' });
-                return;
-            }
-
-            // Fallback: téléchargement direct (plus rapide)
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            // Nettoyage immédiat
-            setTimeout(() => {
-                a.remove();
-                URL.revokeObjectURL(url);
-            }, 100);
-        } catch (e) {
-            console.error('Erreur lors du téléchargement de l\'image:', e);
-            // Fallback ultime: ouvrir l'image dans un nouvel onglet
-            const image = this.images[this.currentIndex];
-            if (image) window.open(image.src, '_blank');
-        }
+    downloadCurrentImage() {
+        // Fonction synchrone pour éviter les blocages du navigateur
+        const image = this.images[this.currentIndex];
+        if (!image) return;
+        
+        const fileName = (image.alt || 'photo') + '.jpg';
+        
+        // Essayer le téléchargement direct
+        fetch(image.src, { cache: 'no-store' })
+            .then(response => response.blob())
+            .then(blob => {
+                // Check si Web Share API est disponible (mobile)
+                const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    return navigator.share({ files: [file], title: 'Photo' });
+                }
+                
+                // Téléchargement classique
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                
+                // Nettoyage
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }, 100);
+            })
+            .catch(e => {
+                console.error('Erreur lors du téléchargement:', e);
+                // Fallback: ouvrir dans un nouvel onglet
+                window.open(image.src, '_blank');
+            });
     }
     
     setupKeyboardNavigation() {

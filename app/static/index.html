@@ -2386,7 +2386,13 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 }));
                 const gid = galleryId || `modern_${Math.random().toString(36).slice(2)}`;
                 target.innerHTML = `<div id="${gid}"></div>`;
-                const gallery = new ModernGallery(`#${gid}`, { lightbox: true, keyboardNavigation: true, lazy: false });
+                // Activer lazy loading pour un chargement progressif optimal
+                const gallery = new ModernGallery(`#${gid}`, { 
+                    lightbox: true, 
+                    keyboardNavigation: true, 
+                    lazy: true,  // Activer le lazy loading
+                    batchSize: 10  // Charger par lots de 10
+                });
                 gallery.loadImages(images);
                 
                 // NOUVEAU: Forcer les styles mobile après création
@@ -2545,7 +2551,8 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                         }
                         
                         if (typeof window.ModernGallery !== 'undefined') {
-                            renderPhotosModern(container, photos, 'allModernGallery');
+                            // Pour "Général", utiliser lazy loading avec batch pour optimiser
+                            renderPhotosModern(container, photos, 'allModernGallery', { lazy: true, batchSize: 10 });
                         } else {
                             container.innerHTML = `
                                 <div class="masonry">
@@ -3142,24 +3149,7 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                     await myPhotosPromise;
                     
                     // "Général" continue de charger en arrière-plan
-                    allPhotosPromise.finally(() => {
-                        console.log('Chargement de "Général" terminé en arrière-plan');
-                        // Précharger les premières images de Général
-                        try {
-                            const allPhotosContainer = document.getElementById('allPhotosList');
-                            if (allPhotosContainer) {
-                                const imgs = allPhotosContainer.querySelectorAll('img[loading="lazy"]');
-                                // Précharger les 10 premières images
-                                Array.from(imgs).slice(0, 10).forEach(img => {
-                                    if (img.dataset.src) {
-                                        img.src = img.dataset.src;
-                                    }
-                                });
-                            }
-                        } catch (e) {
-                            console.warn('Preload images error:', e);
-                        }
-                    });
+                    // Le système de progressive loading de ModernGallery gérera le chargement optimal
 
                     // Initialiser le compte à rebours d'expiration
                     try { initExpirationCountdown(); } catch (e) { console.warn('Countdown init error', e); }
