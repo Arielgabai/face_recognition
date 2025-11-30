@@ -3721,52 +3721,18 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 }
             }
             
-            // Afficher via la galerie moderne pour profiter du layout optimisé
-            const useModern = typeof window.ModernGallery !== 'undefined';
-            if (useModern) {
+            // Afficher via la galerie moderne avec chargement progressif optimisé
+            if (typeof window.ModernGallery !== 'undefined') {
                 try {
-                    // Chargement en deux temps : les 2 premières photos immédiatement, puis le reste
-                    const priorityPhotos = photos.slice(0, 2);
-                    const remainingPhotos = photos.slice(2);
-                    
-                    const priorityImages = priorityPhotos.map((p, idx) => ({
-                        src: `/api/photo/${p.id}`,
-                        alt: p.original_filename || `Photo ${idx + 1}`,
-                        hasFaceMatch: p.has_face_match
-                    }));
-                    
-                    // Afficher immédiatement les 2 premières
-                    container.innerHTML = '<div id="myModernGallery"></div>';
-                    const g = new ModernGallery('#myModernGallery', { 
-                        lightbox: true, 
-                        keyboardNavigation: true, 
-                        lazy: false // Pas de lazy pour les premières
-                    });
-                    g.loadImages(priorityImages);
-                    
-                    // Charger le reste après un petit délai pour laisser les 2 premières s'afficher
-                    if (remainingPhotos.length > 0) {
-                        setTimeout(() => {
-                            const allImages = photos.map((p, idx) => ({
-                                src: `/api/photo/${p.id}`,
-                                alt: p.original_filename || `Photo ${idx + 1}`,
-                                hasFaceMatch: p.has_face_match
-                            }));
-                            g.loadImages(allImages); // Remplacer avec toutes les photos
-                        }, 100);
-                    }
+                    // Utiliser le même système de lazy loading que "Général" pour la cohérence
+                    renderPhotosModern(container, photos, 'myModernGallery', { lazy: true, batchSize: 10 });
                 } catch (e) {
-                    console.error('ModernGallery error (update):', e);
+                    console.error('ModernGallery error (my photos):', e);
                     container.innerHTML = `
                         <div class="masonry">
                             ${photos.map(photo => `
                                 <div class="masonry-item" style="position: relative;">
                                     <img src="/api/photo/${photo.id}" alt="Photo" loading="lazy">
-                                    ${photo.has_face_match ? `
-                                        <div style="position: absolute; top: 8px; right: 8px; background: #4caf50; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 4px; z-index: 10;">
-                                            <span>👤</span> Match
-                                        </div>
-                                    ` : ''}
                                 </div>
                             `).join('')}
                         </div>
@@ -3776,7 +3742,7 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 container.innerHTML = `
                     <div class="masonry">
                         ${photos.map(photo => `
-                            <div class="masonry-item"><img src="/api/photo/${photo.id}?t=${Date.now()}" alt="Photo"></div>
+                            <div class="masonry-item"><img src="/api/photo/${photo.id}" alt="Photo" loading="lazy"></div>
                         `).join('')}
                     </div>
                 `;

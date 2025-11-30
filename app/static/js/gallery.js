@@ -922,12 +922,19 @@ class ModernGallery {
         
         // Essayer le téléchargement direct
         fetch(image.src, { cache: 'no-store' })
-            .then(response => response.blob())
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.blob();
+            })
             .then(blob => {
                 // Check si Web Share API est disponible (mobile)
-                const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
-                if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                    return navigator.share({ files: [file], title: 'Photo' });
+                try {
+                    const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        return navigator.share({ files: [file], title: 'Photo' });
+                    }
+                } catch (e) {
+                    // Si File() ne fonctionne pas, continuer avec le téléchargement classique
                 }
                 
                 // Téléchargement classique
@@ -941,14 +948,19 @@ class ModernGallery {
                 
                 // Nettoyage
                 setTimeout(() => {
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    try {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    } catch (e) {
+                        // Ignorer les erreurs de nettoyage
+                    }
                 }, 100);
             })
             .catch(e => {
-                console.error('Erreur lors du téléchargement:', e);
-                // Fallback: ouvrir dans un nouvel onglet
-                window.open(image.src, '_blank');
+                // Logger l'erreur mais ne rien faire de visible
+                console.error('Erreur lors du téléchargement de la photo:', e);
+                console.log('Pour télécharger manuellement, faites clic droit > Enregistrer l\'image');
+                // Ne pas ouvrir de popup - rester sur la photo actuelle
             });
     }
     
