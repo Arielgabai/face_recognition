@@ -85,10 +85,11 @@ const Login: React.FC = () => {
               required
               fullWidth
               id="username"
-              label="Nom d'utilisateur"
+              label="Nom d'utilisateur ou email"
               name="username"
               autoComplete="username"
               autoFocus
+              placeholder="Nom d'utilisateur ou email"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
@@ -120,6 +121,10 @@ const Login: React.FC = () => {
               <br />
               <Link href="/register-with-code" variant="body2">
                 Première connexion avec un code événement
+              </Link>
+              <br />
+              <Link href="/forgot-password" variant="body2" sx={{ mt: 1 }}>
+                🔑 Mot de passe oublié ?
               </Link>
             </Box>
           </Box>

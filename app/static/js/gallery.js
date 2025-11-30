@@ -688,18 +688,38 @@ class ModernGallery {
         if (downloadBtn) {
             downloadBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 this.downloadCurrentImage();
+            });
+            // Éviter que le clic sur le bouton ne ferme le lightbox
+            downloadBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
             });
         }
 
-        // Gestes tactiles: swipe gauche/droite pour naviguer
-        const onTouchStart = (clientX, clientY) => {
+        // Gestes tactiles: swipe gauche/droite pour naviguer (mais PAS pendant le zoom)
+        this.isZooming = false;
+        this.initialPinchDistance = 0;
+        
+        const onTouchStart = (clientX, clientY, touchCount) => {
+            // Si 2+ doigts, c'est un geste de zoom → ne pas activer la navigation
+            if (touchCount >= 2) {
+                this.isZooming = true;
+                this.touchActive = false;
+                return;
+            }
             this.touchStartX = clientX;
             this.touchStartY = clientY;
             this.touchMoved = false;
             this.touchActive = true;
         };
-        const onTouchMove = (clientX, clientY, e) => {
+        const onTouchMove = (clientX, clientY, touchCount, e) => {
+            // Si 2+ doigts, c'est un zoom/pinch → ignorer pour la navigation
+            if (touchCount >= 2) {
+                this.isZooming = true;
+                this.touchActive = false;
+                return;
+            }
             if (!this.touchActive) return;
             const dx = clientX - this.touchStartX;
             const dy = clientY - this.touchStartY;
@@ -709,7 +729,14 @@ class ModernGallery {
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
             }
         };
-        const onTouchEnd = (clientX) => {
+        const onTouchEnd = (clientX, touchCount) => {
+            // Si on était en train de zoomer, ne pas naviguer
+            if (this.isZooming) {
+                // Reset zoom flag après un petit délai
+                setTimeout(() => { this.isZooming = false; }, 300);
+                this.touchActive = false;
+                return;
+            }
             if (!this.touchActive) return;
             const dx = clientX - this.touchStartX;
             const threshold = 40; // pixels
@@ -727,16 +754,17 @@ class ModernGallery {
         this.lightboxElement.addEventListener('touchstart', (e) => {
             if (!e.touches || e.touches.length === 0) return;
             const t = e.touches[0];
-            onTouchStart(t.clientX, t.clientY);
+            onTouchStart(t.clientX, t.clientY, e.touches.length);
         }, { passive: true });
         this.lightboxElement.addEventListener('touchmove', (e) => {
             if (!e.touches || e.touches.length === 0) return;
             const t = e.touches[0];
-            onTouchMove(t.clientX, t.clientY, e);
+            onTouchMove(t.clientX, t.clientY, e.touches.length, e);
         }, { passive: false });
         this.lightboxElement.addEventListener('touchend', (e) => {
             const t = (e.changedTouches && e.changedTouches[0]) || null;
-            if (t) onTouchEnd(t.clientX);
+            const touchCount = e.touches ? e.touches.length : 0;
+            if (t) onTouchEnd(t.clientX, touchCount);
         });
 
         // Support Pointer Events (trackpads / souris bouton enfoncé)
@@ -754,6 +782,17 @@ class ModernGallery {
             pointerDown = false;
             onTouchEnd(e.clientX);
         });
+        
+        // Empêcher la navigation lors du zoom avec la molette
+        this.lightboxElement.addEventListener('wheel', (e) => {
+            // Si Ctrl est pressé, c'est un zoom → ne pas naviguer
+            if (e.ctrlKey || e.metaKey) {
+                e.stopPropagation();
+                // Ne pas preventDefault pour permettre le zoom natif du navigateur
+                return;
+            }
+            // Sinon, permettre le comportement par défaut (scroll éventuel)
+        }, { passive: true });
     }
     
     async openLightbox(index) {
@@ -816,7 +855,16 @@ class ModernGallery {
     }
 
     async downloadCurrentImage() {
+        const downloadBtn = this.lightboxElement?.querySelector('.gallery-download-btn');
+        const originalText = downloadBtn ? downloadBtn.innerHTML : '';
+        
         try {
+            // Feedback visuel
+            if (downloadBtn) {
+                downloadBtn.innerHTML = '⏳ Téléchargement...';
+                downloadBtn.disabled = true;
+            }
+            
             const image = this.images[this.currentIndex];
             if (!image) return;
             const response = await fetch(image.src, { cache: 'no-store' });
@@ -827,6 +875,10 @@ class ModernGallery {
             const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({ files: [file], title: 'Photo' });
+                if (downloadBtn) {
+                    downloadBtn.innerHTML = '✓ Partagé';
+                    setTimeout(() => { downloadBtn.innerHTML = originalText; downloadBtn.disabled = false; }, 2000);
+                }
                 return;
             }
 
@@ -839,8 +891,19 @@ class ModernGallery {
             a.click();
             a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 2000);
+            
+            // Feedback succès
+            if (downloadBtn) {
+                downloadBtn.innerHTML = '✓ Téléchargé';
+                setTimeout(() => { downloadBtn.innerHTML = originalText; downloadBtn.disabled = false; }, 2000);
+            }
         } catch (e) {
             console.error('Erreur lors du téléchargement de l\'image:', e);
+            // Feedback erreur
+            if (downloadBtn) {
+                downloadBtn.innerHTML = '⚠️ Erreur';
+                setTimeout(() => { downloadBtn.innerHTML = originalText; downloadBtn.disabled = false; }, 2000);
+            }
             // Fallback ultime: ouvrir l'image dans un nouvel onglet pour sauvegarde manuelle
             const image = this.images[this.currentIndex];
             if (image) window.open(image.src, '_blank');

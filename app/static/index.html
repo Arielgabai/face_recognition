@@ -1985,8 +1985,8 @@
             <div class="login-container">
                 <h2 style="text-align: center; margin-bottom: 30px; color: #ffffff; font-size: 1.5rem;">Connexion</h2>
             <div class="form-group">
-                    <label for="username">Nom d'utilisateur</label>
-                    <input type="text" id="username" class="form-input" required placeholder="Entrez votre nom d'utilisateur">
+                    <label for="username">Nom d'utilisateur ou email</label>
+                    <input type="text" id="username" class="form-input" required placeholder="Entrez votre nom d'utilisateur ou email">
             </div>
             <div class="form-group">
                     <label for="password">Mot de passe</label>
@@ -2090,12 +2090,12 @@
             </div>
             
                         <div class="tabs">
-                <button class="tab" onclick="showTab('my-photos')" id="myPhotosTab">Mes photos (0)</button>
-                <button class="tab active" onclick="showTab('all-photos')" id="allPhotosTab">Général (0)</button>
+                <button class="tab active" onclick="showTab('my-photos')" id="myPhotosTab">Mes photos (0)</button>
+                <button class="tab" onclick="showTab('all-photos')" id="allPhotosTab">Général (0)</button>
                 <button class="tab" onclick="showTab('upload-photos')" id="uploadTab" style="display: none;">📤</button>
             </div>
 
-            <div id="my-photos" class="tab-content">
+            <div id="my-photos" class="tab-content active">
                 <div id="myPhotosList">
                     <div class="loading-container" id="myPhotosLoading" style="display: none;">
                         <div class="loading-spinner"></div>
@@ -2109,7 +2109,7 @@
                 </div>
             </div>
 
-            <div id="all-photos" class="tab-content active">
+            <div id="all-photos" class="tab-content">
                 <div id="allPhotosList">
                     <div class="loading-container" id="allPhotosLoading" style="display: none;">
                         <div class="loading-spinner"></div>
@@ -3989,7 +3989,7 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
             resetBtn.disabled = true;
 
             try {
-                const response = await fetch('/api/password-reset', {
+                const response = await fetch('/api/password-reset/request', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

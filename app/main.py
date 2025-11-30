@@ -44,7 +44,7 @@ def serve_react_frontend():
 
 from database import get_db, create_tables
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher, LocalIngestionLog
-from models import GoogleDriveIntegration, GoogleDriveIngestionLog
+from models import GoogleDriveIntegration, GoogleDriveIngestionLog, PasswordResetToken
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
@@ -80,6 +80,10 @@ def _startup_create_tables():
         # Ajouter la colonne show_in_general si elle n'existe pas
         from add_show_in_general_column import add_show_in_general_column
         add_show_in_general_column()
+        
+        # Ajouter la table password_reset_tokens si elle n'existe pas
+        from add_password_reset_table import add_password_reset_table
+        add_password_reset_table()
         
     except Exception as e:
         # Ne pas bloquer le démarrage si la DB est indisponible
@@ -339,6 +343,15 @@ def _send_bulk_email_smtp(recipients: List[str], subject: str, text_body: str, h
         results["errors"].append(f"smtp_connection: {e}")
         return results
 
+
+def send_email(to_email: str, subject: str, html_content: str, text_content: str | None = None) -> bool:
+    """Helper pour envoyer un email à un destinataire unique"""
+    try:
+        result = _send_bulk_email_smtp([to_email], subject, text_content or html_content, html_content)
+        return result.get("sent", 0) > 0
+    except Exception as e:
+        logger.error(f"Error sending email to {to_email}: {e}")
+        return False
 
 def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
     """Envoie les emails de notification aux utilisateurs d'un événement (tâche de fond)."""
@@ -2219,13 +2232,17 @@ async def register_invite_with_selfie(
 
 @app.post("/api/login", response_model=Token)
 async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    """Connexion utilisateur"""
-    user = db.query(User).filter(User.username == user_credentials.username).first()
+    """Connexion utilisateur - accepte username OU email"""
+    # Chercher l'utilisateur par username OU par email (case-insensitive pour email)
+    user = db.query(User).filter(
+        (User.username == user_credentials.username) | 
+        (func.lower(User.email) == func.lower(user_credentials.username))
+    ).first()
     
     if not user or not verify_password(user_credentials.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nom d'utilisateur ou mot de passe incorrect",
+            detail="Identifiant ou mot de passe incorrect",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -3936,7 +3953,8 @@ async def generate_event_qr(event_code: str, current_user: User = Depends(get_cu
             pass
     
     # Gnerer l'URL d'inscription vers la page avec code dans le chemin
-    url = f"https://facerecognition-d0r8.onrender.com/register-with-code/{event_code}"
+    # Utiliser l'URL configurée via SITE_BASE_URL (variable d'environnement)
+    url = f"{SITE_BASE_URL}/register?event_code={event_code}"
     img = qrcode.make(url)
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -5144,29 +5162,155 @@ async def catch_all(full_path: str):
         detail=f"Page not found: /{full_path}"
     )
 
+@app.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page():
+    try:
+        with open("static/forgot-password.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Mot de passe oublie</h1><p>Page non trouvee</p>")
+
+@app.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page():
+    try:
+        with open("static/reset-password.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Reinitialiser le mot de passe</h1><p>Page non trouvee</p>")
+
 # === R+�INITIALISATION MOT DE PASSE ===
 
-@app.post("/api/password-reset")
+@app.post("/api/password-reset/request")
 async def request_password_reset(
     request_data: dict = Body(...),
     db: Session = Depends(get_db)
 ):
-    """Demander une r+�initialisation de mot de passe par email"""
-    email = request_data.get('email')
+    """Demander une réinitialisation de mot de passe par email"""
+    email = request_data.get('email', '').strip()
     
     if not email:
         raise HTTPException(status_code=400, detail="Email requis")
     
-    # Chercher l'utilisateur par email
-    user = db.query(User).filter(User.email == email).first()
+    # Chercher l'utilisateur par email (case-insensitive)
+    user = db.query(User).filter(func.lower(User.email) == func.lower(email)).first()
+    
+    # Toujours retourner le même message (sécurité)
+    success_message = "Si cette adresse email existe, un lien de réinitialisation a été envoyé"
     
     if not user:
-        # Pour des raisons de s+�curit+�, on renvoie toujours le m+�me message
-        return {"message": "Si cette adresse email existe, un lien de r+�initialisation a +�t+� envoy+�"}
+        return {"message": success_message}
     
-    # Pour l'instant, on simule l'envoi (vous pouvez activer l'email plus tard)
-    print(f"Demande de r+�initialisation pour: {email}")
-    return {"message": "Un email de r+�initialisation a +�t+� envoy+�"}
+    try:
+        # Générer un token unique et sécurisé
+        reset_token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)  # Expire dans 1 heure
+        
+        # Invalider les anciens tokens de cet utilisateur
+        db.query(PasswordResetToken).filter(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None)
+        ).update({"used_at": datetime.now(timezone.utc)})
+        
+        # Créer le nouveau token
+        new_token = PasswordResetToken(
+            user_id=user.id,
+            token=reset_token,
+            expires_at=expires_at
+        )
+        db.add(new_token)
+        db.commit()
+        
+        # Construire l'URL de réinitialisation
+        reset_url = f"{SITE_BASE_URL}/reset-password?token={reset_token}"
+        
+        # Envoyer l'email
+        try:
+            send_email(
+                to_email=user.email,
+                subject="Réinitialisation de votre mot de passe",
+                html_content=f"""
+                <html>
+                    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <h2>Réinitialisation de mot de passe</h2>
+                        <p>Bonjour {user.username},</p>
+                        <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
+                        <p>Cliquez sur le lien ci-dessous pour définir un nouveau mot de passe :</p>
+                        <p style="margin: 20px 0;">
+                            <a href="{reset_url}" 
+                               style="background-color: #007bff; color: white; padding: 12px 24px; 
+                                      text-decoration: none; border-radius: 5px; display: inline-block;">
+                                Réinitialiser mon mot de passe
+                            </a>
+                        </p>
+                        <p style="color: #666; font-size: 14px;">
+                            Ce lien expire dans 1 heure.<br>
+                            Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.
+                        </p>
+                        <p style="color: #999; font-size: 12px; margin-top: 30px;">
+                            Si le bouton ne fonctionne pas, copiez ce lien : {reset_url}
+                        </p>
+                    </body>
+                </html>
+                """
+            )
+            logger.info(f"Password reset email sent to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send password reset email: {e}")
+            # Ne pas échouer la requête si l'email ne part pas
+        
+        return {"message": success_message}
+        
+    except Exception as e:
+        logger.error(f"Error in password reset request: {e}")
+        return {"message": success_message}
+
+@app.post("/api/password-reset/confirm")
+async def confirm_password_reset(
+    request_data: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """Confirmer la réinitialisation avec le token et définir le nouveau mot de passe"""
+    token = request_data.get('token', '').strip()
+    new_password = request_data.get('new_password', '').strip()
+    
+    if not token or not new_password:
+        raise HTTPException(status_code=400, detail="Token et nouveau mot de passe requis")
+    
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 6 caractères")
+    
+    # Chercher le token
+    reset_token = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token == token,
+        PasswordResetToken.used_at.is_(None)
+    ).first()
+    
+    if not reset_token:
+        raise HTTPException(status_code=400, detail="Token invalide ou déjà utilisé")
+    
+    # Vérifier l'expiration
+    if reset_token.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Ce lien a expiré. Veuillez redemander un nouveau lien")
+    
+    # Récupérer l'utilisateur
+    user = db.query(User).filter(User.id == reset_token.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    # Mettre à jour le mot de passe
+    user.hashed_password = get_password_hash(new_password)
+    
+    # Marquer le token comme utilisé
+    reset_token.used_at = datetime.now(timezone.utc)
+    
+    db.commit()
+    
+    logger.info(f"Password reset successful for user {user.username}")
+    
+    return {
+        "message": "Mot de passe réinitialisé avec succès",
+        "username": user.username
+    }
 
 @app.post("/api/admin/migrate-photo-optimization")
 async def migrate_photo_optimization_endpoint(
