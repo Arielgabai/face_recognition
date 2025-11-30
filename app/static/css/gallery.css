@@ -56,13 +56,13 @@ html, body {
     text-shadow: 0 0 10px rgba(138, 43, 226, 0.35);
 }
 
-/* Layout CSS Grid avec largeurs fixes */
+/* Layout CSS Grid - 2 colonnes strictes partout pour cohérence */
 .modern-gallery,
 #myModernGallery,
 #allModernGallery {
     display: grid;
-    /* Colonnes de largeur égale et fixe (responsive) */
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    /* 2 colonnes fixes de largeur égale */
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
     grid-row-gap: 8px;
     align-items: start;
@@ -72,13 +72,13 @@ html, body {
     position: relative;
 }
 
-/* Mobile : 2 colonnes strictes */
+/* Mobile : réduire l'espacement */
 @media (max-width: 768px) {
     .modern-gallery,
     #myModernGallery,
     #allModernGallery {
-        grid-template-columns: repeat(2, 1fr) !important; /* 2 colonnes de largeur égale */
-        gap: 4px !important;
+        gap: 4px;
+        grid-row-gap: 4px;
     }
 }
 
@@ -99,6 +99,8 @@ html, body {
     justify-content: center; /* Centrage vertical */
     align-items: center;     /* Centrage horizontal */
     width: 100%;
+    min-height: 200px;  /* Hauteur minimale pour cohérence visuelle */
+    aspect-ratio: 3/4;  /* Ratio par défaut (portrait) */
 }
 
 /* Classe pour photos qui ont besoin de centrage avec effet flou */
@@ -162,7 +164,7 @@ html, body {
     height: 100%;
     display: block;
     transition: transform 0.3s ease;
-    object-fit: contain;
+    object-fit: cover;  /* Cover pour remplir toute la carte */
 }
 
 .gallery-photo-card:hover img {
@@ -383,22 +385,21 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 /* Responsive Design */
 @media (max-width: 1024px) {
     .modern-gallery {
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 6px;
         grid-row-gap: 6px;
     }
 }
 
 @media (max-width: 768px) {
-    /* Technique identique à la bannière tabs pour tablette */
+    /* Tablette - 2 colonnes strictes pleine largeur */
     .modern-gallery,
     #myModernGallery,
     #allModernGallery,
     div[id*="ModernGallery"] {
         display: grid !important;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
-        gap: 2px !important;
-        grid-row-gap: 2px !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 4px !important;
+        grid-row-gap: 4px !important;
         width: 100vw !important;
         margin-left: -20px !important;
         margin-right: -20px !important;
@@ -421,8 +422,7 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         text-shadow: none !important;
         -webkit-text-stroke: none !important;
     }
-}
-
+    
     .gallery-header h1 {
         font-size: 2rem;
     }
@@ -442,17 +442,18 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         height: 40px;
         font-size: 24px;
     }
+}
 
 @media (max-width: 480px) {
-    /* Technique identique à la bannière tabs */
+    /* Mobile - 2 colonnes strictes pleine largeur */
     .modern-gallery,
     #myModernGallery,
     #allModernGallery,
     div[id*="ModernGallery"] {
         display: grid !important;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
-        gap: 1px !important;
-        grid-row-gap: 1px !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 2px !important;
+        grid-row-gap: 2px !important;
         width: 100vw !important;
         margin-left: -20px !important;
         margin-right: -20px !important;

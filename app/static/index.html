@@ -2419,29 +2419,29 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 });
                 gallery.loadImages(images);
                 
-                // NOUVEAU: Forcer les styles mobile après création
+                // NOUVEAU: Forcer les styles mobile après création (2 colonnes strictes)
                 setTimeout(() => {
                     const galleryElement = document.getElementById(gid);
                     if (galleryElement && window.innerWidth <= 768) {
                         const width = window.innerWidth;
                         
                         if (width <= 480) {
-                            // Mobile - appliquer les styles directement
+                            // Mobile - 2 colonnes strictes
                             galleryElement.style.display = 'grid';
-                            galleryElement.style.gridTemplateColumns = 'repeat(auto-fit, minmax(150px, 1fr))';
-                            galleryElement.style.gap = '1px';
-                            galleryElement.style.gridRowGap = '1px';
+                            galleryElement.style.gridTemplateColumns = 'repeat(2, 1fr)';
+                            galleryElement.style.gap = '2px';
+                            galleryElement.style.gridRowGap = '2px';
                             galleryElement.style.width = '100vw';
                             galleryElement.style.marginLeft = '-20px';
                             galleryElement.style.marginRight = '-20px';
                             galleryElement.style.padding = '0 20px';
                             galleryElement.style.alignItems = 'start';
                         } else if (width <= 768) {
-                            // Tablette - appliquer les styles directement
+                            // Tablette - 2 colonnes strictes
                             galleryElement.style.display = 'grid';
-                            galleryElement.style.gridTemplateColumns = 'repeat(auto-fit, minmax(160px, 1fr))';
-                            galleryElement.style.gap = '2px';
-                            galleryElement.style.gridRowGap = '2px';
+                            galleryElement.style.gridTemplateColumns = 'repeat(2, 1fr)';
+                            galleryElement.style.gap = '4px';
+                            galleryElement.style.gridRowGap = '4px';
                             galleryElement.style.width = '100vw';
                             galleryElement.style.marginLeft = '-20px';
                             galleryElement.style.marginRight = '-20px';
