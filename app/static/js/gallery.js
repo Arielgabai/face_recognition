@@ -855,18 +855,11 @@ class ModernGallery {
     }
 
     async downloadCurrentImage() {
-        const downloadBtn = this.lightboxElement?.querySelector('.gallery-download-btn');
-        const originalText = downloadBtn ? downloadBtn.innerHTML : '';
-        
         try {
-            // Feedback visuel
-            if (downloadBtn) {
-                downloadBtn.innerHTML = '⏳ Téléchargement...';
-                downloadBtn.disabled = true;
-            }
-            
             const image = this.images[this.currentIndex];
             if (!image) return;
+            
+            // Fetch rapide sans feedback bloquant
             const response = await fetch(image.src, { cache: 'no-store' });
             const blob = await response.blob();
             const fileName = (image.alt || 'photo') + '.jpg';
@@ -875,36 +868,25 @@ class ModernGallery {
             const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({ files: [file], title: 'Photo' });
-                if (downloadBtn) {
-                    downloadBtn.innerHTML = '✓ Partagé';
-                    setTimeout(() => { downloadBtn.innerHTML = originalText; downloadBtn.disabled = false; }, 2000);
-                }
                 return;
             }
 
-            // Fallback: lien de téléchargement
+            // Fallback: téléchargement direct (plus rapide)
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = fileName;
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 2000);
-            
-            // Feedback succès
-            if (downloadBtn) {
-                downloadBtn.innerHTML = '✓ Téléchargé';
-                setTimeout(() => { downloadBtn.innerHTML = originalText; downloadBtn.disabled = false; }, 2000);
-            }
+            // Nettoyage immédiat
+            setTimeout(() => {
+                a.remove();
+                URL.revokeObjectURL(url);
+            }, 100);
         } catch (e) {
             console.error('Erreur lors du téléchargement de l\'image:', e);
-            // Feedback erreur
-            if (downloadBtn) {
-                downloadBtn.innerHTML = '⚠️ Erreur';
-                setTimeout(() => { downloadBtn.innerHTML = originalText; downloadBtn.disabled = false; }, 2000);
-            }
-            // Fallback ultime: ouvrir l'image dans un nouvel onglet pour sauvegarde manuelle
+            // Fallback ultime: ouvrir l'image dans un nouvel onglet
             const image = this.images[this.currentIndex];
             if (image) window.open(image.src, '_blank');
         }

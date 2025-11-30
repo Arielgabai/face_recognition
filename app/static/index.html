@@ -2724,12 +2724,21 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
             // Activer l'onglet sélectionné
             event.target.classList.add('active');
             
-            // NOUVEAU: Si on clique sur "Vos Photos", recharger avec le bon layout (toujours refetch)
+            // Optimisation: précharger les données si nécessaire
             if (tabName === 'my-photos') {
-                console.log('🔄 Rechargement de "Vos Photos" (sans blocage global)');
+                // Toujours recharger "Mes photos" pour avoir les dernières données
                 setTimeout(() => {
                     loadMyPhotos().catch(err => console.error('loadMyPhotos error:', err));
                 }, 50);
+            } else if (tabName === 'all-photos') {
+                // Vérifier si "Général" a des données, sinon afficher un loader
+                const container = document.getElementById('allPhotosList');
+                const hasContent = container && container.querySelector('.gallery-photo-card, .masonry, #allModernGallery');
+                if (!hasContent) {
+                    // Pas encore de données, afficher le loader
+                    const loadingDiv = document.getElementById('allPhotosLoading');
+                    if (loadingDiv) loadingDiv.style.display = 'flex';
+                }
             }
         }
 
@@ -3124,14 +3133,32 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                     // Mettre à jour les informations du menu hamburger
                     updateMenuUserInfo(currentUser);
                     
-                    // Charger les données : lancer "Toutes les photos" mais ne pas bloquer "Vos photos"
+                    // Charger les deux galeries en parallèle pour un chargement optimal
+                    // "Mes photos" est prioritaire (await), "Général" en arrière-plan immédiat
                     const allPhotosPromise = loadAllPhotos().catch(err => console.error('loadAllPhotos error:', err));
-                    await loadMyPhotos();
-                    // Laisser le chargement "Toutes les photos" finir en arrière-plan
+                    const myPhotosPromise = loadMyPhotos().catch(err => console.error('loadMyPhotos error:', err));
+                    
+                    // Attendre "Mes photos" avant d'enlever le loader global
+                    await myPhotosPromise;
+                    
+                    // "Général" continue de charger en arrière-plan
                     allPhotosPromise.finally(() => {
+                        console.log('Chargement de "Général" terminé en arrière-plan');
+                        // Précharger les premières images de Général
                         try {
-                            console.log('Chargement de "Toutes les photos" terminé');
-                        } catch {}
+                            const allPhotosContainer = document.getElementById('allPhotosList');
+                            if (allPhotosContainer) {
+                                const imgs = allPhotosContainer.querySelectorAll('img[loading="lazy"]');
+                                // Précharger les 10 premières images
+                                Array.from(imgs).slice(0, 10).forEach(img => {
+                                    if (img.dataset.src) {
+                                        img.src = img.dataset.src;
+                                    }
+                                });
+                            }
+                        } catch (e) {
+                            console.warn('Preload images error:', e);
+                        }
                     });
 
                     // Initialiser le compte à rebours d'expiration

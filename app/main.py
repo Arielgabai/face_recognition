@@ -5134,7 +5134,7 @@ async def catch_all(full_path: str):
         raise HTTPException(status_code=404, detail="API endpoint not found")
     
     # V+�rifier si c'est une route valide pour le frontend
-    valid_frontend_routes = ["", "admin", "photographer", "register"]
+    valid_frontend_routes = ["", "admin", "photographer", "register", "forgot-password", "reset-password"]
     
     # Si c'est une route valide, servir le frontend appropri+�
     if full_path in valid_frontend_routes:
@@ -5150,6 +5150,12 @@ async def catch_all(full_path: str):
             elif full_path == "register":
                 with open("static/register.html", "r", encoding="utf-8") as f:
                     return HTMLResponse(content=f.read())
+            elif full_path == "forgot-password":
+                with open("static/forgot-password.html", "r", encoding="utf-8") as f:
+                    return HTMLResponse(content=f.read())
+            elif full_path == "reset-password":
+                with open("static/reset-password.html", "r", encoding="utf-8") as f:
+                    return HTMLResponse(content=f.read())
             else:  # Route racine
                 with open("static/index.html", "r", encoding="utf-8") as f:
                     return HTMLResponse(content=f.read())
@@ -5161,22 +5167,6 @@ async def catch_all(full_path: str):
         status_code=404, 
         detail=f"Page not found: /{full_path}"
     )
-
-@app.get("/forgot-password", response_class=HTMLResponse)
-async def forgot_password_page():
-    try:
-        with open("static/forgot-password.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>Mot de passe oublie</h1><p>Page non trouvee</p>")
-
-@app.get("/reset-password", response_class=HTMLResponse)
-async def reset_password_page():
-    try:
-        with open("static/reset-password.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>Reinitialiser le mot de passe</h1><p>Page non trouvee</p>")
 
 # === R+�INITIALISATION MOT DE PASSE ===
 
