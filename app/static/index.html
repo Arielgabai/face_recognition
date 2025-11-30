@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Recognition App</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Neonderthaw&family=Great+Vibes&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/gallery.css">
@@ -58,11 +58,6 @@
                 0 0 48px var(--neon-pink);
         }
 
-        html {
-            width: 100%;
-            overflow-x: hidden;
-        }
-
         body {
             font-family: 'Inter', sans-serif;
             background: radial-gradient(60% 120% at 20% 10%, rgba(138, 43, 226, 0.15) 0%, rgba(0,0,0,0) 60%),
@@ -71,29 +66,15 @@
             color: var(--text);
             min-height: 100vh;
             line-height: 1.6;
-            width: 100%;
-            overflow-x: hidden;
-            position: relative;
         }
 
         .container {
-            max-width: 100%;
-            width: 100%;
-            margin: 0;
-            padding: 0;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-        }
-        
-        /* Ajouter padding uniquement sur les éléments qui en ont besoin */
-        .container > *:not(#dashboard):not(.tabs):not(.brand-header) {
-            padding-left: 20px;
-            padding-right: 20px;
-        }
-        
-        #dashboard {
-            padding: 0;
         }
 
         .header {
@@ -1529,37 +1510,10 @@
         /* Tab Content */
         .tab-content {
             display: none;
-            width: 100%;
-            max-width: 100%;
-            position: relative;
-            padding: 0;
-            margin: 0;
         }
 
         .tab-content.active {
             display: block;
-        }
-        
-        /* Conteneurs de galerie - pleine largeur */
-        #my-photos, #all-photos {
-            width: 100%;
-            max-width: 100%;
-            overflow-x: hidden;
-            padding: 0;
-            margin: 0;
-        }
-        
-        #upload-photos {
-            width: 100%;
-            max-width: 100%;
-            padding: 20px;
-        }
-        
-        #myPhotosList, #allPhotosList {
-            width: 100%;
-            max-width: 100%;
-            padding: 0;
-            margin: 0;
         }
 
         /* Upload Area - Design moderne */
@@ -2441,19 +2395,35 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 });
                 gallery.loadImages(images);
                 
-                // NOUVEAU: Forcer les styles mobile après création (2 colonnes strictes pleine largeur)
+                // NOUVEAU: Forcer les styles mobile après création
                 setTimeout(() => {
                     const galleryElement = document.getElementById(gid);
                     if (galleryElement && window.innerWidth <= 768) {
-                        // 2 colonnes strictes pleine largeur pour mobile et tablette
-                        galleryElement.style.display = 'grid';
-                        galleryElement.style.gridTemplateColumns = 'repeat(2, 1fr)';
-                        galleryElement.style.gap = '1px';
-                        galleryElement.style.gridRowGap = '1px';
-                        galleryElement.style.width = '100%';
-                        galleryElement.style.margin = '0';
-                        galleryElement.style.padding = '0';
-                        galleryElement.style.alignItems = 'start';
+                        const width = window.innerWidth;
+                        
+                        if (width <= 480) {
+                            // Mobile - appliquer les styles directement
+                            galleryElement.style.display = 'grid';
+                            galleryElement.style.gridTemplateColumns = 'repeat(auto-fit, minmax(150px, 1fr))';
+                            galleryElement.style.gap = '1px';
+                            galleryElement.style.gridRowGap = '1px';
+                            galleryElement.style.width = '100vw';
+                            galleryElement.style.marginLeft = '-20px';
+                            galleryElement.style.marginRight = '-20px';
+                            galleryElement.style.padding = '0 20px';
+                            galleryElement.style.alignItems = 'start';
+                        } else if (width <= 768) {
+                            // Tablette - appliquer les styles directement
+                            galleryElement.style.display = 'grid';
+                            galleryElement.style.gridTemplateColumns = 'repeat(auto-fit, minmax(160px, 1fr))';
+                            galleryElement.style.gap = '2px';
+                            galleryElement.style.gridRowGap = '2px';
+                            galleryElement.style.width = '100vw';
+                            galleryElement.style.marginLeft = '-20px';
+                            galleryElement.style.marginRight = '-20px';
+                            galleryElement.style.padding = '0 20px';
+                            galleryElement.style.alignItems = 'start';
+                        }
                     }
                 }, 50);
                 
@@ -2858,45 +2828,6 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
             if (menu) {
                 menu.classList.remove('active');
                 closeMenu(); // Force la fermeture
-            }
-            
-            // Réinitialiser le layout au chargement pour éviter les problèmes de zoom
-            resetPageLayout();
-        });
-        
-        // Fonction pour réinitialiser le layout de la page
-        function resetPageLayout() {
-            try {
-                // Réinitialiser les transforms éventuels sur body et html
-                document.documentElement.style.transform = 'none';
-                document.body.style.transform = 'none';
-                document.body.style.transformOrigin = 'center center';
-                document.documentElement.style.transformOrigin = 'center center';
-                
-                // Garantir que body et html sont à 100% width
-                document.documentElement.style.width = '100%';
-                document.documentElement.style.maxWidth = '100%';
-                document.body.style.width = '100%';
-                document.body.style.maxWidth = '100%';
-                
-                // Réinitialiser le scroll au top si on vient de charger
-                if (window.scrollY === 0) {
-                    document.body.style.overflowX = 'hidden';
-                    document.documentElement.style.overflowX = 'hidden';
-                }
-            } catch (e) {
-                console.warn('resetPageLayout error:', e);
-            }
-        }
-        
-        // Détecter les changements de zoom du navigateur et réinitialiser
-        let lastZoom = window.devicePixelRatio || 1;
-        window.addEventListener('resize', function() {
-            const currentZoom = window.devicePixelRatio || 1;
-            if (Math.abs(currentZoom - lastZoom) > 0.01) {
-                // Le zoom a changé, réinitialiser le layout
-                lastZoom = currentZoom;
-                setTimeout(() => resetPageLayout(), 100);
             }
         });
 

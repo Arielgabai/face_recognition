@@ -28,8 +28,19 @@ class ModernGallery {
         this.touchStartY = 0;
         this.touchMoved = false;
         this.touchActive = false;
+        this.galleryGrid = null;
+        this.resizeRaf = null;
+        this.boundHandleViewportChange = this.handleViewportChange.bind(this);
         
         this.init();
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('resize', this.boundHandleViewportChange);
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', this.boundHandleViewportChange);
+                window.visualViewport.addEventListener('scroll', this.boundHandleViewportChange);
+            }
+        }
     }
     
     init() {
@@ -77,6 +88,7 @@ class ModernGallery {
         const galleryGrid = document.createElement('div');
         galleryGrid.className = 'modern-gallery';
         galleryGrid.innerHTML = '';
+        this.galleryGrid = galleryGrid;
         
         // Appliquer les styles mobile directement si nécessaire
         this.applyMobileStyles(galleryGrid);
@@ -241,6 +253,38 @@ class ModernGallery {
             const waitTime = Math.min(400 + retryCount * 120, 1500);
             setTimeout(() => this.adjustRowHeights(retryCount + 1), waitTime);
         }
+    }
+
+    handleViewportChange() {
+        if (!this.container) return;
+        if (this.resizeRaf) cancelAnimationFrame(this.resizeRaf);
+
+        this.resizeRaf = requestAnimationFrame(() => {
+            const galleryGrid = this.container.querySelector('.modern-gallery');
+            if (!galleryGrid) return;
+
+            this.resetGalleryGridStyles(galleryGrid);
+            this.applyMobileStyles(galleryGrid);
+            this.adjustRowHeights();
+        });
+    }
+
+    resetGalleryGridStyles(galleryGrid) {
+        if (!galleryGrid) return;
+        const propsToReset = [
+            'width',
+            'marginLeft',
+            'marginRight',
+            'padding',
+            'gap',
+            'gridRowGap',
+            'gridTemplateColumns',
+            'alignItems',
+            'display'
+        ];
+        propsToReset.forEach(prop => {
+            galleryGrid.style[prop] = '';
+        });
     }
 
     getEffectiveHeight(card, img) {
@@ -874,35 +918,15 @@ class ModernGallery {
         if (!this.lightboxElement) return;
         
         this.lightboxElement.classList.remove('active');
-        document.body.style.overflow = 'auto';
+        document.body.style.overflow = '';
         document.body.classList.remove('lightbox-open');
-        
         // Réafficher le hamburger proprement
         try {
             const menu = document.getElementById('hamburgerMenu');
             if (menu) menu.style.display = '';
         } catch {}
-        
-        // Réinitialiser le layout après fermeture du lightbox
-        // pour éviter les problèmes de zoom/décalage
-        setTimeout(() => {
-            try {
-                // Réinitialiser les transforms éventuels
-                document.body.style.transform = 'none';
-                document.documentElement.style.transform = 'none';
-                
-                // Garantir le centrage
-                document.body.style.width = '100%';
-                document.body.style.maxWidth = '100%';
-                document.body.style.margin = '0';
-                document.body.style.position = '';
-                
-                // Forcer un reflow
-                void document.body.offsetHeight;
-            } catch (e) {
-                console.warn('Layout reset error:', e);
-            }
-        }, 50);
+
+        this.handleViewportChange();
     }
     
     previousImage() {
@@ -1037,6 +1061,18 @@ class ModernGallery {
         }
         this.container.innerHTML = '';
         this.container.classList.remove('gallery-container', 'gallery-theme-dark', 'gallery-compact', 'gallery-large');
+
+        if (typeof window !== 'undefined' && this.boundHandleViewportChange) {
+            window.removeEventListener('resize', this.boundHandleViewportChange);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', this.boundHandleViewportChange);
+                window.visualViewport.removeEventListener('scroll', this.boundHandleViewportChange);
+            }
+        }
+        if (this.resizeRaf) {
+            cancelAnimationFrame(this.resizeRaf);
+            this.resizeRaf = null;
+        }
     }
 }
 

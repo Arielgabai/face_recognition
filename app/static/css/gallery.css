@@ -7,19 +7,11 @@
     box-sizing: border-box;
 }
 
-html, body {
-    width: 100%;
-    max-width: 100%;
-    overflow-x: hidden;
-}
-
 .gallery-container {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    max-width: 100%;
-    width: 100%;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 0 20px;
-    position: relative;
 }
 
 .gallery-header {
@@ -56,30 +48,26 @@ html, body {
     text-shadow: 0 0 10px rgba(138, 43, 226, 0.35);
 }
 
-/* Layout CSS Grid - 2 colonnes strictes partout pour cohérence */
+/* Layout CSS Grid avec largeurs fixes */
 .modern-gallery,
 #myModernGallery,
 #allModernGallery {
     display: grid;
-    /* 2 colonnes fixes de largeur égale */
-    grid-template-columns: repeat(2, 1fr);
-    gap: 2px;
-    grid-row-gap: 2px;
+    /* Colonnes de largeur égale et fixe (responsive) */
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
+    grid-row-gap: 8px;
     align-items: start;
     width: 100%;
-    max-width: 100%;
-    margin: 0;
-    padding: 0;
-    position: relative;
 }
 
-/* Mobile : réduire l'espacement */
+/* Mobile : 2 colonnes strictes */
 @media (max-width: 768px) {
     .modern-gallery,
     #myModernGallery,
     #allModernGallery {
-        gap: 1px;
-        grid-row-gap: 1px;
+        grid-template-columns: repeat(2, 1fr) !important; /* 2 colonnes de largeur égale */
+        gap: 4px !important;
     }
 }
 
@@ -91,27 +79,59 @@ html, body {
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
-    background: transparent;
+    background: #000; /* Fond noir pour l'effet flouté */
     animation: fadeInUp 0.6s ease forwards;
     opacity: 0;
     transform: translateY(20px);
+    display: flex; /* Flex pour centrer l'image */
+    flex-direction: column;
+    justify-content: center; /* Centrage vertical */
+    align-items: center;     /* Centrage horizontal */
     width: 100%;
 }
 
-/* Classe pour photos qui ont besoin de centrage - simplifié sans effet flou */
+/* Classe pour photos qui ont besoin de centrage avec effet flou */
 .gallery-photo-card.needs-centering,
 #myModernGallery .gallery-photo-card.needs-centering,
 #allModernGallery .gallery-photo-card.needs-centering {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     position: relative;
+    overflow: hidden;
+}
+
+.gallery-photo-card.needs-centering::before,
+#myModernGallery .gallery-photo-card.needs-centering::before,
+#allModernGallery .gallery-photo-card.needs-centering::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: -20px;
+    right: -20px;
+    bottom: -20px;
+    background-image: var(--bg-image);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    filter: blur(30px) brightness(0.7) saturate(1.2);
+    transform: scale(1.2);
+    z-index: 0;
+    opacity: 0.8;
 }
 
 .gallery-photo-card.needs-centering img,
 #myModernGallery .gallery-photo-card.needs-centering img,
 #allModernGallery .gallery-photo-card.needs-centering img {
-    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
     height: auto;
     object-fit: contain;
+    position: relative;
+    z-index: 1;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
 /* Empêcher l'overlay de masquer définitivement l'image sur mobile si hover absent */
@@ -128,7 +148,7 @@ html, body {
 #myModernGallery .gallery-photo-card img,
 #allModernGallery .gallery-photo-card img {
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
     transition: transform 0.3s ease;
     object-fit: contain;
@@ -352,21 +372,46 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 /* Responsive Design */
 @media (max-width: 1024px) {
     .modern-gallery {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 6px;
         grid-row-gap: 6px;
     }
 }
 
 @media (max-width: 768px) {
-    /* Tablette et mobile - 2 colonnes strictes */
+    /* Technique identique à la bannière tabs pour tablette */
     .modern-gallery,
     #myModernGallery,
     #allModernGallery,
     div[id*="ModernGallery"] {
-        gap: 1px !important;
-        grid-row-gap: 1px !important;
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
+        gap: 2px !important;
+        grid-row-gap: 2px !important;
+        width: 100vw !important;
+        margin-left: -20px !important;
+        margin-right: -20px !important;
+        padding: 0 20px !important;
+        align-items: start !important;
     }
     
+    .gallery-container {
+        padding: 0;
+    }
+    
+    /* Restaurer le padding normal du container */
+    .container {
+        padding: 20px !important;
+    }
+    
+    /* Couleur du titre d'événement pour matcher le fond countdown */
+    .event-title {
+        color: rgba(255,255,255,0.92) !important;
+        text-shadow: none !important;
+        -webkit-text-stroke: none !important;
+    }
+}
+
     .gallery-header h1 {
         font-size: 2rem;
     }
@@ -386,7 +431,32 @@ body.lightbox-open .hamburger-menu { display: none !important; }
         height: 40px;
         font-size: 24px;
     }
-}
+
+@media (max-width: 480px) {
+    /* Technique identique à la bannière tabs */
+    .modern-gallery,
+    #myModernGallery,
+    #allModernGallery,
+    div[id*="ModernGallery"] {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+        gap: 1px !important;
+        grid-row-gap: 1px !important;
+        width: 100vw !important;
+        margin-left: -20px !important;
+        margin-right: -20px !important;
+        padding: 0 20px !important;
+        align-items: start !important;
+    }
+
+    .gallery-container {
+        padding: 0;
+    }
+    
+    /* Restaurer le padding normal du container */
+    .container {
+        padding: 20px !important;
+    }
     
     /* Couleur du titre d'événement pour matcher le fond countdown */
     .event-title {
