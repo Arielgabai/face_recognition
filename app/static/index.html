@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Face Recognition App</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Neonderthaw&family=Great+Vibes&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/gallery.css">
@@ -58,6 +58,12 @@
                 0 0 48px var(--neon-pink);
         }
 
+        html {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
             background: radial-gradient(60% 120% at 20% 10%, rgba(138, 43, 226, 0.15) 0%, rgba(0,0,0,0) 60%),
@@ -66,15 +72,29 @@
             color: var(--text);
             min-height: 100vh;
             line-height: 1.6;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
+            overscroll-behavior-x: none;
+            overscroll-behavior-y: contain;
+            touch-action: manipulation;
         }
 
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            padding: 0;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+        }
+
+        #loginForm {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
         }
 
         .header {
@@ -864,12 +884,16 @@
             display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
+            width: 100%;
+            max-width: 100%;
         }
 
         #dashboard.show {
             display: block !important;
             visibility: visible !important;
             opacity: 1 !important;
+            width: 100%;
+            max-width: 100%;
         }
 
         .hamburger-btn {

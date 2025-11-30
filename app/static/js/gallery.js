@@ -156,16 +156,13 @@ class ModernGallery {
             // Mobile & Tablette - 2 colonnes strictes
             galleryGrid.style.display = 'grid';
             galleryGrid.style.gridTemplateColumns = 'repeat(2, 1fr)';
-            galleryGrid.style.gap = '4px';
-            galleryGrid.style.gridRowGap = '4px';
-            
-            // Ajustements de marges pour mobile
-            if (width <= 480) {
-                galleryGrid.style.width = '100vw';
-                galleryGrid.style.marginLeft = '-20px';
-                galleryGrid.style.marginRight = '-20px';
-                galleryGrid.style.padding = '0 4px';
-            }
+            const spacing = width <= 480 ? '2px' : '4px';
+            galleryGrid.style.gap = spacing;
+            galleryGrid.style.gridRowGap = spacing;
+            galleryGrid.style.width = '100%';
+            galleryGrid.style.maxWidth = '100%';
+            galleryGrid.style.margin = '0';
+            galleryGrid.style.padding = '0';
             
             galleryGrid.style.alignItems = 'start';
         }

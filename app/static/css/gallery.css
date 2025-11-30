@@ -59,6 +59,9 @@
     grid-row-gap: 8px;
     align-items: start;
     width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
 }
 
 /* Mobile : 2 colonnes strictes */
@@ -385,23 +388,17 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     #allModernGallery,
     div[id*="ModernGallery"] {
         display: grid !important;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
-        gap: 2px !important;
-        grid-row-gap: 2px !important;
-        width: 100vw !important;
-        margin-left: -20px !important;
-        margin-right: -20px !important;
-        padding: 0 20px !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 4px !important;
+        grid-row-gap: 4px !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
         align-items: start !important;
     }
     
     .gallery-container {
         padding: 0;
-    }
-    
-    /* Restaurer le padding normal du container */
-    .container {
-        padding: 20px !important;
     }
     
     /* Couleur du titre d'événement pour matcher le fond countdown */
@@ -439,23 +436,17 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     #allModernGallery,
     div[id*="ModernGallery"] {
         display: grid !important;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
-        gap: 1px !important;
-        grid-row-gap: 1px !important;
-        width: 100vw !important;
-        margin-left: -20px !important;
-        margin-right: -20px !important;
-        padding: 0 20px !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 2px !important;
+        grid-row-gap: 2px !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
         align-items: start !important;
     }
 
     .gallery-container {
         padding: 0;
-    }
-    
-    /* Restaurer le padding normal du container */
-    .container {
-        padding: 20px !important;
     }
     
     /* Couleur du titre d'événement pour matcher le fond countdown */

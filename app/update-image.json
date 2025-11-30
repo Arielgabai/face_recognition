@@ -3,7 +3,7 @@
 ,
   "SourceConfiguration": {
     "ImageRepository": {
-      "ImageIdentifier": "801541932532.dkr.ecr.eu-west-3.amazonaws.com/findme-prod:v53",
+      "ImageIdentifier": "801541932532.dkr.ecr.eu-west-3.amazonaws.com/findme-prod:v58",
       "ImageRepositoryType": "ECR"
     }
   }
