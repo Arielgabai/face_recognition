@@ -107,7 +107,7 @@ class ModernGallery {
     }
     
     setupProgressiveLoading(galleryGrid) {
-        // Charger les images par batch pour un rendu progressif
+        // Charger les images par batch pour un rendu progressif dans l'ordre
         const cards = Array.from(galleryGrid.querySelectorAll('.gallery-photo-card'));
         const batchSize = this.options.batchSize || 10;
         
@@ -121,38 +121,20 @@ class ModernGallery {
             }
         });
         
-        // Utiliser IntersectionObserver pour charger les autres au scroll
-        if ('IntersectionObserver' in window) {
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        const card = entry.target;
-                        const img = card.querySelector('img');
-                        if (img && img.dataset.lazySrc) {
-                            img.src = img.dataset.lazySrc;
-                            delete img.dataset.lazySrc;
-                        }
-                        observer.unobserve(card);
-                    }
-                });
-            }, {
-                rootMargin: '200px' // Charger 200px avant d'être visible
-            });
-            
-            // Observer toutes les cartes après la première batch
-            cards.slice(batchSize).forEach(card => observer.observe(card));
-        } else {
-            // Fallback: charger toutes progressivement avec délai
-            cards.slice(batchSize).forEach((card, idx) => {
-                setTimeout(() => {
-                    const img = card.querySelector('img');
-                    if (img && img.dataset.lazySrc) {
-                        img.src = img.dataset.lazySrc;
-                        delete img.dataset.lazySrc;
-                    }
-                }, idx * 50); // 50ms entre chaque
-            });
-        }
+        // Charger le reste progressivement dans l'ordre (pas d'IntersectionObserver)
+        // Pour garantir l'ordre, on charge séquentiellement avec de petits délais
+        const remainingCards = cards.slice(batchSize);
+        remainingCards.forEach((card, idx) => {
+            // Charger par petits groupes avec délai minimal pour garder l'ordre
+            const delay = Math.floor(idx / 5) * 50; // Groupes de 5 avec 50ms entre chaque groupe
+            setTimeout(() => {
+                const img = card.querySelector('img');
+                if (img && img.dataset.lazySrc) {
+                    img.src = img.dataset.lazySrc;
+                    delete img.dataset.lazySrc;
+                }
+            }, delay);
+        });
     }
     
     applyMobileStyles(galleryGrid) {

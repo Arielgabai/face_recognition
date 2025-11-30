@@ -2386,12 +2386,12 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 }));
                 const gid = galleryId || `modern_${Math.random().toString(36).slice(2)}`;
                 target.innerHTML = `<div id="${gid}"></div>`;
-                // Activer lazy loading pour un chargement progressif optimal
+                // Utiliser les options passées en paramètre ou valeurs par défaut
                 const gallery = new ModernGallery(`#${gid}`, { 
                     lightbox: true, 
                     keyboardNavigation: true, 
-                    lazy: true,  // Activer le lazy loading
-                    batchSize: 10  // Charger par lots de 10
+                    lazy: options.lazy !== undefined ? options.lazy : false,
+                    batchSize: options.batchSize || 10
                 });
                 gallery.loadImages(images);
                 
@@ -2551,8 +2551,33 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                         }
                         
                         if (typeof window.ModernGallery !== 'undefined') {
-                            // Pour "Général", utiliser lazy loading avec batch pour optimiser
-                            renderPhotosModern(container, photos, 'allModernGallery', { lazy: true, batchSize: 10 });
+                            // Système de chargement rapide : montrer 2 photos d'abord, puis tout le reste (dans l'ordre)
+                            container.innerHTML = '<div id="allModernGallery"></div>';
+                            const g = new ModernGallery('#allModernGallery', { 
+                                lightbox: true, 
+                                keyboardNavigation: true, 
+                                lazy: false  // Pas de lazy loading - chargement natif du navigateur
+                            });
+                            
+                            // Charger les 2 premières immédiatement
+                            const priorityImages = photos.slice(0, 2).map((p, idx) => ({
+                                id: p.id,
+                                src: `/api/photo/${p.id}`,
+                                alt: p.original_filename || `Photo ${idx + 1}`,
+                                hasFaceMatch: p.has_face_match
+                            }));
+                            g.loadImages(priorityImages);
+                            
+                            // Charger TOUTES les photos après un court délai (dans l'ordre)
+                            setTimeout(() => {
+                                const allImages = photos.map((p, idx) => ({
+                                    id: p.id,
+                                    src: `/api/photo/${p.id}`,
+                                    alt: p.original_filename || `Photo ${idx + 1}`,
+                                    hasFaceMatch: p.has_face_match
+                                }));
+                                g.loadImages(allImages);
+                            }, 100);
                         } else {
                             container.innerHTML = `
                                 <div class="masonry">
@@ -3721,11 +3746,34 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 }
             }
             
-            // Afficher via la galerie moderne avec chargement progressif optimisé
+            // Afficher via la galerie moderne - chargement fluide
             if (typeof window.ModernGallery !== 'undefined') {
                 try {
-                    // Utiliser le même système de lazy loading que "Général" pour la cohérence
-                    renderPhotosModern(container, photos, 'myModernGallery', { lazy: true, batchSize: 10 });
+                    // Système de chargement rapide : montrer 2 photos d'abord, puis tout le reste
+                    container.innerHTML = '<div id="myModernGallery"></div>';
+                    const g = new ModernGallery('#myModernGallery', { 
+                        lightbox: true, 
+                        keyboardNavigation: true, 
+                        lazy: false  // Pas de lazy loading - chargement natif du navigateur
+                    });
+                    
+                    // Charger les 2 premières immédiatement
+                    const priorityImages = photos.slice(0, 2).map((p, idx) => ({
+                        src: `/api/photo/${p.id}`,
+                        alt: p.original_filename || `Photo ${idx + 1}`,
+                        hasFaceMatch: p.has_face_match
+                    }));
+                    g.loadImages(priorityImages);
+                    
+                    // Charger TOUTES les photos après un court délai (dans l'ordre)
+                    setTimeout(() => {
+                        const allImages = photos.map((p, idx) => ({
+                            src: `/api/photo/${p.id}`,
+                            alt: p.original_filename || `Photo ${idx + 1}`,
+                            hasFaceMatch: p.has_face_match
+                        }));
+                        g.loadImages(allImages);
+                    }, 100);
                 } catch (e) {
                     console.error('ModernGallery error (my photos):', e);
                     container.innerHTML = `
