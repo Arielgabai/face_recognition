@@ -2409,7 +2409,7 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                     hasFaceMatch: !!(p.has_face_match || p.hasFaceMatch)
                 }));
                 const gid = galleryId || `modern_${Math.random().toString(36).slice(2)}`;
-                target.innerHTML = `<div id="${gid}"></div>`;
+                target.innerHTML = `<div id="${gid}" style="width:100vw;max-width:100vw;position:relative;left:50%;transform:translateX(-50%);"></div>`;
                 // Utiliser les options passées en paramètre ou valeurs par défaut
                 const gallery = new ModernGallery(`#${gid}`, { 
                     lightbox: true, 
