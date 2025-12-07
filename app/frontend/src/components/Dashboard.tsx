@@ -51,7 +51,7 @@ function TabPanel(props: TabPanelProps) {
       aria-labelledby={`simple-tab-${index}`}
       {...other}
     >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+      {value === index && <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>{children}</Box>}
     </div>
   );
 }
@@ -183,13 +183,14 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
         sx={{
           display: 'grid',
           gridTemplateColumns: {
-            xs: 'repeat(auto-fill, minmax(200px, 1fr))',
+            xs: 'repeat(2, 1fr)',
             sm: 'repeat(auto-fill, minmax(250px, 1fr))',
             md: 'repeat(auto-fill, minmax(300px, 1fr))',
             lg: 'repeat(auto-fill, minmax(320px, 1fr))',
           },
-          gap: 2,
+          gap: { xs: 1, sm: 2 },
           gridAutoRows: 'minmax(200px, auto)',
+          justifyContent: 'center',
         }}
       >
         {photos.map((photo, index) => {
@@ -251,7 +252,7 @@ const ModernGallery: React.FC<ModernGalleryProps> = ({
                 sx={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover',
+                  objectFit: 'contain',
                   display: 'block',
                 }}
               />
