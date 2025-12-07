@@ -153,17 +153,22 @@ class ModernGallery {
         const width = window.innerWidth;
         
         if (width <= 768) {
-            // Mobile & Tablette - 2 colonnes strictes
+            // Mobile & Tablette - 2 colonnes strictes, plein écran centré
             galleryGrid.style.display = 'grid';
             galleryGrid.style.gridTemplateColumns = 'repeat(2, 1fr)';
             const spacing = width <= 480 ? '2px' : '4px';
             galleryGrid.style.gap = spacing;
             galleryGrid.style.gridRowGap = spacing;
-            galleryGrid.style.width = '100%';
-            galleryGrid.style.maxWidth = '100%';
+
+            // Pleine largeur de viewport, centrée
+            galleryGrid.style.width = '100vw';
+            galleryGrid.style.maxWidth = '100vw';
             galleryGrid.style.margin = '0';
             galleryGrid.style.padding = '0';
-            
+            galleryGrid.style.position = 'relative';
+            galleryGrid.style.left = '50%';
+            galleryGrid.style.transform = 'translateX(-50%)';
+
             galleryGrid.style.alignItems = 'start';
         }
     }
@@ -270,6 +275,8 @@ class ModernGallery {
         if (!galleryGrid) return;
         const propsToReset = [
             'width',
+            'maxWidth',
+            'margin',
             'marginLeft',
             'marginRight',
             'padding',
@@ -277,7 +284,10 @@ class ModernGallery {
             'gridRowGap',
             'gridTemplateColumns',
             'alignItems',
-            'display'
+            'display',
+            'left',
+            'transform',
+            'position'
         ];
         propsToReset.forEach(prop => {
             galleryGrid.style[prop] = '';

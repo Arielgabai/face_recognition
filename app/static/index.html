@@ -2426,26 +2426,32 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                         const width = window.innerWidth;
                         
                         if (width <= 480) {
-                            // Mobile - appliquer les styles directement
+                            // Mobile - 2 colonnes strictes, pleine largeur centrée
                             galleryElement.style.display = 'grid';
-                            galleryElement.style.gridTemplateColumns = 'repeat(auto-fit, minmax(150px, 1fr))';
-                            galleryElement.style.gap = '1px';
-                            galleryElement.style.gridRowGap = '1px';
-                            galleryElement.style.width = '100vw';
-                            galleryElement.style.marginLeft = '-20px';
-                            galleryElement.style.marginRight = '-20px';
-                            galleryElement.style.padding = '0 20px';
-                            galleryElement.style.alignItems = 'start';
-                        } else if (width <= 768) {
-                            // Tablette - appliquer les styles directement
-                            galleryElement.style.display = 'grid';
-                            galleryElement.style.gridTemplateColumns = 'repeat(auto-fit, minmax(160px, 1fr))';
+                            galleryElement.style.gridTemplateColumns = 'repeat(2, 1fr)';
                             galleryElement.style.gap = '2px';
                             galleryElement.style.gridRowGap = '2px';
                             galleryElement.style.width = '100vw';
-                            galleryElement.style.marginLeft = '-20px';
-                            galleryElement.style.marginRight = '-20px';
-                            galleryElement.style.padding = '0 20px';
+                            galleryElement.style.maxWidth = '100vw';
+                            galleryElement.style.margin = '0';
+                            galleryElement.style.padding = '0';
+                            galleryElement.style.position = 'relative';
+                            galleryElement.style.left = '50%';
+                            galleryElement.style.transform = 'translateX(-50%)';
+                            galleryElement.style.alignItems = 'start';
+                        } else if (width <= 768) {
+                            // Tablette - 2 colonnes strictes, pleine largeur centrée
+                            galleryElement.style.display = 'grid';
+                            galleryElement.style.gridTemplateColumns = 'repeat(2, 1fr)';
+                            galleryElement.style.gap = '4px';
+                            galleryElement.style.gridRowGap = '4px';
+                            galleryElement.style.width = '100vw';
+                            galleryElement.style.maxWidth = '100vw';
+                            galleryElement.style.margin = '0';
+                            galleryElement.style.padding = '0';
+                            galleryElement.style.position = 'relative';
+                            galleryElement.style.left = '50%';
+                            galleryElement.style.transform = 'translateX(-50%)';
                             galleryElement.style.alignItems = 'start';
                         }
                     }
