@@ -73,18 +73,26 @@
         gap: 4px !important;
     }
 
-    /* Forcer le conteneur et la zone d'onglet à occuper toute la largeur viewport */
+    /* Forcer le conteneur et la zone d'onglet à occuper toute la largeur, sans décalage horizontal */
     #my-photos,
     #all-photos,
     #myPhotosList,
-    #allPhotosList {
-        width: 100vw !important;
-        max-width: 100vw !important;
+    #allPhotosList,
+    #myModernGallery,
+    #allModernGallery,
+    .modern-gallery {
+        width: 100% !important;
+        max-width: 100% !important;
         margin: 0 !important;
         padding: 0 !important;
         position: relative;
-        left: 50%;
-        transform: translateX(-50%);
+        left: 0 !important;
+        transform: none !important;
+    }
+
+    body,
+    #dashboard {
+        overflow-x: hidden !important;
     }
 }
 
