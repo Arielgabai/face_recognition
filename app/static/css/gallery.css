@@ -73,7 +73,9 @@
         gap: 4px !important;
     }
 
-    /* Forcer le conteneur de galerie à occuper toute la largeur viewport */
+    /* Forcer le conteneur et la zone d'onglet à occuper toute la largeur viewport */
+    #my-photos,
+    #all-photos,
     #myPhotosList,
     #allPhotosList {
         width: 100vw !important;
