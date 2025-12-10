@@ -1,11 +1,18 @@
-/* Galerie Photos Moderne - CSS Responsive */
-/* Inspiré de Google Photos, Pinterest et memento.photo */
+/* ------------------------------------------------------------------
+   Galerie Photos Moderne - CSS Responsive
+   Inspiré de Google Photos, Pinterest et memento.photo
+------------------------------------------------------------------ */
 
+/* Reset de base */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
+
+/* ------------------------------------------------------------------
+   Conteneurs principaux
+------------------------------------------------------------------ */
 
 .gallery-container {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -15,6 +22,7 @@
     padding: 0;
 }
 
+/* Autres conteneurs logiques */
 .gallery-container,
 #my-photos,
 #all-photos {
@@ -22,6 +30,9 @@
     max-width: 100%;
 }
 
+/* ------------------------------------------------------------------
+   Header & titres
+------------------------------------------------------------------ */
 
 .gallery-header {
     text-align: center;
@@ -34,7 +45,8 @@
     color: var(--text, #e6e7ff);
     margin-bottom: 10px;
     font-family: 'Pacifico', cursive;
-    text-shadow: 0 0 6px rgba(138, 43, 226, 0.6), 0 0 18px rgba(57, 255, 20, 0.35);
+    text-shadow: 0 0 6px rgba(138, 43, 226, 0.6),
+                 0 0 18px rgba(57, 255, 20, 0.35);
 }
 
 .gallery-header .subtitle {
@@ -57,10 +69,13 @@
     text-shadow: 0 0 10px rgba(138, 43, 226, 0.35);
 }
 
-/* Layout CSS Grid avec largeurs fixes */
-.modern-gallery,
-#myModernGallery,
-#allModernGallery {
+/* ------------------------------------------------------------------
+   Layout grille principale
+------------------------------------------------------------------ */
+
+/* Conteneur de grille : .modern-gallery uniquement
+   (les IDs #myModernGallery / #allModernGallery restent des wrappers) */
+.modern-gallery {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
@@ -72,34 +87,18 @@
     padding: 0;
 }
 
-/* Mobile : 2 colonnes strictes */
-@media (max-width: 768px) {
-    .modern-gallery,
-    #myModernGallery,
-    #allModernGallery {
-        grid-template-columns: repeat(2, 1fr) !important; /* 2 colonnes de largeur égale */
-        gap: 4px !important;
-    }
-
-    /* Les conteneurs occupent simplement 100% de la largeur dispo, sans hack 100vw/translate */
-    #my-photos,
-    #all-photos,
-    #myPhotosList,
-    #allPhotosList {
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        position: static !important;
-        left: auto !important;
-        transform: none !important;
-    }
+/* Au cas où, on s'assure que les wrappers occupent toute la largeur */
+#myModernGallery,
+#allModernGallery {
+    width: 100%;
+    max-width: 100%;
 }
 
+/* ------------------------------------------------------------------
+   Cartes photo
+------------------------------------------------------------------ */
 
-.gallery-photo-card,
-#myModernGallery .gallery-photo-card,
-#allModernGallery .gallery-photo-card {
+.gallery-photo-card {
     position: relative;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
@@ -109,17 +108,15 @@
     animation: fadeInUp 0.6s ease forwards;
     opacity: 0;
     transform: translateY(20px);
-    display: flex; /* Flex pour centrer l'image */
+    display: flex;             /* Pour centrer l'image */
     flex-direction: column;
-    justify-content: center; /* Centrage vertical */
-    align-items: center;     /* Centrage horizontal */
+    justify-content: center;   /* Centrage vertical */
+    align-items: center;       /* Centrage horizontal */
     width: 100%;
 }
 
 /* Classe pour photos qui ont besoin de centrage avec effet flou */
-.gallery-photo-card.needs-centering,
-#myModernGallery .gallery-photo-card.needs-centering,
-#allModernGallery .gallery-photo-card.needs-centering {
+.gallery-photo-card.needs-centering {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -127,9 +124,7 @@
     overflow: hidden;
 }
 
-.gallery-photo-card.needs-centering::before,
-#myModernGallery .gallery-photo-card.needs-centering::before,
-#allModernGallery .gallery-photo-card.needs-centering::before {
+.gallery-photo-card.needs-centering::before {
     content: '';
     position: absolute;
     top: -20px;
@@ -146,9 +141,7 @@
     opacity: 0.8;
 }
 
-.gallery-photo-card.needs-centering img,
-#myModernGallery .gallery-photo-card.needs-centering img,
-#allModernGallery .gallery-photo-card.needs-centering img {
+.gallery-photo-card.needs-centering img {
     max-width: 100%;
     max-height: 100%;
     width: auto;
@@ -160,24 +153,20 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
-/* Empêcher l'overlay de masquer définitivement l'image sur mobile si hover absent */
-.gallery-photo-overlay {
-    pointer-events: none;
-}
-
-.gallery-photo-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4), 0 0 20px rgba(138, 43, 226, 0.3);
-}
-
-.gallery-photo-card img,
-#myModernGallery .gallery-photo-card img,
-#allModernGallery .gallery-photo-card img {
+/* Image dans une carte standard */
+.gallery-photo-card img {
     width: 100%;
     height: 100%;
     display: block;
     transition: transform 0.3s ease;
     object-fit: contain;
+}
+
+/* Etat hover */
+.gallery-photo-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4),
+                0 0 20px rgba(138, 43, 226, 0.3);
 }
 
 .gallery-photo-card:hover img {
@@ -191,9 +180,10 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(60% 100% at 30% 20%, rgba(138, 43, 226, 0.55), rgba(0,0,0,0) 60%),
-                radial-gradient(60% 100% at 70% 80%, rgba(57, 255, 20, 0.4), rgba(0,0,0,0) 60%),
-                linear-gradient(45deg, rgba(13, 13, 28, 0.85), rgba(13, 13, 28, 0.65));
+    background:
+        radial-gradient(60% 100% at 30% 20%, rgba(138, 43, 226, 0.55), rgba(0,0,0,0) 60%),
+        radial-gradient(60% 100% at 70% 80%, rgba(57, 255, 20, 0.4), rgba(0,0,0,0) 60%),
+        linear-gradient(45deg, rgba(13, 13, 28, 0.85), rgba(13, 13, 28, 0.65));
     opacity: 0;
     transition: opacity 0.3s ease;
     display: flex;
@@ -202,24 +192,27 @@
     color: white;
     font-weight: 600;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+    pointer-events: none; /* Pour ne pas bloquer le clic sur mobile */
 }
 
 .gallery-photo-card:hover .gallery-photo-overlay {
     opacity: 1;
 }
 
-/* Adaptation minimale pour cas extrêmes */
+/* Cas particuliers */
 .gallery-photo-card.wide-landscape {
     max-width: 100%;
 }
 
-/* Limitation pour les images très hautes */
 .gallery-photo-card.tall-portrait img {
     max-height: 600px;
     object-fit: cover;
 }
 
-/* Lightbox/Modal moderne */
+/* ------------------------------------------------------------------
+   Lightbox / Modal
+------------------------------------------------------------------ */
+
 .gallery-lightbox {
     display: none;
     position: fixed;
@@ -246,9 +239,13 @@
 }
 
 /* Masquer le hamburger quand la lightbox est ouverte */
-/* Masquer le hamburger quand la lightbox est ouverte */
-.hamburger-menu { transition: opacity 0.15s ease; }
-body.lightbox-open .hamburger-menu { display: none !important; }
+.hamburger-menu {
+    transition: opacity 0.15s ease;
+}
+
+body.lightbox-open .hamburger-menu {
+    display: none !important;
+}
 
 /* Bouton de téléchargement/enregistrement */
 .gallery-download-btn {
@@ -269,7 +266,8 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 
 .gallery-download-btn:hover {
     background: rgba(138, 43, 226, 0.18);
-    box-shadow: 0 0 16px rgba(138, 43, 226, 0.55), 0 0 8px rgba(57, 255, 20, 0.25);
+    box-shadow: 0 0 16px rgba(138, 43, 226, 0.55),
+                0 0 8px rgba(57, 255, 20, 0.25);
 }
 
 /* Contrôles du lightbox */
@@ -339,8 +337,10 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     font-size: 14px;
 }
 
-/* États d'chargement */
-/* Loader caché par défaut; visible seulement pendant le chargement */
+/* ------------------------------------------------------------------
+   États de chargement & empty state
+------------------------------------------------------------------ */
+
 .gallery-photo-loading {
     position: absolute;
     top: 0;
@@ -376,16 +376,19 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     opacity: 0.8;
 }
 
-/* Animations séquentielles */
-.gallery-photo-card:nth-child(1) { animation-delay: 0.1s; }
-.gallery-photo-card:nth-child(2) { animation-delay: 0.2s; }
-.gallery-photo-card:nth-child(3) { animation-delay: 0.3s; }
-.gallery-photo-card:nth-child(4) { animation-delay: 0.4s; }
-.gallery-photo-card:nth-child(5) { animation-delay: 0.5s; }
-.gallery-photo-card:nth-child(6) { animation-delay: 0.6s; }
-.gallery-photo-card:nth-child(7) { animation-delay: 0.7s; }
-.gallery-photo-card:nth-child(8) { animation-delay: 0.8s; }
-.gallery-photo-card:nth-child(9) { animation-delay: 0.9s; }
+/* ------------------------------------------------------------------
+   Animations séquentielles
+------------------------------------------------------------------ */
+
+.gallery-photo-card:nth-child(1)  { animation-delay: 0.1s; }
+.gallery-photo-card:nth-child(2)  { animation-delay: 0.2s; }
+.gallery-photo-card:nth-child(3)  { animation-delay: 0.3s; }
+.gallery-photo-card:nth-child(4)  { animation-delay: 0.4s; }
+.gallery-photo-card:nth-child(5)  { animation-delay: 0.5s; }
+.gallery-photo-card:nth-child(6)  { animation-delay: 0.6s; }
+.gallery-photo-card:nth-child(7)  { animation-delay: 0.7s; }
+.gallery-photo-card:nth-child(8)  { animation-delay: 0.8s; }
+.gallery-photo-card:nth-child(9)  { animation-delay: 0.9s; }
 .gallery-photo-card:nth-child(10) { animation-delay: 1s; }
 
 @keyframes fadeInUp {
@@ -395,108 +398,10 @@ body.lightbox-open .hamburger-menu { display: none !important; }
     }
 }
 
-/* Responsive Design */
-@media (max-width: 1024px) {
-    .modern-gallery {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 4px;
-        grid-row-gap: 4px;
-    }
-}
+/* ------------------------------------------------------------------
+   Thèmes & variantes
+------------------------------------------------------------------ */
 
-@media (max-width: 768px) {
-    /* Technique identique à la bannière tabs pour tablette */
-    .modern-gallery,
-    #myModernGallery,
-    #allModernGallery,
-    div[id*="ModernGallery"] {
-        display: grid !important;
-        grid-template-columns: repeat(2, 1fr) !important;
-        gap: 4px !important;
-        grid-row-gap: 4px !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        align-items: start !important;
-    }
-    
-    .gallery-container {
-        padding: 0;
-    }
-    
-    /* Couleur du titre d'événement pour matcher le fond countdown */
-    .event-title {
-        color: rgba(255,255,255,0.92) !important;
-        text-shadow: none !important;
-        -webkit-text-stroke: none !important;
-    }
-}
-
-    .gallery-header h1 {
-        font-size: 2rem;
-    }
-
-    .gallery-section-title {
-        font-size: 1.5rem;
-    }
-
-    .gallery-lightbox-nav {
-        width: 40px;
-        height: 40px;
-        font-size: 24px;
-    }
-
-    .gallery-lightbox-close {
-        width: 40px;
-        height: 40px;
-        font-size: 24px;
-    }
-
-@media (max-width: 480px) {
-    /* Technique identique à la bannière tabs */
-    .modern-gallery,
-    #myModernGallery,
-    #allModernGallery,
-    div[id*="ModernGallery"] {
-        display: grid !important;
-        grid-template-columns: repeat(2, 1fr) !important;
-        gap: 2px !important;
-        grid-row-gap: 2px !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        align-items: start !important;
-    }
-
-    .gallery-container {
-        padding: 0;
-    }
-    
-    /* Couleur du titre d'événement pour matcher le fond countdown */
-    .event-title {
-        color: rgba(255,255,255,0.92) !important;
-        text-shadow: none !important;
-        -webkit-text-stroke: none !important;
-    }
-}
-    
-
-
-    .gallery-lightbox-prev {
-        left: 10px;
-    }
-
-    .gallery-lightbox-next {
-        right: 10px;
-    }
-
-    .gallery-lightbox-close {
-        top: 10px;
-        right: 10px;
-    }
-
-
-/* Thèmes de couleur alternatifs */
 .gallery-theme-dark {
     background: #1a1a1a;
     color: white;
@@ -537,4 +442,111 @@ body.lightbox-open .hamburger-menu { display: none !important; }
 .gallery-lightbox-close:focus {
     outline: 2px solid white;
     outline-offset: 2px;
-} 
+}
+
+/* ------------------------------------------------------------------
+   Responsive
+------------------------------------------------------------------ */
+
+/* <= 1024px : on reste sur 2 colonnes, on peut ajuster les espacements si besoin */
+@media (max-width: 1024px) {
+    .modern-gallery {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        grid-row-gap: 4px;
+    }
+}
+
+/* <= 768px : 2 colonnes, full width + ajustements typographiques */
+@media (max-width: 768px) {
+    .modern-gallery {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        grid-row-gap: 4px;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        align-items: start;
+    }
+
+    /* Les conteneurs occupent simplement 100% de la largeur dispo */
+    #my-photos,
+    #all-photos,
+    #myPhotosList,
+    #allPhotosList {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        position: static !important;
+        left: auto !important;
+        transform: none !important;
+    }
+
+    .gallery-container {
+        padding: 0;
+    }
+
+    .gallery-header h1 {
+        font-size: 2rem;
+    }
+
+    .gallery-section-title {
+        font-size: 1.5rem;
+    }
+
+    .gallery-lightbox-nav {
+        width: 40px;
+        height: 40px;
+        font-size: 24px;
+    }
+
+    .gallery-lightbox-close {
+        width: 40px;
+        height: 40px;
+        font-size: 24px;
+    }
+
+    /* Couleur du titre d'événement pour matcher le fond countdown */
+    .event-title {
+        color: rgba(255,255,255,0.92) !important;
+        text-shadow: none !important;
+        -webkit-text-stroke: none !important;
+    }
+}
+
+/* <= 480px : mêmes 2 colonnes mais espacement plus serré + boutons repositionnés */
+@media (max-width: 480px) {
+    .modern-gallery {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 2px;
+        grid-row-gap: 2px;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        align-items: start;
+    }
+
+    .gallery-container {
+        padding: 0;
+    }
+
+    .event-title {
+        color: rgba(255,255,255,0.92) !important;
+        text-shadow: none !important;
+        -webkit-text-stroke: none !important;
+    }
+
+    .gallery-lightbox-prev {
+        left: 10px;
+    }
+
+    .gallery-lightbox-next {
+        right: 10px;
+    }
+
+    .gallery-lightbox-close {
+        top: 10px;
+        right: 10px;
+    }
+}
