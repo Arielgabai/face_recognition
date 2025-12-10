@@ -15,6 +15,14 @@
     padding: 0;
 }
 
+.gallery-container,
+#my-photos,
+#all-photos {
+    width: 100%;
+    max-width: 100%;
+}
+
+
 .gallery-header {
     text-align: center;
     margin-bottom: 40px;
@@ -73,20 +81,21 @@
         gap: 4px !important;
     }
 
-    /* Forcer le conteneur et la zone d'onglet à occuper toute la largeur viewport */
+    /* Les conteneurs occupent simplement 100% de la largeur dispo, sans hack 100vw/translate */
     #my-photos,
     #all-photos,
     #myPhotosList,
     #allPhotosList {
-        width: 100vw !important;
-        max-width: 100vw !important;
+        width: 100% !important;
+        max-width: 100% !important;
         margin: 0 !important;
         padding: 0 !important;
-        position: relative;
-        left: 50%;
-        transform: translateX(-50%);
+        position: static !important;
+        left: auto !important;
+        transform: none !important;
     }
 }
+
 
 .gallery-photo-card,
 #myModernGallery .gallery-photo-card,
