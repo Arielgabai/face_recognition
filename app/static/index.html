@@ -2396,71 +2396,48 @@
 
 
 
-function renderPhotosModern(container, photos, galleryId, options = {}) {
-    const { cacheBust = false } = options;
-            try {
-                const target = (typeof container === 'string') ? document.querySelector(container) : container;
-                if (!target) return;
-        const timestamp = cacheBust ? Date.now() : null;
-        const images = photos.map((p, idx) => ({
-                    id: p.id,
-            src: cacheBust ? `/api/photo/${p.id}?cb=${timestamp}` : `/api/photo/${p.id}`,
-                    alt: p.original_filename || `Photo ${idx + 1}`,
-                    hasFaceMatch: !!(p.has_face_match || p.hasFaceMatch)
-                }));
-                const gid = galleryId || `modern_${Math.random().toString(36).slice(2)}`;
-                target.innerHTML = `<div id="${gid}" style="width:100vw;max-width:100vw;position:relative;left:50%;transform:translateX(-50%);"></div>`;
-                // Utiliser les options passées en paramètre ou valeurs par défaut
-                const gallery = new ModernGallery(`#${gid}`, { 
-                    lightbox: true, 
-                    keyboardNavigation: true, 
-                    lazy: options.lazy !== undefined ? options.lazy : false,
-                    batchSize: options.batchSize || 10
-                });
-                gallery.loadImages(images);
-                
-                // NOUVEAU: Forcer les styles mobile après création
-                setTimeout(() => {
-                    const galleryElement = document.getElementById(gid);
-                    if (galleryElement && window.innerWidth <= 768) {
-                        const width = window.innerWidth;
-                        
-                        if (width <= 480) {
-                            // Mobile - 2 colonnes strictes, pleine largeur centrée
-                            galleryElement.style.display = 'grid';
-                            galleryElement.style.gridTemplateColumns = 'repeat(2, 1fr)';
-                            galleryElement.style.gap = '2px';
-                            galleryElement.style.gridRowGap = '2px';
-                            galleryElement.style.width = '100vw';
-                            galleryElement.style.maxWidth = '100vw';
-                            galleryElement.style.margin = '0';
-                            galleryElement.style.padding = '0';
-                            galleryElement.style.position = 'relative';
-                            galleryElement.style.left = '50%';
-                            galleryElement.style.transform = 'translateX(-50%)';
-                            galleryElement.style.alignItems = 'start';
-                        } else if (width <= 768) {
-                            // Tablette - 2 colonnes strictes, pleine largeur centrée
-                            galleryElement.style.display = 'grid';
-                            galleryElement.style.gridTemplateColumns = 'repeat(2, 1fr)';
-                            galleryElement.style.gap = '4px';
-                            galleryElement.style.gridRowGap = '4px';
-                            galleryElement.style.width = '100vw';
-                            galleryElement.style.maxWidth = '100vw';
-                            galleryElement.style.margin = '0';
-                            galleryElement.style.padding = '0';
-                            galleryElement.style.position = 'relative';
-                            galleryElement.style.left = '50%';
-                            galleryElement.style.transform = 'translateX(-50%)';
-                            galleryElement.style.alignItems = 'start';
-                        }
-                    }
-                }, 50);
-                
-            } catch (e) {
-                console.error('renderPhotosModern error:', e);
-            }
+        function renderPhotosModern(container, photos, galleryId, options = {}) {
+        const { cacheBust = false } = options;
+
+        try {
+            const target = (typeof container === 'string')
+                ? document.querySelector(container)
+                : container;
+
+            if (!target) return;
+
+            const timestamp = cacheBust ? Date.now() : null;
+
+            const images = (photos || []).map((p, idx) => ({
+                id: p.id,
+                src: cacheBust
+                    ? `/api/photo/${p.id}?cb=${timestamp}`
+                    : `/api/photo/${p.id}`,
+                alt: p.original_filename || `Photo ${idx + 1}`,
+                hasFaceMatch: !!(p.has_face_match || p.hasFaceMatch)
+            }));
+
+            const gid = galleryId || `modern_${Math.random().toString(36).slice(2)}`;
+
+            // ❌ plus de width:100vw / translateX ici
+            target.innerHTML = `<div id="${gid}"></div>`;
+
+            const gallery = new ModernGallery(`#${gid}`, {
+                lightbox: true,
+                keyboardNavigation: true,
+                // ✅ lazy ON par défaut (au lieu de false)
+                lazy: options.lazy !== undefined ? options.lazy : true,
+                batchSize: options.batchSize || 10,
+                theme: options.theme || 'light',
+                size: options.size || 'normal'
+            });
+
+            gallery.loadImages(images);
+        } catch (e) {
+            console.error('renderPhotosModern error:', e);
         }
+    }
+
 
         async function loadMyPhotos() {
             const container = document.getElementById('myPhotosList');
@@ -2580,40 +2557,20 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                             allPhotosTab.textContent = `Général (${photos.length})`;
                         }
                         
-                        if (typeof window.ModernGallery !== 'undefined') {
-                            // Système de chargement rapide : montrer 2 photos d'abord, puis tout le reste (dans l'ordre)
-                            container.innerHTML = '<div id="allModernGallery"></div>';
-                            const g = new ModernGallery('#allModernGallery', { 
-                                lightbox: true, 
-                                keyboardNavigation: true, 
-                                lazy: false  // Pas de lazy loading - chargement natif du navigateur
+                        if (typeof window.ModernGallery !== 'undefined' && typeof renderPhotosModern === 'function') {
+                            // ✅ Utiliser directement la galerie moderne avec lazy + batch
+                            container.innerHTML = '';
+                            renderPhotosModern(container, photos, 'allModernGallery', {
+                                lazy: true,      // lazy loading côté galerie
+                                batchSize: 20    // charge rapidement les premières lignes
                             });
-                            
-                            // Charger les 2 premières immédiatement
-                            const priorityImages = photos.slice(0, 2).map((p, idx) => ({
-                                id: p.id,
-                                src: `/api/photo/${p.id}`,
-                                alt: p.original_filename || `Photo ${idx + 1}`,
-                                hasFaceMatch: p.has_face_match
-                            }));
-                            g.loadImages(priorityImages);
-                            
-                            // Charger TOUTES les photos après un court délai (dans l'ordre)
-                            setTimeout(() => {
-                                const allImages = photos.map((p, idx) => ({
-                                    id: p.id,
-                                    src: `/api/photo/${p.id}`,
-                                    alt: p.original_filename || `Photo ${idx + 1}`,
-                                    hasFaceMatch: p.has_face_match
-                                }));
-                                g.loadImages(allImages);
-                            }, 100);
                         } else {
+                            // Fallback simple en masonry
                             container.innerHTML = `
                                 <div class="masonry">
                                     ${photos.map(photo => `
                                         <div class="masonry-item" style="position: relative;">
-                                            <img src="/api/photo/${photo.id}" alt="Photo">
+                                            <img src="/api/photo/${photo.id}" alt="Photo" loading="lazy">
                                             ${photo.has_face_match ? `
                                                 <div style="position: absolute; top: 8px; right: 8px; background: #4caf50; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 4px; z-index: 10;">
                                                     <span>👤</span> Match
@@ -2645,9 +2602,10 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 `;
             } finally {
                 // Hide loading state
-                loadingDiv.style.display = 'none';
+                if (loadingDiv) loadingDiv.style.display = 'none';
             }
         }
+
 
         function setupPhotoUpload() {
             const uploadArea = document.getElementById('uploadArea');
@@ -3747,9 +3705,9 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
         function updatePhotoDisplay(photos) {
             const container = document.getElementById('myPhotosList');
             if (!container || !photos) return;
-            
+
             console.log(`Mise à jour de l'affichage avec ${photos.length} photos`);
-            
+
             if (photos.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
@@ -3761,13 +3719,13 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 try { dispatchMyPhotosLoaded(); } catch {}
                 return;
             }
-            
+
             // Mettre à jour le nombre de photos dans l'onglet
             const myPhotosTab = document.getElementById('myPhotosTab');
             if (myPhotosTab) {
                 myPhotosTab.textContent = `Mes photos (${photos.length})`;
             }
-            
+
             // Mettre à jour le titre de l'événement si disponible
             if (photos.length > 0 && photos[0].event_name) {
                 const eventTitle = document.getElementById('eventTitle');
@@ -3775,35 +3733,16 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                     eventTitle.textContent = photos[0].event_name;
                 }
             }
-            
+
             // Afficher via la galerie moderne - chargement fluide
             if (typeof window.ModernGallery !== 'undefined') {
                 try {
-                    // Système de chargement rapide : montrer 2 photos d'abord, puis tout le reste
-                    container.innerHTML = '<div id="myModernGallery"></div>';
-                    const g = new ModernGallery('#myModernGallery', { 
-                        lightbox: true, 
-                        keyboardNavigation: true, 
-                        lazy: false  // Pas de lazy loading - chargement natif du navigateur
+                    container.innerHTML = '';
+                    renderPhotosModern(container, photos, 'myModernGallery', {
+                        lazy: true,        // ✅ lazy activé pour "Mes photos"
+                        batchSize: 16,     // 3–4 lignes rapides au début
+                        cacheBust: true    // pour éviter d'anciennes versions après rematch selfie
                     });
-                    
-                    // Charger les 2 premières immédiatement
-                    const priorityImages = photos.slice(0, 2).map((p, idx) => ({
-                        src: `/api/photo/${p.id}`,
-                        alt: p.original_filename || `Photo ${idx + 1}`,
-                        hasFaceMatch: p.has_face_match
-                    }));
-                    g.loadImages(priorityImages);
-                    
-                    // Charger TOUTES les photos après un court délai (dans l'ordre)
-                    setTimeout(() => {
-                        const allImages = photos.map((p, idx) => ({
-                            src: `/api/photo/${p.id}`,
-                            alt: p.original_filename || `Photo ${idx + 1}`,
-                            hasFaceMatch: p.has_face_match
-                        }));
-                        g.loadImages(allImages);
-                    }, 100);
                 } catch (e) {
                     console.error('ModernGallery error (my photos):', e);
                     container.innerHTML = `
@@ -3820,21 +3759,28 @@ function renderPhotosModern(container, photos, galleryId, options = {}) {
                 container.innerHTML = `
                     <div class="masonry">
                         ${photos.map(photo => `
-                            <div class="masonry-item"><img src="/api/photo/${photo.id}" alt="Photo" loading="lazy"></div>
+                            <div class="masonry-item">
+                                <img src="/api/photo/${photo.id}" alt="Photo" loading="lazy">
+                            </div>
                         `).join('')}
                     </div>
                 `;
             }
+
             // Attendre que toutes les images soient chargées avant de signaler la fin
             try {
                 waitForAllImagesIn(container).then(() => {
-                    try { window.__myPhotosPrimed = true; window.__myPhotosHash = idsHash(photos); } catch {}
+                    try {
+                        window.__myPhotosPrimed = true;
+                        window.__myPhotosHash = idsHash(photos);
+                    } catch {}
                     dispatchMyPhotosLoaded();
                 });
             } catch {}
-            
+
             console.log(`Affichage mis à jour avec succès: ${photos.length} photos`);
         }
+
 
         // Helpers: attendre que les images se chargent et signaler la fin de chargement de "Vos Photos"
         function waitForAllImagesIn(element, timeoutMs = 15000) {

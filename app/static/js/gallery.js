@@ -1,5 +1,5 @@
 /**
- * Galerie Photos Moderne - JavaScript (version nettoyée)
+ * Galerie Photos Moderne - JavaScript (version optimisée)
  * Layout en CSS Grid + égalisation des hauteurs par ligne.
  * - Lazy loading progressif
  * - Lightbox avec navigation, clavier, gestes tactiles
@@ -38,6 +38,9 @@ class ModernGallery {
         // Resize/throttle
         this.resizeRaf = null;
         this.boundHandleViewportChange = this.handleViewportChange.bind(this);
+
+        // PERF: flag pour ne pas lancer 50 fois adjustRowHeights en même temps
+        this.adjustPending = false;
 
         this.init();
         this.bindGlobalEvents();
@@ -129,8 +132,8 @@ class ModernGallery {
             this.setupProgressiveLoading(galleryGrid);
         }
 
-        // Ajuster les hauteurs de ligne après rendu
-        setTimeout(() => this.adjustRowHeights(), 120);
+        // Ajuster les hauteurs de ligne après rendu (une seule fois, debouncée)
+        setTimeout(() => this.scheduleRowAdjust(), 120);
 
         // Animations d'apparition
         if (this.options.animations) {
@@ -172,6 +175,19 @@ class ModernGallery {
     /* ------------------------------------------------------------------ */
     /* Gestion du layout (hauteurs de lignes + fond flou)                  */
     /* ------------------------------------------------------------------ */
+
+    /**
+     * PERF: regroupe les appels à adjustRowHeights dans un seul rAF
+     */
+    scheduleRowAdjust() {
+        if (this.adjustPending) return;
+        this.adjustPending = true;
+
+        requestAnimationFrame(() => {
+            this.adjustPending = false;
+            this.adjustRowHeights();
+        });
+    }
 
     /**
      * Ajuste les hauteurs des cartes ligne par ligne, pour que toutes
@@ -243,8 +259,8 @@ class ModernGallery {
 
         // Réessayer tant que certaines images ne sont pas encore chargées
         const needsRetry = Array.from(cards).some(card => card.dataset.loaded !== '1');
-        if (needsRetry && retryCount < 8) {
-            const waitTime = Math.min(400 + retryCount * 120, 1500);
+        if (needsRetry && retryCount < 4) { // PERF: limite abaissée de 8 à 4
+            const waitTime = Math.min(400 + retryCount * 120, 1000);
             setTimeout(() => this.adjustRowHeights(retryCount + 1), waitTime);
         }
     }
@@ -254,7 +270,7 @@ class ModernGallery {
         if (this.resizeRaf) cancelAnimationFrame(this.resizeRaf);
 
         this.resizeRaf = requestAnimationFrame(() => {
-            this.adjustRowHeights();
+            this.scheduleRowAdjust();
         });
     }
 
@@ -323,12 +339,8 @@ class ModernGallery {
             card.dataset.loaded = '1';
             card.classList.remove('loading');
 
-            if (this.options.autoDetectRatio) {
-                // Le layout est géré par CSS + adjustRowHeights
-            }
-
-            // Réajuster les lignes après chargement
-            setTimeout(() => this.adjustRowHeights(), 50);
+            // Réajuster les lignes après chargement (debouncé)
+            this.scheduleRowAdjust();
         };
 
         img.onerror = () => {
