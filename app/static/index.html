@@ -2438,7 +2438,7 @@
         }
     }
 
-
+        
         async function loadMyPhotos() {
             const container = document.getElementById('myPhotosList');
             const loadingDiv = document.getElementById('myPhotosLoading');
@@ -2517,7 +2517,7 @@
             const loadingDiv = document.getElementById('allPhotosLoading');
             const emptyDiv = document.getElementById('allPhotosEmpty');
             
-            // Show loading state
+            // Afficher l'état de chargement global de l'onglet
             if (loadingDiv) loadingDiv.style.display = 'flex';
             if (emptyDiv) emptyDiv.style.display = 'none';
             
@@ -2526,7 +2526,8 @@
                 
                 if (response.ok) {
                     const photos = await response.json();
-                    if (photos.length === 0) {
+                    
+                    if (!photos || photos.length === 0) {
                         container.innerHTML = `
                             <div class="empty-state">
                                 <div class="empty-state-icon">📷</div>
@@ -2544,7 +2545,7 @@
                         console.log('First photo has_face_match (all):', photos[0]?.has_face_match);
                         console.log('Photos with face match (all):', photos.filter(p => p.has_face_match).length);
                         
-                        if (photos.length > 0 && photos[0].event_name) {
+                        if (eventTitle && photos[0].event_name) {
                             eventTitle.textContent = photos[0].event_name;
                             console.log('Titre mis à jour avec (all):', photos[0].event_name);
                         } else {
@@ -2557,12 +2558,14 @@
                             allPhotosTab.textContent = `Général (${photos.length})`;
                         }
                         
+                        // Affichage via ModernGallery si dispo
                         if (typeof window.ModernGallery !== 'undefined' && typeof renderPhotosModern === 'function') {
-                            // ✅ Utiliser directement la galerie moderne avec lazy + batch
+                            // On laisse le cache navigateur sur /api/photo (PAS de cache-busting ici)
                             container.innerHTML = '';
                             renderPhotosModern(container, photos, 'allModernGallery', {
-                                lazy: true,      // lazy loading côté galerie
-                                batchSize: 20    // charge rapidement les premières lignes
+                                lazy: true,        // lazy dans la galerie (chargement progressif)
+                                batchSize: 24,     // montre rapidement plusieurs lignes
+                                cacheBust: false   // important : ne pas casser le cache des photos
                             });
                         } else {
                             // Fallback simple en masonry
@@ -2601,10 +2604,10 @@
                     </div>
                 `;
             } finally {
-                // Hide loading state
                 if (loadingDiv) loadingDiv.style.display = 'none';
             }
         }
+
 
 
         function setupPhotoUpload() {
@@ -2726,41 +2729,82 @@
                 uploadBtn.classList.remove('btn-loading');
             }
         }
+        // Promesses partagées pour éviter les rechargements multiples
+        let __myPhotosPromise = null;
+        let __allPhotosPromise = null;
+
+        function loadMyPhotosOnce(options = {}) {
+            const { forceReload = false } = options;
+
+            if (!__myPhotosPromise || forceReload) {
+                __myPhotosPromise = loadMyPhotos()
+                    .catch(err => {
+                        console.error('loadMyPhotos error:', err);
+                        __myPhotosPromise = null; // permettre un retry plus tard
+                        throw err;
+                    });
+            }
+            return __myPhotosPromise;
+        }
+
+        function loadAllPhotosOnce(options = {}) {
+            const { forceReload = false } = options;
+
+            if (!__allPhotosPromise || forceReload) {
+                __allPhotosPromise = loadAllPhotos()
+                    .catch(err => {
+                        console.error('loadAllPhotos error:', err);
+                        __allPhotosPromise = null; // permettre un retry plus tard
+                        throw err;
+                    });
+            }
+            return __allPhotosPromise;
+        }
 
         function showTab(tabName) {
             // Masquer tous les contenus d'onglets
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.remove('active');
             });
-            
+
             // Désactiver tous les onglets
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
-            
+
             // Afficher le contenu de l'onglet sélectionné
-            document.getElementById(tabName).classList.add('active');
-            
-            // Activer l'onglet sélectionné
-            event.target.classList.add('active');
-            
-            // Optimisation: précharger les données si nécessaire
+            const tabContent = document.getElementById(tabName);
+            if (tabContent) {
+                tabContent.classList.add('active');
+            }
+
+            // Activer l'onglet sélectionné (via event global si dispo)
+            try {
+                const evt = window.event;
+                if (evt && evt.target && evt.target.classList) {
+                    evt.target.classList.add('active');
+                }
+            } catch {}
+
+            // Chargement en fonction de l'onglet
             if (tabName === 'my-photos') {
-                // Toujours recharger "Mes photos" pour avoir les dernières données
-                setTimeout(() => {
-                    loadMyPhotos().catch(err => console.error('loadMyPhotos error:', err));
-                }, 50);
+                // Ne pas re-fetch si déjà chargé : on s'appuie sur loadMyPhotosOnce
+                loadMyPhotosOnce().catch(err => console.error('loadMyPhotosOnce error (tab switch):', err));
             } else if (tabName === 'all-photos') {
-                // Vérifier si "Général" a des données, sinon afficher un loader
                 const container = document.getElementById('allPhotosList');
-                const hasContent = container && container.querySelector('.gallery-photo-card, .masonry, #allModernGallery');
-                if (!hasContent) {
-                    // Pas encore de données, afficher le loader
+                const hasGallery = container &&
+                    container.querySelector('.gallery-photo-card, .masonry, #allModernGallery');
+
+                // Si jamais encore rien rendu, on affiche son loader et on déclenche le chargement
+                if (!hasGallery) {
                     const loadingDiv = document.getElementById('allPhotosLoading');
                     if (loadingDiv) loadingDiv.style.display = 'flex';
+                    loadAllPhotosOnce().catch(err => console.error('loadAllPhotosOnce error (tab switch):', err));
                 }
+                // Si déjà construit une fois, on se contente de l’afficher, pas de rechargement
             }
         }
+
 
         // Hamburger Menu Functions
         function toggleMenu() {
@@ -3122,12 +3166,14 @@
             overlay.style.display = 'none';
         }
 
+
+
         // Show loading for dashboard load
         async function loadDashboard() {
             // S'assurer d'arriver tout en haut de la page
             try { window.scrollTo({ top: 0, behavior: 'instant' }); } catch { window.scrollTo(0,0); }
             showGlobalLoading('Chargement du tableau de bord...');
-            
+
             try {
                 const response = await apiFetch('/api/me');
 
@@ -3135,38 +3181,41 @@
                     currentUser = await response.json();
                     document.getElementById('loginForm').style.display = 'none';
                     document.getElementById('dashboard').classList.add('show');
-                    
+
                     // Mettre à jour le titre avec le nom de l'événement de l'utilisateur
                     const eventTitle = document.getElementById('eventTitle');
                     console.log('CurrentUser complet:', currentUser);
-                    
+
                     if (currentUser.event_name) {
                         eventTitle.textContent = currentUser.event_name;
                         console.log('Titre mis à jour avec event_name de l\'utilisateur:', currentUser.event_name);
                     } else {
-                        // Fallback : utiliser le nom d'utilisateur ou un nom par défaut
-                        const eventName = currentUser.username ? `${currentUser.username}'s Event` : 'Mon Événement';
+                        const eventName = currentUser.username
+                            ? `${currentUser.username}'s Event`
+                            : 'Mon Événement';
                         eventTitle.textContent = eventName;
                         console.log('Titre mis à jour avec fallback:', eventName);
                     }
-                    
-                    // Mettre à jour les informations du menu hamburger
+
+                    // Mettre à jour les infos du menu hamburger
                     updateMenuUserInfo(currentUser);
-                    
-                    // Charger les deux galeries en parallèle pour un chargement optimal
-                    // "Mes photos" est prioritaire (await), "Général" en arrière-plan immédiat
-                    const allPhotosPromise = loadAllPhotos().catch(err => console.error('loadAllPhotos error:', err));
-                    const myPhotosPromise = loadMyPhotos().catch(err => console.error('loadMyPhotos error:', err));
-                    
-                    // Attendre "Mes photos" avant d'enlever le loader global
-                    await myPhotosPromise;
-                    
-                    // "Général" continue de charger en arrière-plan
-                    // Le système de progressive loading de ModernGallery gérera le chargement optimal
+
+                    // ⚡ Charger les deux onglets en parallèle
+                    const myPhotosPromise = loadMyPhotosOnce();   // onglet par défaut (souvent "Mes photos")
+                    const allPhotosPromise = loadAllPhotosOnce(); // en tâche de fond
+
+                    // On attend seulement "Mes photos" pour enlever le gros overlay
+                    try {
+                        await myPhotosPromise;
+                    } catch (e) {
+                        console.error('Erreur lors du chargement de Mes photos au démarrage:', e);
+                    }
+
+                    // "Général" continue de charger en background, son propre spinner s'en occupe
 
                     // Initialiser le compte à rebours d'expiration
                     try { initExpirationCountdown(); } catch (e) { console.warn('Countdown init error', e); }
-                    
+
                     // Afficher l'onglet upload pour les photographes
                     if (currentUser.user_type === 'PHOTOGRAPHER') {
                         document.getElementById('uploadTab').style.display = 'inline-block';
@@ -3184,6 +3233,7 @@
                 hideGlobalLoading();
             }
         }
+
 
         async function initExpirationCountdown() {
             const container = document.getElementById('countdown');
@@ -3704,11 +3754,12 @@
 
         function updatePhotoDisplay(photos) {
             const container = document.getElementById('myPhotosList');
-            if (!container || !photos) return;
+            if (!container) return;
 
-            console.log(`Mise à jour de l'affichage avec ${photos.length} photos`);
+            console.log(`Mise à jour de l'affichage avec ${photos ? photos.length : 0} photos`);
 
-            if (photos.length === 0) {
+            // Cas: aucune photo
+            if (!Array.isArray(photos) || photos.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">🖼️</div>
@@ -3720,31 +3771,34 @@
                 return;
             }
 
-            // Mettre à jour le nombre de photos dans l'onglet
+            // Mettre à jour le nombre dans l'onglet "Mes photos"
             const myPhotosTab = document.getElementById('myPhotosTab');
             if (myPhotosTab) {
                 myPhotosTab.textContent = `Mes photos (${photos.length})`;
             }
 
-            // Mettre à jour le titre de l'événement si disponible
-            if (photos.length > 0 && photos[0].event_name) {
+            // Mettre à jour le titre d'événement si dispo
+            if (photos[0].event_name) {
                 const eventTitle = document.getElementById('eventTitle');
                 if (eventTitle) {
                     eventTitle.textContent = photos[0].event_name;
                 }
             }
 
-            // Afficher via la galerie moderne - chargement fluide
-            if (typeof window.ModernGallery !== 'undefined') {
+            // Affichage avec ModernGallery si disponible
+            if (typeof window.ModernGallery !== 'undefined' && typeof renderPhotosModern === 'function') {
                 try {
+                    // On vide le container et on laisse renderPhotosModern gérer la galerie
                     container.innerHTML = '';
                     renderPhotosModern(container, photos, 'myModernGallery', {
-                        lazy: true,        // ✅ lazy activé pour "Mes photos"
-                        batchSize: 16,     // 3–4 lignes rapides au début
-                        cacheBust: true    // pour éviter d'anciennes versions après rematch selfie
+                        // Chargement fluide :
+                        lazy: true,        // lazy dans la galerie (progressif)
+                        batchSize: 24,     // plusieurs lignes visibles rapidement
+                        cacheBust: false   // IMPORTANT : on garde le cache navigateur sur /api/photo/:id
                     });
                 } catch (e) {
                     console.error('ModernGallery error (my photos):', e);
+                    // Fallback simple si la galerie plante
                     container.innerHTML = `
                         <div class="masonry">
                             ${photos.map(photo => `
@@ -3756,6 +3810,7 @@
                     `;
                 }
             } else {
+                // Fallback si ModernGallery n’est pas chargé
                 container.innerHTML = `
                     <div class="masonry">
                         ${photos.map(photo => `
@@ -3767,19 +3822,25 @@
                 `;
             }
 
-            // Attendre que toutes les images soient chargées avant de signaler la fin
+            // Quand toutes les images sont (à peu près) chargées, on signale que "Mes photos" est prêt
             try {
-                waitForAllImagesIn(container).then(() => {
+                waitForAllImagesIn('#myPhotosList', 15000).then(() => {
                     try {
                         window.__myPhotosPrimed = true;
                         window.__myPhotosHash = idsHash(photos);
                     } catch {}
-                    dispatchMyPhotosLoaded();
+                    try {
+                        dispatchMyPhotosLoaded();
+                    } catch {}
                 });
-            } catch {}
+            } catch (e) {
+                console.warn('waitForAllImagesIn error:', e);
+                try { dispatchMyPhotosLoaded(); } catch {}
+            }
 
-            console.log(`Affichage mis à jour avec succès: ${photos.length} photos`);
+            console.log(`Affichage "Mes photos" mis à jour avec succès : ${photos.length} photos`);
         }
+
 
 
         // Helpers: attendre que les images se chargent et signaler la fin de chargement de "Vos Photos"

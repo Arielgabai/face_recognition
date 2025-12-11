@@ -352,13 +352,12 @@ class ModernGallery {
         if (this.options.lazy) {
             img.dataset.lazySrc = image.src;
             card.classList.add('loading');
-            const loader = document.createElement('div');
-            loader.className = 'gallery-photo-loading';
-            loader.textContent = '⏳';
-            card.appendChild(loader);
+            // On ne met plus de sablier dans chaque carte :
+            // le fond noir + l'overlay global de l'onglet suffisent visuellement.
         } else {
             img.src = image.src;
         }
+        
 
         const overlay = document.createElement('div');
         overlay.className = 'gallery-photo-overlay';
