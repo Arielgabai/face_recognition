@@ -1,15 +1,6 @@
 FROM python:3.11-slim-bookworm
 
-# Variables d'environnement utiles
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_ONLY_BINARY=:all:
-
-WORKDIR /app
-
-# Installer uniquement les libs système nécessaires
+# Installer uniquement les libs système nécessaires à l'exécution
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libgl1-mesa-glx \
@@ -24,49 +15,53 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libwebp-dev \
     libwebp7 \
     curl \
- && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copier uniquement les requirements pour profiter au max du cache
-COPY requirements.txt ./requirements.txt
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_ONLY_BINARY=:all:
 
-# Installer les dépendances Python "lourdes" et figées dans le même layer
-RUN pip install --upgrade pip setuptools wheel \
- && pip install \
-      numpy==1.24.3 \
-      opencv-python-headless==4.8.1.78 \
-      Pillow==10.0.1 \
-      face-recognition-models==0.1.3 \
- && pip install --no-deps git+https://github.com/ageitgey/face_recognition.git@master \
- && pip install -r requirements.txt
+WORKDIR /app
 
-# Copier le reste de l'application (c'est cette couche qui saute à chaque changement de code)
+# Copier les fichiers de dépendances
+COPY requirements.txt ./
+
+# Installer d'abord NumPy, OpenCV et Pillow avec des versions spécifiques
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install numpy==1.24.3 && \
+    pip install opencv-python-headless==4.8.1.78 && \
+    pip install Pillow==10.0.1 && \
+    pip install face-recognition-models==0.1.3
+
+# Installer face_recognition depuis GitHub master (avec patch pour compatibilité)
+RUN pip install --no-deps git+https://github.com/ageitgey/face_recognition.git@master
+
+# Installer les autres packages Python
+RUN pip install -r requirements.txt
+
+# Copier le code source de l'application
 COPY . .
 
 # Injecter dlib déjà compilé (si présent dans le repo)
-RUN python - << 'PY'
-import os, shutil, sys
-site = sysconfig.get_paths()["purelib"] if (sys := __import__("sysconfig")) else "/usr/local/lib/python3.11/site-packages"
-base = "/app"
+RUN if [ -d "./dlib" ]; then \
+      cp -r ./dlib /usr/local/lib/python3.11/site-packages/dlib ; \
+    fi && \
+    if [ -d "./dlib-20.0.0.dist-info" ]; then \
+      cp -r ./dlib-20.0.0.dist-info /usr/local/lib/python3.11/site-packages/dlib-20.0.0.dist-info ; \
+    fi && \
+    if [ -f "./_dlib_pybind11.cpython-311-x86_64-linux-gnu.so" ]; then \
+      cp ./_dlib_pybind11.cpython-311-x86_64-linux-gnu.so /usr/local/lib/python3.11/site-packages/ ; \
+    fi
 
-mapping = [
-    ("dlib", "dlib"),
-    ("dlib-20.0.0.dist-info", "dlib-20.0.0.dist-info"),
-    ("_dlib_pybind11.cpython-311-x86_64-linux-gnu.so", "_dlib_pybind11.cpython-311-x86_64-linux-gnu.so"),
-]
+# Rester sur les pages statiques servies par FastAPI
 
-for src, dest in mapping:
-    src_path = os.path.join(base, src)
-    dest_path = os.path.join(site, dest)
-    if os.path.isdir(src_path):
-        shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
-    elif os.path.isfile(src_path):
-        shutil.copy2(src_path, dest_path)
-PY
+# Créer les dossiers nécessaires
+RUN mkdir -p static/uploads/selfies static/uploads/photos
 
-# Créer les dossiers nécessaires + droits script start
-RUN mkdir -p static/uploads/selfies static/uploads/photos \
-    && chmod +x start.sh
+# Rendre le script de démarrage exécutable
+RUN chmod +x start.sh
 
+# Exposer le port (Render utilisera la variable PORT)
 EXPOSE 10000
 
+# Utiliser le script de démarrage pour Render
 CMD ["./start.sh"]

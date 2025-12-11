@@ -258,11 +258,9 @@ class ModernGallery {
         });
 
         // Réessayer tant que certaines images ne sont pas encore chargées
-        // On ne réessaie qu'une fois pour limiter les reflows pendant le chargement
-        const needsRetry = retryCount < 1 &&
-            Array.from(cards).some(card => card.dataset.loaded !== '1');
-        if (needsRetry) {
-            const waitTime = 400;
+        const needsRetry = Array.from(cards).some(card => card.dataset.loaded !== '1');
+        if (needsRetry && retryCount < 4) { // limite raisonnable pour que les ratios réels soient pris en compte
+            const waitTime = Math.min(400 + retryCount * 120, 1000);
             setTimeout(() => this.adjustRowHeights(retryCount + 1), waitTime);
         }
     }
@@ -320,8 +318,6 @@ class ModernGallery {
             image.aspectRatio || this.estimateAspectRatio(image) || 1.5;
         card.dataset.aspectRatio = String(estimatedRatio);
         card.dataset.loaded = '0';
-        card.style.setProperty('--aspect-ratio', String(estimatedRatio));
-        card.style.aspectRatio = String(estimatedRatio);
 
         const img = document.createElement('img');
         img.alt = image.alt || `Image ${index + 1}`;
@@ -342,6 +338,8 @@ class ModernGallery {
             card.dataset.aspectRatio = String(aspectRatio);
             card.dataset.loaded = '1';
             card.classList.remove('loading');
+            // Réajuste les hauteurs quand une image se charge pour activer le flou/padding si besoin
+            this.scheduleRowAdjust();
         };
 
         img.onerror = () => {
@@ -367,9 +365,6 @@ class ModernGallery {
         card.appendChild(img);
         card.appendChild(overlay);
 
-        // Réserver la place dès que la carte est mesurée pour éviter les sauts
-        this.queuePlaceholderHeight(card, estimatedRatio);
-
         if (this.options.lightbox) {
             card.addEventListener('click', () => this.openLightbox(index));
             card.addEventListener('keydown', (e) => {
@@ -382,22 +377,6 @@ class ModernGallery {
         }
 
         return card;
-    }
-
-    /**
-     * Calcule une hauteur de placeholder basée sur le ratio estimé pour limiter le CLS
-     */
-    queuePlaceholderHeight(card, ratio) {
-        if (!card) return;
-        const safeRatio = ratio && ratio > 0 ? ratio : 1.5;
-
-        requestAnimationFrame(() => {
-            if (!card.isConnected) return;
-            const width = card.offsetWidth || card.getBoundingClientRect().width || 180;
-            const placeholderHeight = Math.max(Math.round(width / safeRatio), 140);
-            card.style.minHeight = `${placeholderHeight}px`;
-            card.style.height = `${placeholderHeight}px`;
-        });
     }
 
     /* ------------------------------------------------------------------ */
