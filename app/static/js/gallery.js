@@ -338,6 +338,7 @@ class ModernGallery {
             card.dataset.aspectRatio = String(aspectRatio);
             card.dataset.loaded = '1';
             card.classList.remove('loading');
+            card.classList.add('loaded');
             // Réajuste les hauteurs quand une image se charge pour activer le flou/padding si besoin
             this.scheduleRowAdjust();
         };
@@ -355,6 +356,7 @@ class ModernGallery {
             // le fond noir + l'overlay global de l'onglet suffisent visuellement.
         } else {
             img.src = image.src;
+            card.classList.add('loaded');
         }
         
 
