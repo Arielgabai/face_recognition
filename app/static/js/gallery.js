@@ -318,6 +318,9 @@ class ModernGallery {
             image.aspectRatio || this.estimateAspectRatio(image) || 1.5;
         card.dataset.aspectRatio = String(estimatedRatio);
         card.dataset.loaded = '0';
+        card.style.setProperty('--aspect-ratio', String(estimatedRatio));
+        card.style.aspectRatio = String(estimatedRatio);
+        card.style.minHeight = `${Math.max(140, Math.round(240 / estimatedRatio))}px`;
 
         const img = document.createElement('img');
         img.alt = image.alt || `Image ${index + 1}`;

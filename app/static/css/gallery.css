@@ -113,6 +113,8 @@
     justify-content: center;   /* Centrage vertical */
     align-items: center;       /* Centrage horizontal */
     width: 100%;
+    min-height: 140px;
+    aspect-ratio: var(--aspect-ratio, 3 / 2);
 }
 
 /* Classe pour photos qui ont besoin de centrage avec effet flou */
@@ -163,15 +165,24 @@
 }
 
 .gallery-photo-card.loading {
-    opacity: 0;
-    box-shadow: none;
-    background: transparent;
+    opacity: 1;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    background: #000;
     pointer-events: none;
 }
 
 .gallery-photo-card.loaded {
     opacity: 1;
     background: #000;
+.gallery-photo-card.loading img {
+    opacity: 0;
+}
+
+.gallery-photo-card.loaded img {
+    opacity: 1;
+    transition: opacity 0.25s ease, transform 0.3s ease;
+}
+
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     pointer-events: auto;
 }
