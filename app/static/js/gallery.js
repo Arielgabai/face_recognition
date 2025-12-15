@@ -208,6 +208,7 @@ class ModernGallery {
         Object.values(rows).forEach(rowCards => {
             let maxRowHeight = 0;
             const cardWidth = rowCards[0].offsetWidth || 200;
+            const rowLoaded = rowCards.every(card => card.dataset.loaded === '1');
 
             // Calculer la hauteur projetée pour chaque carte
             rowCards.forEach(card => {
@@ -230,6 +231,13 @@ class ModernGallery {
             // Appliquer la même hauteur à toutes les cartes de la ligne
             rowCards.forEach(card => {
                 card.style.height = `${Math.round(maxRowHeight)}px`;
+                if (rowLoaded) {
+                    card.classList.add('row-ready');
+                    card.classList.remove('row-pending');
+                } else {
+                    card.classList.add('row-pending');
+                    card.classList.remove('row-ready');
+                }
 
                 const img = card.querySelector('img');
                 const ratio = parseFloat(card.dataset.aspectRatio || '1.5');
