@@ -21,7 +21,9 @@ class ModernGallery {
             // Important: pas de minRowHeight, sinon sur petits écrans (iPhone) on force une ligne plus haute
             // que les 2 projections => padding "inutile" sur les deux cartes.
             minRowHeight: 0,
-            maxRowHeight: 520,
+            // Pas de hauteur max: on préfère laisser les portraits prendre beaucoup de place
+            // plutôt que de réduire la hauteur et créer des bandes latérales (object-fit: contain).
+            maxRowHeight: Infinity,
             theme: 'light',  // 'light' | 'dark'
             size: 'normal',  // 'compact' | 'normal' | 'large'
             debug: false,
