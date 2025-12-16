@@ -10,6 +10,15 @@
     box-sizing: border-box;
 }
 
+/* Évite les variations de largeur quand la scrollbar apparaît (sinon colWidth change pendant le reveal) */
+html {
+    scrollbar-gutter: stable;
+}
+
+body {
+    overflow-y: scroll;
+}
+
 /* ------------------------------------------------------------------
    Conteneurs principaux
 ------------------------------------------------------------------ */

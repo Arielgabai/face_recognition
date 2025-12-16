@@ -210,6 +210,13 @@ class ModernGallery {
         return Math.max(min, Math.min(max, n));
     }
 
+    shouldUseBlurPadding(rowHeight, projectedHeight) {
+        // Évite d'activer le flou/padding pour des micro-écarts dus aux arrondis
+        const diff = rowHeight - projectedHeight;
+        const threshold = Math.max(10, rowHeight * 0.04); // >= 10px ou >= 4% de la ligne
+        return diff > threshold;
+    }
+
     async appendRow(startIndex, imgA, imgB, token) {
         if (!this.galleryGrid) return;
         if (!imgA) return;
@@ -248,6 +255,10 @@ class ModernGallery {
         }
 
         this.galleryGrid.appendChild(frag);
+
+        // Reflow léger après insertion de la ligne pour coller exactement à la largeur réelle
+        // (ex: apparition de la scrollbar, etc.) sans dépendre d'un ajustement global en fin de rendu.
+        this.reflowExistingRows();
     }
 
     createReadyCard(image, index, loadedImg, ratio, colWidth, rowHeight) {
@@ -262,14 +273,15 @@ class ModernGallery {
         const img = loadedImg || document.createElement('img');
         img.alt = image.alt || `Image ${index + 1}`;
         img.style.width = '100%';
-        img.style.height = '100%';
+        img.style.height = 'auto';
+        img.style.maxHeight = '100%';
         img.style.objectFit = 'contain';
         img.decoding = 'async';
         img.loading = 'eager';
         if (!loadedImg) img.src = image.src;
 
         const projectedHeight = colWidth / (ratio || 1.5);
-        if (rowHeight - projectedHeight > 2) {
+        if (this.shouldUseBlurPadding(rowHeight, projectedHeight)) {
             card.classList.add('needs-centering');
             card.style.setProperty('--bg-image', `url(${image.src})`);
         } else {
@@ -349,7 +361,7 @@ class ModernGallery {
         card.style.height = `${Math.round(rowHeight)}px`;
 
         const projected = colWidth / (ratio || 1.5);
-        if (rowHeight - projected > 2) {
+        if (this.shouldUseBlurPadding(rowHeight, projected)) {
             card.classList.add('needs-centering');
             if (img?.src) card.style.setProperty('--bg-image', `url(${img.src})`);
         } else {
