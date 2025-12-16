@@ -185,16 +185,25 @@
 
 .gallery-photo-card.row-pending {
     opacity: 0;
-    background: transparent;
-    box-shadow: none;
+    visibility: hidden;
     pointer-events: none;
 }
 
 .gallery-photo-card.row-ready {
     opacity: 1;
-    background: #000;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    visibility: visible;
     pointer-events: auto;
+}
+
+.gallery-photo-card.row-pending img {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease;
+}
+
+.gallery-photo-card.row-ready img {
+    opacity: 1;
+    visibility: visible;
     transition: opacity 0.25s ease, transform 0.3s ease;
 }
 

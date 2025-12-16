@@ -16,10 +16,13 @@ class ModernGallery {
             lightbox: true,
             keyboardNavigation: true,
             animations: true,
-            lazy: true,
+            // Nouveau pipeline: reveal progressif par ligne (2 colonnes fixes)
+            progressiveRows: true,
+            minRowHeight: 140,
+            maxRowHeight: 520,
             theme: 'light',  // 'light' | 'dark'
             size: 'normal',  // 'compact' | 'normal' | 'large'
-            batchSize: 10,
+            debug: false,
             ...options
         };
 
@@ -27,6 +30,8 @@ class ModernGallery {
         this.currentIndex = 0;
         this.lightboxElement = null;
         this.galleryGrid = null;
+        this.renderToken = 0;
+        this.isDestroyed = false;
 
         // Gestes tactiles
         this.touchStartX = 0;
@@ -39,11 +44,16 @@ class ModernGallery {
         this.resizeRaf = null;
         this.boundHandleViewportChange = this.handleViewportChange.bind(this);
 
-        // PERF: flag pour ne pas lancer 50 fois adjustRowHeights en même temps
+        // PERF: flag pour ne pas lancer 50 fois le reflow en même temps
         this.adjustPending = false;
 
         this.init();
         this.bindGlobalEvents();
+    }
+
+    logDebug(...args) {
+        if (!this.options?.debug) return;
+        console.log('[ModernGallery]', ...args);
     }
 
     /* ------------------------------------------------------------------ */
@@ -112,64 +122,180 @@ class ModernGallery {
     /* ------------------------------------------------------------------ */
 
     renderGallery() {
-        // Grille principale
+        // Invalider tout rendu en cours
+        const token = ++this.renderToken;
+
+        // Grille principale (vide au départ: aucune carte visible avant qu'une ligne soit prête)
         const galleryGrid = document.createElement('div');
         galleryGrid.className = 'modern-gallery';
         this.galleryGrid = galleryGrid;
-
-        // Créer toutes les cartes
-        this.images.forEach((image, index) => {
-            const card = this.createImageCard(image, index);
-            galleryGrid.appendChild(card);
-        });
 
         // Remplacer le contenu du container
         this.container.innerHTML = '';
         this.container.appendChild(galleryGrid);
 
-        // Lazy loading progressif
-        if (this.options.lazy) {
-            this.setupProgressiveLoading(galleryGrid);
-        }
+        this.logDebug('renderGallery', {
+            images: this.images.length,
+            progressiveRows: this.options.progressiveRows
+        });
 
-        // Ajuster les hauteurs de ligne après rendu (une seule fois, debouncée)
-        setTimeout(() => this.scheduleRowAdjust(), 120);
-
-        // Animations d'apparition
-        if (this.options.animations) {
-            this.animateCards();
+        // Rendu progressif par ligne
+        if (this.options.progressiveRows) {
+            this.renderRowsProgressively(token);
+        } else {
+            // Fallback: rendu immédiat (toujours stable car on précharge par ligne)
+            this.renderRowsProgressively(token);
         }
     }
 
-    /**
-     * Chargement progressif des images, en gardant l’ordre d’affichage
-     */
-    setupProgressiveLoading(galleryGrid) {
-        const cards = Array.from(galleryGrid.querySelectorAll('.gallery-photo-card'));
-        const batchSize = this.options.batchSize;
+    async renderRowsProgressively(token) {
+        try {
+            if (!this.galleryGrid) return;
+            const cols = 2; // 2 colonnes fixes
 
-        // Premier batch : chargé immédiatement
-        const firstBatch = cards.slice(0, batchSize);
-        firstBatch.forEach(card => {
-            const img = card.querySelector('img');
-            if (img && img.dataset.lazySrc) {
-                img.src = img.dataset.lazySrc;
-                delete img.dataset.lazySrc;
+            for (let i = 0; i < (this.images || []).length; i += cols) {
+                if (this.isDestroyed || token !== this.renderToken) return;
+
+                const a = this.images[i];
+                const b = this.images[i + 1] || null;
+
+                await this.appendRow(i, a, b, token);
+
+                // Laisser le navigateur peindre entre les lignes
+                await new Promise(r => requestAnimationFrame(r));
+            }
+
+            // Reflow final (au cas où la largeur a changé pendant le chargement)
+            this.scheduleRowAdjust();
+        } catch (e) {
+            console.error('ModernGallery: renderRowsProgressively error', e);
+        }
+    }
+
+    preloadImage(src) {
+        return new Promise((resolve) => {
+            try {
+                if (!src) {
+                    resolve({ ok: false, img: null, w: 0, h: 0 });
+                    return;
+                }
+                const img = new Image();
+                img.decoding = 'async';
+                img.onload = () => resolve({
+                    ok: true,
+                    img,
+                    w: img.naturalWidth || 0,
+                    h: img.naturalHeight || 0
+                });
+                img.onerror = () => resolve({ ok: false, img: null, w: 0, h: 0 });
+                img.src = src;
+            } catch (e) {
+                resolve({ ok: false, img: null, w: 0, h: 0 });
             }
         });
+    }
 
-        // Le reste : petit à petit
-        const remainingCards = cards.slice(batchSize);
-        remainingCards.forEach((card, idx) => {
-            const delay = Math.floor(idx / 5) * 50; // groupes de 5
-            setTimeout(() => {
-                const img = card.querySelector('img');
-                if (img && img.dataset.lazySrc) {
-                    img.src = img.dataset.lazySrc;
-                    delete img.dataset.lazySrc;
+    getGridMetrics() {
+        const grid = this.galleryGrid;
+        if (!grid) return { cols: 2, colWidth: 200, gap: 0, gridWidth: 400 };
+        const style = window.getComputedStyle(grid);
+        const gap = parseFloat(style.columnGap || style.gap || '0') || 0;
+        const gridWidth = grid.clientWidth || 400;
+        const cols = 2;
+        const colWidth = (gridWidth - gap) / cols;
+        return { cols, colWidth, gap, gridWidth };
+    }
+
+    clamp(n, min, max) {
+        return Math.max(min, Math.min(max, n));
+    }
+
+    async appendRow(startIndex, imgA, imgB, token) {
+        if (!this.galleryGrid) return;
+        if (!imgA) return;
+
+        const { colWidth } = this.getGridMetrics();
+
+        const [a, b] = await Promise.all([
+            this.preloadImage(imgA.src),
+            imgB ? this.preloadImage(imgB.src) : Promise.resolve({ ok: false, img: null, w: 0, h: 0 })
+        ]);
+
+        if (this.isDestroyed || token !== this.renderToken) return;
+
+        // Calcul des ratios (si erreur, on garde une estimation pour ne pas bloquer la ligne)
+        const ratioA = (a.ok && a.w && a.h) ? (a.w / a.h) : (imgA.aspectRatio || this.estimateAspectRatio(imgA) || 1.5);
+        const ratioB = imgB
+            ? ((b.ok && b.w && b.h) ? (b.w / b.h) : (imgB.aspectRatio || this.estimateAspectRatio(imgB) || 1.5))
+            : null;
+
+        imgA.aspectRatio = ratioA;
+        if (imgB) imgB.aspectRatio = ratioB;
+
+        const projectedA = colWidth / ratioA;
+        const projectedB = imgB ? (colWidth / (ratioB || 1.5)) : 0;
+
+        const rowHeight = this.clamp(
+            Math.max(projectedA, projectedB || 0),
+            this.options.minRowHeight || 140,
+            this.options.maxRowHeight || 520
+        );
+
+        const frag = document.createDocumentFragment();
+        frag.appendChild(this.createReadyCard(imgA, startIndex, a.ok ? a.img : null, ratioA, colWidth, rowHeight));
+        if (imgB) {
+            frag.appendChild(this.createReadyCard(imgB, startIndex + 1, b.ok ? b.img : null, ratioB, colWidth, rowHeight));
+        }
+
+        this.galleryGrid.appendChild(frag);
+    }
+
+    createReadyCard(image, index, loadedImg, ratio, colWidth, rowHeight) {
+        const card = document.createElement('div');
+        card.className = 'gallery-photo-card';
+        card.setAttribute('data-index', index);
+        card.style.position = 'relative';
+        card.dataset.aspectRatio = String(ratio || 1.5);
+        card.dataset.loaded = '1';
+        card.style.height = `${Math.round(rowHeight)}px`;
+
+        const img = loadedImg || document.createElement('img');
+        img.alt = image.alt || `Image ${index + 1}`;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        img.decoding = 'async';
+        img.loading = 'eager';
+        if (!loadedImg) img.src = image.src;
+
+        const projectedHeight = colWidth / (ratio || 1.5);
+        if (rowHeight - projectedHeight > 2) {
+            card.classList.add('needs-centering');
+            card.style.setProperty('--bg-image', `url(${image.src})`);
+        } else {
+            card.classList.remove('needs-centering');
+            card.style.removeProperty('--bg-image');
+        }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'gallery-photo-overlay';
+        overlay.innerHTML = '<span>Voir en grand</span>';
+
+        card.appendChild(img);
+        card.appendChild(overlay);
+
+        if (this.options.lightbox) {
+            card.addEventListener('click', () => this.openLightbox(index));
+            card.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.openLightbox(index);
                 }
-            }, delay);
-        });
+            });
+            card.setAttribute('tabindex', '0');
+        }
+
+        return card;
     }
 
     /* ------------------------------------------------------------------ */
@@ -185,92 +311,59 @@ class ModernGallery {
 
         requestAnimationFrame(() => {
             this.adjustPending = false;
-            this.adjustRowHeights();
+            this.reflowExistingRows();
         });
     }
 
-    /**
-     * Ajuste les hauteurs des cartes ligne par ligne, pour que toutes
-     * les photos d’une même ligne aient la même hauteur.
-     */
-    adjustRowHeights(retryCount = 0) {
-        const cards = this.container.querySelectorAll('.gallery-photo-card');
+    reflowExistingRows() {
+        if (!this.galleryGrid) return;
+        const cards = Array.from(this.galleryGrid.querySelectorAll('.gallery-photo-card'));
         if (!cards.length) return;
 
-        // Grouper les cartes par "ligne visuelle" (offsetTop)
-        const rows = {};
-        cards.forEach(card => {
-            const top = Math.round(card.offsetTop / 10) * 10;
-            if (!rows[top]) rows[top] = [];
-            rows[top].push(card);
-        });
+        // Réordonner par index pour retrouver les paires
+        cards.sort((a, b) => (parseInt(a.dataset.index || '0', 10) - parseInt(b.dataset.index || '0', 10)));
 
-        Object.values(rows).forEach(rowCards => {
-            let maxRowHeight = 0;
-            const cardWidth = rowCards[0].offsetWidth || 200;
-            const rowLoaded = rowCards.every(card => card.dataset.loaded === '1');
+        const { colWidth } = this.getGridMetrics();
+        for (let i = 0; i < cards.length; i += 2) {
+            const c1 = cards[i];
+            const c2 = cards[i + 1] || null;
+            const r1 = parseFloat(c1.dataset.aspectRatio || '1.5') || 1.5;
+            const r2 = c2 ? (parseFloat(c2.dataset.aspectRatio || '1.5') || 1.5) : null;
 
-            // Calculer la hauteur projetée pour chaque carte
-            rowCards.forEach(card => {
-                let ratio = parseFloat(card.dataset.aspectRatio || '1.5');
+            const p1 = colWidth / r1;
+            const p2 = c2 ? (colWidth / (r2 || 1.5)) : 0;
+            const rowHeight = this.clamp(
+                Math.max(p1, p2 || 0),
+                this.options.minRowHeight || 140,
+                this.options.maxRowHeight || 520
+            );
 
-                if (!ratio || ratio <= 0) {
-                    const img = card.querySelector('img');
-                    if (img && img.naturalWidth && img.naturalHeight) {
-                        ratio = img.naturalWidth / img.naturalHeight;
-                        card.dataset.aspectRatio = ratio;
-                    } else {
-                        ratio = 1.5;
-                    }
-                }
-
-                const projectedHeight = cardWidth / ratio;
-                maxRowHeight = Math.max(maxRowHeight, projectedHeight);
-            });
-
-            // Appliquer la même hauteur à toutes les cartes de la ligne
-            rowCards.forEach(card => {
-                card.style.height = `${Math.round(maxRowHeight)}px`;
-                if (rowLoaded) {
-                    card.classList.add('row-ready');
-                    card.classList.remove('row-pending');
-                } else {
-                    card.classList.add('row-pending');
-                    card.classList.remove('row-ready');
-                }
-
-                const img = card.querySelector('img');
-                const ratio = parseFloat(card.dataset.aspectRatio || '1.5');
-                const projectedHeight = cardWidth / ratio;
-
-                if (img) {
-                    img.style.width = '100%';
-                    img.style.height = 'auto';
-                    img.style.objectFit = 'contain';
-                    img.style.position = 'relative';
-                    img.style.zIndex = '1';
-                }
-
-                // Si l’image réelle est plus petite que la hauteur max,
-                // on active l’effet de fond flou centré.
-                if (maxRowHeight - projectedHeight > 2) {
-                    card.classList.add('needs-centering');
-                    if (img) {
-                        card.style.setProperty('--bg-image', `url(${img.src})`);
-                    }
-                } else {
-                    card.classList.remove('needs-centering');
-                    card.style.removeProperty('--bg-image');
-                }
-            });
-        });
-
-        // Réessayer tant que certaines images ne sont pas encore chargées
-        const needsRetry = Array.from(cards).some(card => card.dataset.loaded !== '1');
-        if (needsRetry && retryCount < 4) { // limite raisonnable pour que les ratios réels soient pris en compte
-            const waitTime = Math.min(400 + retryCount * 120, 1000);
-            setTimeout(() => this.adjustRowHeights(retryCount + 1), waitTime);
+            this.applyRowSizing(c1, r1, colWidth, rowHeight);
+            if (c2) this.applyRowSizing(c2, r2, colWidth, rowHeight);
         }
+    }
+
+    applyRowSizing(card, ratio, colWidth, rowHeight) {
+        if (!card) return;
+        const img = card.querySelector('img');
+        card.style.height = `${Math.round(rowHeight)}px`;
+
+        const projected = colWidth / (ratio || 1.5);
+        if (rowHeight - projected > 2) {
+            card.classList.add('needs-centering');
+            if (img?.src) card.style.setProperty('--bg-image', `url(${img.src})`);
+        } else {
+            card.classList.remove('needs-centering');
+            card.style.removeProperty('--bg-image');
+        }
+    }
+
+    isCardFullyLoaded(card) {
+        if (!card) return false;
+        if (card.dataset.loaded === '1') return true;
+        const img = card.querySelector('img');
+        const ok = !!(img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0);
+        return ok;
     }
 
     handleViewportChange() {
@@ -310,86 +403,6 @@ class ModernGallery {
             hash |= 0;
         }
         return Math.abs(hash);
-    }
-
-    /* ------------------------------------------------------------------ */
-    /* Création d’une carte image                                         */
-    /* ------------------------------------------------------------------ */
-
-    createImageCard(image, index) {
-        const card = document.createElement('div');
-        card.className = 'gallery-photo-card';
-        card.setAttribute('data-index', index);
-        card.style.position = 'relative';
-
-        const estimatedRatio =
-            image.aspectRatio || this.estimateAspectRatio(image) || 1.5;
-        card.dataset.aspectRatio = String(estimatedRatio);
-        card.dataset.loaded = '0';
-        card.style.setProperty('--aspect-ratio', String(estimatedRatio));
-        card.style.aspectRatio = String(estimatedRatio);
-        card.style.minHeight = `${Math.max(140, Math.round(240 / estimatedRatio))}px`;
-
-        const img = document.createElement('img');
-        img.alt = image.alt || `Image ${index + 1}`;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'contain';
-
-        if (this.options.lazy) {
-            img.loading = 'lazy';
-        }
-
-        img.onload = () => {
-            const aspectRatio = (img.naturalWidth && img.naturalHeight)
-                ? (img.naturalWidth / img.naturalHeight)
-                : estimatedRatio;
-
-            image.aspectRatio = aspectRatio;
-            card.dataset.aspectRatio = String(aspectRatio);
-            card.dataset.loaded = '1';
-            card.classList.remove('loading');
-            card.classList.add('loaded');
-            // Réajuste les hauteurs quand une image se charge pour activer le flou/padding si besoin
-            this.scheduleRowAdjust();
-        };
-
-        img.onerror = () => {
-            card.classList.add('error');
-            card.innerHTML =
-                '<div class="gallery-photo-loading">❌ Erreur de chargement</div>';
-        };
-
-        if (this.options.lazy) {
-            img.dataset.lazySrc = image.src;
-            card.classList.add('loading');
-            // On ne met plus de sablier dans chaque carte :
-            // le fond noir + l'overlay global de l'onglet suffisent visuellement.
-        } else {
-            img.src = image.src;
-            card.classList.add('loaded');
-        }
-        
-
-        const overlay = document.createElement('div');
-        overlay.className = 'gallery-photo-overlay';
-        overlay.innerHTML = '<span>Voir en grand</span>';
-
-        card.appendChild(img);
-        card.appendChild(overlay);
-
-        if (this.options.lightbox) {
-            card.addEventListener('click', () => this.openLightbox(index));
-            card.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    this.openLightbox(index);
-                }
-            });
-            card.setAttribute('tabindex', '0');
-        }
-
-        return card;
     }
 
     /* ------------------------------------------------------------------ */
@@ -693,6 +706,8 @@ class ModernGallery {
     }
 
     destroy() {
+        this.isDestroyed = true;
+        this.renderToken++;
         if (this.lightboxElement) {
             this.lightboxElement.remove();
         }
