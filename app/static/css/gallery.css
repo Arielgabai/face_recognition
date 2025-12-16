@@ -122,8 +122,6 @@ body {
     justify-content: center;   /* Centrage vertical */
     align-items: center;       /* Centrage horizontal */
     width: 100%;
-    min-height: 140px;
-    aspect-ratio: var(--aspect-ratio, 3 / 2);
 }
 
 /* Classe pour photos qui ont besoin de centrage avec effet flou */

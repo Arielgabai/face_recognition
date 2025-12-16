@@ -18,7 +18,9 @@ class ModernGallery {
             animations: true,
             // Nouveau pipeline: reveal progressif par ligne (2 colonnes fixes)
             progressiveRows: true,
-            minRowHeight: 140,
+            // Important: pas de minRowHeight, sinon sur petits écrans (iPhone) on force une ligne plus haute
+            // que les 2 projections => padding "inutile" sur les deux cartes.
+            minRowHeight: 0,
             maxRowHeight: 520,
             theme: 'light',  // 'light' | 'dark'
             size: 'normal',  // 'compact' | 'normal' | 'large'
@@ -244,8 +246,8 @@ class ModernGallery {
 
         const rowHeight = this.clamp(
             Math.max(projectedA, projectedB || 0),
-            this.options.minRowHeight || 140,
-            this.options.maxRowHeight || 520
+            (this.options.minRowHeight ?? 0),
+            (this.options.maxRowHeight ?? 520)
         );
 
         const frag = document.createDocumentFragment();
@@ -346,8 +348,8 @@ class ModernGallery {
             const p2 = c2 ? (colWidth / (r2 || 1.5)) : 0;
             const rowHeight = this.clamp(
                 Math.max(p1, p2 || 0),
-                this.options.minRowHeight || 140,
-                this.options.maxRowHeight || 520
+                (this.options.minRowHeight ?? 0),
+                (this.options.maxRowHeight ?? 520)
             );
 
             this.applyRowSizing(c1, r1, colWidth, rowHeight);
