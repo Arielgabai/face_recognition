@@ -3,9 +3,14 @@ import time
 import json
 import threading
 import hashlib
+import math
+import sys
+import argparse
 from typing import Optional, Dict, Any, Tuple
 
 from PIL import Image, ImageStat, ImageFilter
+import numpy as np
+import cv2
 
 import requests
 import mimetypes
@@ -38,10 +43,25 @@ MAX_BRIGHTNESS = float(os.environ.get("MAX_BRIGHTNESS", "220.0"))  # 0..255 gray
 # If distance <= SIMILARITY_THRESHOLD, the new image is considered a near-duplicate and is rejected.
 SIMILARITY_THRESHOLD = int(os.environ.get("SIMILARITY_THRESHOLD", "6"))
 
+# Face-aware thresholds (applied only when a photo contains faces).
+# Heuristic-based scoring using OpenCV Haar cascades (offline, lightweight).
+FACE_SCORE_MIN = float(os.environ.get("FACE_SCORE_MIN", "0.45"))  # minimum acceptable face score when faces exist
+FACE_MIN_RELATIVE_SIZE = float(os.environ.get("FACE_MIN_RELATIVE_SIZE", "0.03"))  # face area / image area
+MAX_FACE_ROLL_DEG = float(os.environ.get("MAX_FACE_ROLL_DEG", "15.0"))  # proxy via eye line tilt
+MIN_EYE_DISTANCE_RATIO = float(os.environ.get("MIN_EYE_DISTANCE_RATIO", "0.25"))  # eye_dist / face_width
+MAX_EYE_DISTANCE_RATIO = float(os.environ.get("MAX_EYE_DISTANCE_RATIO", "0.65"))  # eye_dist / face_width
+MIN_EYE_Y_RATIO = float(os.environ.get("MIN_EYE_Y_RATIO", "0.15"))  # avg_eye_y / face_height (within face ROI)
+MAX_EYE_Y_RATIO = float(os.environ.get("MAX_EYE_Y_RATIO", "0.55"))
+
+# Debug (optional): set WATCHER_DEBUG=1 and optionally WATCHER_DEBUG_DIR.
+WATCHER_DEBUG = (os.environ.get("WATCHER_DEBUG", "").strip() or "").lower() in {"1", "true", "yes", "y", "on"}
+WATCHER_DEBUG_DIR = os.environ.get("WATCHER_DEBUG_DIR", "").strip() or None
+
 # Optional local folders to move rejected files into (if unset, files are kept in place).
 # If a relative path is provided, it's treated as relative to the watched directory.
 REJECTED_DUPLICATE_DIR = os.environ.get("REJECTED_DUPLICATE_DIR", "").strip() or None
 REJECTED_LOW_QUALITY_DIR = os.environ.get("REJECTED_LOW_QUALITY_DIR", "").strip() or None
+REJECTED_LOW_FACE_QUALITY_DIR = os.environ.get("REJECTED_LOW_FACE_QUALITY_DIR", "").strip() or None
 
 
 def is_image_file(path: str) -> bool:
@@ -212,6 +232,228 @@ def quality_ok(features: Dict[str, Any]) -> Tuple[bool, str]:
     return True, "ok"
 
 
+def technical_quality_score(features: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute a numeric technical quality score (0..1) + pass/fail using the existing thresholds.
+
+    - This does NOT include face quality. Face logic is applied separately if faces exist.
+    """
+    w = int(features.get("width", 0) or 0)
+    h = int(features.get("height", 0) or 0)
+    sharp = float(features.get("sharpness", 0.0) or 0.0)
+    bright = float(features.get("brightness", 0.0) or 0.0)
+
+    ok, reason = quality_ok(features)
+
+    # Resolution score: ratio vs minimum (cap at 1.0)
+    res_ratio = 0.0
+    if MIN_WIDTH > 0 and MIN_HEIGHT > 0:
+        res_ratio = min(w / float(MIN_WIDTH), h / float(MIN_HEIGHT))
+    res_score = max(0.0, min(1.0, res_ratio))
+
+    # Sharpness score: scaled vs threshold (cap at 1.0)
+    sharp_score = 0.0 if MIN_SHARPNESS <= 0 else max(0.0, min(1.0, sharp / float(MIN_SHARPNESS)))
+
+    # Brightness score: 1.0 within range; otherwise degrade linearly by distance to range
+    if MIN_BRIGHTNESS <= bright <= MAX_BRIGHTNESS:
+        bright_score = 1.0
+    else:
+        if bright < MIN_BRIGHTNESS:
+            dist = MIN_BRIGHTNESS - bright
+        else:
+            dist = bright - MAX_BRIGHTNESS
+        # 40 is an arbitrary "full penalty" span; tweak if needed
+        bright_score = max(0.0, 1.0 - (dist / 40.0))
+
+    score = max(0.0, min(1.0, 0.35 * res_score + 0.45 * sharp_score + 0.20 * bright_score))
+    return {
+        "ok": bool(ok),
+        "reason": reason,
+        "score": float(score),
+        "width": w,
+        "height": h,
+        "sharpness": sharp,
+        "brightness": bright,
+        "res_score": float(res_score),
+        "sharp_score": float(sharp_score),
+        "bright_score": float(bright_score),
+    }
+
+
+_FACE_CASCADE: Optional[cv2.CascadeClassifier] = None
+_EYE_CASCADE: Optional[cv2.CascadeClassifier] = None
+
+
+def _get_cascades() -> Tuple[cv2.CascadeClassifier, cv2.CascadeClassifier]:
+    """Load Haar cascades (offline) once and reuse."""
+    global _FACE_CASCADE, _EYE_CASCADE
+    if _FACE_CASCADE is None:
+        _FACE_CASCADE = cv2.CascadeClassifier(os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml"))
+    if _EYE_CASCADE is None:
+        _EYE_CASCADE = cv2.CascadeClassifier(os.path.join(cv2.data.haarcascades, "haarcascade_eye.xml"))
+    return _FACE_CASCADE, _EYE_CASCADE
+
+
+def _cv2_imread_unicode(path: str) -> Optional[np.ndarray]:
+    """Robust cv2 image load for Windows/unicode paths."""
+    try:
+        data = np.fromfile(path, dtype=np.uint8)
+        if data.size == 0:
+            return None
+        img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        return img
+    except Exception:
+        # fallback to cv2.imread
+        try:
+            return cv2.imread(path, cv2.IMREAD_COLOR)
+        except Exception:
+            return None
+
+
+def _range_score(x: float, lo: float, hi: float) -> float:
+    """Score 1.0 inside [lo, hi], else decrease linearly to 0 as it moves away."""
+    if lo <= x <= hi:
+        return 1.0
+    # scale by distance relative to interval size (avoid div by zero)
+    span = max(1e-9, (hi - lo))
+    if x < lo:
+        d = (lo - x) / span
+    else:
+        d = (x - hi) / span
+    return max(0.0, 1.0 - d)
+
+
+def compute_face_metrics(path: str) -> Dict[str, Any]:
+    """Face-aware evaluation (offline).
+
+    Method (heuristic):
+    - Detect faces with OpenCV Haar cascade (frontalface).
+    - For each face ROI, detect eyes (haarcascade_eye).
+    - Score each face by:
+      - face size ratio (face_area / image_area) vs FACE_MIN_RELATIVE_SIZE
+      - eye detection (2 eyes preferred)
+      - roll proxy: eye-line tilt angle (prefer near 0, max MAX_FACE_ROLL_DEG)
+      - crude yaw/pitch proxies via eye distance ratio and eye y-position ratio within the face ROI
+
+    Output:
+    - face_present: bool
+    - num_faces: int
+    - face_score: float (0..1) (best face wins)
+    - faces: list of per-face details (for debug)
+    """
+    img = _cv2_imread_unicode(path)
+    if img is None:
+        return {"face_present": False, "num_faces": 0, "face_score": 0.0, "faces": [], "error": "cv2_imread_failed"}
+
+    h_img, w_img = img.shape[:2]
+    if w_img <= 0 or h_img <= 0:
+        return {"face_present": False, "num_faces": 0, "face_score": 0.0, "faces": [], "error": "bad_dimensions"}
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    face_cascade, eye_cascade = _get_cascades()
+
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+    faces_list: list[Dict[str, Any]] = []
+    best_score = 0.0
+
+    img_area = float(w_img * h_img)
+    for (x, y, w, h) in (faces or []):
+        face_area = float(w * h)
+        rel = face_area / img_area if img_area > 0 else 0.0
+        size_score = max(0.0, min(1.0, rel / max(1e-9, FACE_MIN_RELATIVE_SIZE)))
+
+        roi_gray = gray[y : y + h, x : x + w]
+        # Eyes are usually in the upper half; restrict ROI a bit to reduce false positives.
+        roi_gray_eyes = roi_gray[0 : int(h * 0.65), :]
+
+        # Eye minSize relative to face; helps for large images.
+        eye_min = max(10, int(min(w, h) * 0.12))
+        eyes = eye_cascade.detectMultiScale(roi_gray_eyes, scaleFactor=1.1, minNeighbors=8, minSize=(eye_min, eye_min))
+
+        # Pick up to 2 largest eyes (by area)
+        eyes_sorted = sorted([(ex, ey, ew, eh) for (ex, ey, ew, eh) in (eyes or [])], key=lambda t: t[2] * t[3], reverse=True)
+        eyes_top = eyes_sorted[:2]
+        eye_count = len(eyes_top)
+        eye_count_score = 1.0 if eye_count >= 2 else (0.6 if eye_count == 1 else 0.0)
+
+        roll_score = 0.0
+        yaw_proxy_score = 0.0
+        pitch_proxy_score = 0.0
+        angle_deg: Optional[float] = None
+        eye_dist_ratio: Optional[float] = None
+        eye_y_ratio: Optional[float] = None
+
+        if eye_count >= 2:
+            # Eye centers in ROI coordinates
+            (ex1, ey1, ew1, eh1), (ex2, ey2, ew2, eh2) = eyes_top[0], eyes_top[1]
+            c1 = (ex1 + ew1 / 2.0, ey1 + eh1 / 2.0)
+            c2 = (ex2 + ew2 / 2.0, ey2 + eh2 / 2.0)
+            # Ensure left/right ordering for consistency
+            if c2[0] < c1[0]:
+                c1, c2 = c2, c1
+
+            dx = c2[0] - c1[0]
+            dy = c2[1] - c1[1]
+            angle_deg = float(abs(math.degrees(math.atan2(dy, dx)))) if dx != 0 else 90.0
+            roll_score = max(0.0, 1.0 - (angle_deg / max(1e-9, MAX_FACE_ROLL_DEG)))
+
+            dist = math.sqrt(dx * dx + dy * dy)
+            eye_dist_ratio = float(dist / max(1e-9, float(w)))
+            yaw_proxy_score = _range_score(eye_dist_ratio, MIN_EYE_DISTANCE_RATIO, MAX_EYE_DISTANCE_RATIO)
+
+            avg_eye_y = (c1[1] + c2[1]) / 2.0
+            # Note: eyes ROI is clipped to 0..0.65*h, but we normalize by full face height for interpretability.
+            eye_y_ratio = float(avg_eye_y / max(1e-9, float(h)))
+            pitch_proxy_score = _range_score(eye_y_ratio, MIN_EYE_Y_RATIO, MAX_EYE_Y_RATIO)
+
+        # Combine: emphasize eye evidence (frontal usability), but always require some size.
+        face_score = float(
+            max(0.0, min(1.0, math.sqrt(max(0.0, size_score))))
+            * (0.40 * eye_count_score + 0.20 * roll_score + 0.20 * yaw_proxy_score + 0.20 * pitch_proxy_score)
+        )
+
+        faces_list.append(
+            {
+                "box": [int(x), int(y), int(w), int(h)],
+                "relative_area": float(rel),
+                "size_score": float(size_score),
+                "eye_count": int(eye_count),
+                "eye_count_score": float(eye_count_score),
+                "roll_deg": angle_deg,
+                "roll_score": float(roll_score),
+                "eye_dist_ratio": eye_dist_ratio,
+                "yaw_proxy_score": float(yaw_proxy_score),
+                "eye_y_ratio": eye_y_ratio,
+                "pitch_proxy_score": float(pitch_proxy_score),
+                "face_score": float(face_score),
+            }
+        )
+        best_score = max(best_score, face_score)
+
+    return {
+        "face_present": bool(len(faces_list) > 0),
+        "num_faces": int(len(faces_list)),
+        "face_score": float(best_score),
+        "faces": faces_list,
+    }
+
+
+def _write_debug_report(report_dir: str, report: Dict[str, Any]) -> None:
+    try:
+        os.makedirs(report_dir, exist_ok=True)
+    except Exception:
+        return
+    try:
+        base = os.path.basename(str(report.get("path") or "photo"))
+        safe = "".join([c if c.isalnum() or c in "._-" else "_" for c in base])
+        sha = str(report.get("sha256") or "")
+        suffix = sha[:8] if sha else str(int(time.time()))
+        out = os.path.join(report_dir, f"{safe}.{suffix}.watcher_report.json")
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+    except Exception:
+        return
+
+
 class UploadClient:
     def __init__(self, base_url: str, username: Optional[str], password: Optional[str], token: Optional[str]) -> None:
         self.base_url = base_url.rstrip("/")
@@ -379,6 +621,8 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
 
     rejected_dup_dir = _resolve_target_dir(base_dir, REJECTED_DUPLICATE_DIR)
     rejected_lowq_dir = _resolve_target_dir(base_dir, REJECTED_LOW_QUALITY_DIR)
+    rejected_lowface_dir = _resolve_target_dir(base_dir, REJECTED_LOW_FACE_QUALITY_DIR)
+    debug_dir = _resolve_target_dir(base_dir, WATCHER_DEBUG_DIR) if WATCHER_DEBUG_DIR else None
     
     # Vérifier la stabilité du fichier avant de calculer le hash
     if not file_is_stable(abspath):
@@ -405,40 +649,100 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
             _safe_move(abspath, rejected_lowq_dir, "low_quality")
         return
 
-    ok, reason = quality_ok(features)
-    if not ok:
-        sharp = float(features.get("sharpness", 0.0) or 0.0)
-        bright = float(features.get("brightness", 0.0) or 0.0)
+    tech = technical_quality_score(features)
+    if not tech.get("ok"):
         print(
-            f"[reject:low_quality] {abspath} | {reason} | "
-            f"sharpness={sharp:.2f} brightness={bright:.1f} "
-            f"res={features.get('width')}x{features.get('height')} dhash={features.get('dhash')}"
+            f"[reject:technical] {abspath} | {tech.get('reason')} | "
+            f"tech_score={float(tech.get('score') or 0.0):.2f} "
+            f"sharpness={float(tech.get('sharpness') or 0.0):.2f} brightness={float(tech.get('brightness') or 0.0):.1f} "
+            f"res={tech.get('width')}x{tech.get('height')} dhash={features.get('dhash')}"
         )
+        if WATCHER_DEBUG and (debug_dir or True):
+            _write_debug_report(debug_dir or os.path.join(base_dir, ".watcher_reports"), {
+                "path": abspath,
+                "sha256": file_hash,
+                "dhash": features.get("dhash"),
+                "decision": "rejected_low_quality_technical",
+                "technical": tech,
+            })
         if rejected_lowq_dir:
-            _safe_move(abspath, rejected_lowq_dir, "low_quality")
+            _safe_move(abspath, rejected_lowq_dir, "technical")
         return
 
     similar = manifest.find_similar(str(features.get("dhash") or ""), threshold=SIMILARITY_THRESHOLD)
     if similar:
         print(
-            f"[reject:duplicate] {abspath} | dhash distance={similar.get('distance')} <= {SIMILARITY_THRESHOLD} "
-            f"vs {similar.get('path')} (sha={str(similar.get('sha256'))[:8]}...)"
+            f"[reject:duplicate] {abspath} | dist={similar.get('distance')} <= {SIMILARITY_THRESHOLD} "
+            f"vs {similar.get('path')} (sha={str(similar.get('sha256'))[:8]}...) | "
+            f"tech_score={float(tech.get('score') or 0.0):.2f}"
         )
+        if WATCHER_DEBUG and (debug_dir or True):
+            _write_debug_report(debug_dir or os.path.join(base_dir, ".watcher_reports"), {
+                "path": abspath,
+                "sha256": file_hash,
+                "dhash": features.get("dhash"),
+                "decision": "rejected_duplicate",
+                "technical": tech,
+                "duplicate": similar,
+            })
         if rejected_dup_dir:
             _safe_move(abspath, rejected_dup_dir, "duplicate")
         return
 
+    # Face-aware scoring (only for unique + technical OK images)
+    face = compute_face_metrics(abspath)
+    face_present = bool(face.get("face_present"))
+    num_faces = int(face.get("num_faces") or 0)
+    face_score = float(face.get("face_score") or 0.0)
+
+    if face_present and face_score < FACE_SCORE_MIN:
+        print(
+            f"[reject:faces] {abspath} | face_score too low ({face_score:.2f} < {FACE_SCORE_MIN}) | "
+            f"faces={num_faces} | tech_score={float(tech.get('score') or 0.0):.2f}"
+        )
+        if WATCHER_DEBUG and (debug_dir or True):
+            _write_debug_report(debug_dir or os.path.join(base_dir, ".watcher_reports"), {
+                "path": abspath,
+                "sha256": file_hash,
+                "dhash": features.get("dhash"),
+                "decision": "rejected_low_quality_faces",
+                "technical": tech,
+                "face": {
+                    "face_present": face_present,
+                    "num_faces": num_faces,
+                    "face_score": face_score,
+                    "threshold": FACE_SCORE_MIN,
+                    "details": face.get("faces") if WATCHER_DEBUG else None,
+                },
+            })
+        if rejected_lowface_dir:
+            _safe_move(abspath, rejected_lowface_dir, "faces")
+        return
+
     # Accepted: upload immediately. First acceptable photo of a scene "wins";
     # later similar ones will be rejected against the manifest and never uploaded.
-    sharp = float(features.get("sharpness", 0.0) or 0.0)
-    bright = float(features.get("brightness", 0.0) or 0.0)
     print(
-        f"[accept] {abspath} | passes quality & uniqueness | "
-        f"sharpness={sharp:.2f} brightness={bright:.1f} "
-        f"res={features.get('width')}x{features.get('height')} dhash={features.get('dhash')}"
+        f"[accept] {abspath} | not duplicate, technical OK"
+        f"{', faces=' + str(num_faces) + ', face_score=' + format(face_score, '.2f') if face_present else ', faces=0'} | "
+        f"tech_score={float(tech.get('score') or 0.0):.2f} dhash={features.get('dhash')}"
     )
     client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
     manifest.add_with_features(file_hash, abspath, features)
+    if WATCHER_DEBUG and (debug_dir or True):
+        _write_debug_report(debug_dir or os.path.join(base_dir, ".watcher_reports"), {
+            "path": abspath,
+            "sha256": file_hash,
+            "dhash": features.get("dhash"),
+            "decision": "accepted_uploaded",
+            "technical": tech,
+            "face": {
+                "face_present": face_present,
+                "num_faces": num_faces,
+                "face_score": face_score,
+                "threshold": FACE_SCORE_MIN if face_present else None,
+                "details": face.get("faces") if WATCHER_DEBUG else None,
+            },
+        })
     if move_uploaded_dir:
         try:
             os.makedirs(move_uploaded_dir, exist_ok=True)
@@ -496,6 +800,17 @@ def scan_existing_once(watch_dir: str, client: UploadClient, event_id: int, mani
 
 
 def main() -> None:
+    # Optional CLI flags (keeps env-var behavior intact)
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--debug", action="store_true", help="Enable per-photo JSON debug report (also via WATCHER_DEBUG=1).")
+    parser.add_argument("--debug-dir", default=None, help="Directory to write JSON reports (also via WATCHER_DEBUG_DIR).")
+    args, _unknown = parser.parse_known_args(sys.argv[1:])
+    global WATCHER_DEBUG, WATCHER_DEBUG_DIR
+    if args.debug:
+        WATCHER_DEBUG = True
+    if args.debug_dir:
+        WATCHER_DEBUG_DIR = args.debug_dir
+
     base_url = os.environ.get("API_BASE_URL", "http://localhost:8000").strip()
     event_id_str = os.environ.get("EVENT_ID", "").strip()
     username = os.environ.get("PHOTOGRAPHER_USERNAME", "").strip() or None
