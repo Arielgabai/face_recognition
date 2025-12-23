@@ -57,9 +57,9 @@ MAX_EYE_Y_RATIO = float(os.environ.get("MAX_EYE_Y_RATIO", "0.55"))
 WATCHER_DEBUG = (os.environ.get("WATCHER_DEBUG", "").strip() or "").lower() in {"1", "true", "yes", "y", "on"}
 WATCHER_DEBUG_DIR = os.environ.get("WATCHER_DEBUG_DIR", "").strip() or None
 
-# Agent diagnostics / logging behavior
-WATCHER_AGENT_VERBOSE = (os.environ.get("WATCHER_AGENT_VERBOSE", "").strip() or "").lower() in {"1", "true", "yes", "y", "on"}
-WATCHER_LOG_ERRORS = (os.environ.get("WATCHER_LOG_ERRORS", "").strip() or "").lower() in {"1", "true", "yes", "y", "on"}
+# Agent diagnostics / logging behavior (verbose by default for easier debugging)
+WATCHER_AGENT_VERBOSE = (os.environ.get("WATCHER_AGENT_VERBOSE", "1").strip() or "1").lower() in {"1", "true", "yes", "y", "on"}
+WATCHER_LOG_ERRORS = (os.environ.get("WATCHER_LOG_ERRORS", "1").strip() or "1").lower() in {"1", "true", "yes", "y", "on"}
 
 # Optional local folders to move rejected files into (if unset, files are kept in place).
 # If a relative path is provided, it's treated as relative to the watched directory.
@@ -843,11 +843,17 @@ def main() -> None:
 
     # Agent mode: if MACHINE_LABEL present, poll server to get watchers
     if machine_label:
+        print(f"\n{'='*60}")
+        print(f"[agent] LOCAL WATCHER STARTED in AGENT MODE")
         print(f"[agent] machine_label={machine_label}")
+        print(f"[agent] API base URL: {base_url}")
+        print(f"[agent] Polling server every 3 seconds for watchers...")
+        print(f"{'='*60}\n")
         try:
             client.login_if_needed()
+            print(f"[agent] ✓ Authentication successful")
         except Exception as e:
-            print(f"[agent] login failed: {e}")
+            print(f"[agent] ✗ Login failed: {e}")
             raise SystemExit(1)
 
         active: dict[int, dict] = {}
@@ -876,11 +882,11 @@ def main() -> None:
                 except Exception:
                     ws = []
                 ids = set()
-                if WATCHER_AGENT_VERBOSE:
-                    try:
-                        print(f"[agent] fetched {len(ws or [])} watcher(s) for machine_label={machine_label}")
-                    except Exception:
-                        pass
+                # Always log fetch count for visibility
+                try:
+                    print(f"[agent] Fetched {len(ws or [])} watcher(s) for machine_label={machine_label}")
+                except Exception:
+                    pass
                 for w in (ws or []):
                     wid = int(w.get("id"))
                     ids.add(wid)
@@ -888,11 +894,15 @@ def main() -> None:
                     wdir = w.get("expected_path") or ""
                     move_dir = w.get("move_uploaded_dir") or None
                     ev_id = int(w.get("event_id"))
-                    if WATCHER_AGENT_VERBOSE:
-                        try:
-                            print(f"[agent] watcher {wid}: listening={listen} event_id={ev_id} expected_path={wdir} exists={os.path.isdir(wdir)}")
-                        except Exception:
-                            pass
+                    # Always log watcher details for visibility
+                    try:
+                        path_exists = os.path.isdir(wdir) if wdir else False
+                        status = "✓ EXISTS" if path_exists else "✗ NOT FOUND"
+                        print(f"[agent] Watcher #{wid}: event={ev_id}, listening={listen}, path={status}")
+                        if WATCHER_AGENT_VERBOSE:
+                            print(f"        └─ expected_path: {wdir}")
+                    except Exception:
+                        pass
                     if not wdir or not os.path.isdir(wdir):
                         # Don't auto-disable server-side listening; just report locally.
                         # (Auto-disabling here can hide configuration mistakes and requires manual re-enable.)
@@ -923,9 +933,10 @@ def main() -> None:
                             handler = CreatedHandler(client, ev_id, man, move_dir, wid)
                             obs = Observer(); obs.schedule(handler, wdir, recursive=False); obs.start()
                             observers[wid] = obs
-                            print(f"[agent] started watcher {wid} on {wdir}")
+                            print(f"[agent] ✓ STARTED watcher #{wid} watching: {wdir}")
+                            print(f"        └─ Monitoring event_id={ev_id} for new photos...")
                         else:
-                            print(f"[agent] fallback scan mode for watcher {wid} on {wdir}")
+                            print(f"[agent] ⚠ Fallback scan mode for watcher #{wid} (watchdog not available)")
                     # In fallback (no watchdog), rescan every loop for active watchers
                     if not WATCHDOG_AVAILABLE:
                         man = manifests.get(wid) or Manifest(os.path.join(wdir, ".uploaded_manifest.json"))
@@ -955,12 +966,19 @@ def main() -> None:
     if not watch_dir or not os.path.isdir(watch_dir):
         raise SystemExit("WATCH_DIR must point to an existing directory")
 
+    print(f"\n{'='*60}")
+    print(f"[start] LOCAL WATCHER STARTED in LEGACY MODE")
+    print(f"[start] Watching directory: {watch_dir}")
+    print(f"[start] Event ID: {event_id}")
+    print(f"[start] API base URL: {base_url}")
+    print(f"{'='*60}\n")
+
     manifest = Manifest(os.path.join(watch_dir, ".uploaded_manifest.json"))
     scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir, watcher_id)
     if WATCHDOG_AVAILABLE:
         handler = CreatedHandler(client, event_id, manifest, move_uploaded_dir, watcher_id)
         observer = Observer(); observer.schedule(handler, watch_dir, recursive=False); observer.start()
-        print(f"[start] watcher on {watch_dir}. Press Ctrl+C to quit.")
+        print(f"[start] ✓ Watcher active. Monitoring for new photos... (Press Ctrl+C to quit)")
         try:
             while True:
                 time.sleep(1)
