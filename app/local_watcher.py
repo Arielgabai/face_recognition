@@ -57,6 +57,10 @@ MAX_EYE_Y_RATIO = float(os.environ.get("MAX_EYE_Y_RATIO", "0.55"))
 WATCHER_DEBUG = (os.environ.get("WATCHER_DEBUG", "").strip() or "").lower() in {"1", "true", "yes", "y", "on"}
 WATCHER_DEBUG_DIR = os.environ.get("WATCHER_DEBUG_DIR", "").strip() or None
 
+# Agent diagnostics / logging behavior
+WATCHER_AGENT_VERBOSE = (os.environ.get("WATCHER_AGENT_VERBOSE", "").strip() or "").lower() in {"1", "true", "yes", "y", "on"}
+WATCHER_LOG_ERRORS = (os.environ.get("WATCHER_LOG_ERRORS", "").strip() or "").lower() in {"1", "true", "yes", "y", "on"}
+
 # Optional local folders to move rejected files into (if unset, files are kept in place).
 # If a relative path is provided, it's treated as relative to the watched directory.
 REJECTED_DUPLICATE_DIR = os.environ.get("REJECTED_DUPLICATE_DIR", "").strip() or None
@@ -782,8 +786,21 @@ class CreatedHandler(FileSystemEventHandler):
             return
         try:
             process_path(self.client, self.event_id, event.src_path, self.manifest, self.move_uploaded_dir, self.watcher_id)
-        except Exception:
-            pass
+        except Exception as e:
+            if WATCHER_LOG_ERRORS or WATCHER_DEBUG:
+                print(f"[warn] on_modified failed: {e}")
+
+    def on_moved(self, event):  # type: ignore[no-untyped-def]
+        """Important for FTP drops: many clients upload to a temp name then rename/move into place."""
+        if getattr(event, "is_directory", False):
+            return
+        try:
+            dest = getattr(event, "dest_path", None)
+            if dest:
+                process_path(self.client, self.event_id, dest, self.manifest, self.move_uploaded_dir, self.watcher_id)
+        except Exception as e:
+            if WATCHER_LOG_ERRORS or WATCHER_DEBUG:
+                print(f"[warn] on_moved failed: {e}")
 
 
 def scan_existing_once(watch_dir: str, client: UploadClient, event_id: int, manifest: Manifest, move_uploaded_dir: Optional[str], watcher_id: Optional[int]) -> None:
@@ -859,6 +876,11 @@ def main() -> None:
                 except Exception:
                     ws = []
                 ids = set()
+                if WATCHER_AGENT_VERBOSE:
+                    try:
+                        print(f"[agent] fetched {len(ws or [])} watcher(s) for machine_label={machine_label}")
+                    except Exception:
+                        pass
                 for w in (ws or []):
                     wid = int(w.get("id"))
                     ids.add(wid)
@@ -866,13 +888,15 @@ def main() -> None:
                     wdir = w.get("expected_path") or ""
                     move_dir = w.get("move_uploaded_dir") or None
                     ev_id = int(w.get("event_id"))
-                    if not wdir or not os.path.isdir(wdir):
-                        # update last_error
+                    if WATCHER_AGENT_VERBOSE:
                         try:
-                            client.session.put(f"{base_url}/api/admin/local-watchers/{wid}", json={"listening": False}, timeout=15)
+                            print(f"[agent] watcher {wid}: listening={listen} event_id={ev_id} expected_path={wdir} exists={os.path.isdir(wdir)}")
                         except Exception:
                             pass
-                        print(f"[agent] skip watcher {wid}: path not found {wdir}")
+                    if not wdir or not os.path.isdir(wdir):
+                        # Don't auto-disable server-side listening; just report locally.
+                        # (Auto-disabling here can hide configuration mistakes and requires manual re-enable.)
+                        print(f"[agent] skip watcher {wid}: path not found or not accessible: {wdir}")
                         # stop if running
                         if wid in observers:
                             try:
