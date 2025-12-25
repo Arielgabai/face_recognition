@@ -432,13 +432,24 @@ class ModernGallery {
             <span class="gallery-lightbox-close" title="Fermer">&times;</span>
             <div class="gallery-lightbox-nav gallery-lightbox-prev" title="Précédente">‹</div>
             <div class="gallery-lightbox-nav gallery-lightbox-next" title="Suivante">›</div>
-            <img src="" alt="">
+            <div class="gallery-lightbox-image-wrapper">
+                <img src="" alt="">
+            </div>
             <div class="gallery-photo-counter">1 / 1</div>
             <button class="gallery-download-btn" title="Enregistrer">⬇︎ Enregistrer</button>
         `;
 
         document.body.appendChild(lightbox);
         this.lightboxElement = lightbox;
+        
+        // Android pinch-zoom: Initialize zoom state for lightbox image
+        this.zoomState = {
+            scale: 1,
+            translateX: 0,
+            translateY: 0,
+            initialDistance: 0,
+            lastScale: 1
+        };
 
         const closeBtn = lightbox.querySelector('.gallery-lightbox-close');
         const prevBtn = lightbox.querySelector('.gallery-lightbox-prev');
@@ -470,10 +481,41 @@ class ModernGallery {
     }
 
     setupTouchNavigation(lightbox) {
-        const onTouchStart = (clientX, clientY, touchCount) => {
+        const img = lightbox.querySelector('img');
+        const imgWrapper = lightbox.querySelector('.gallery-lightbox-image-wrapper');
+        
+        // Android pinch-zoom: Helper to calculate distance between two touch points
+        const getTouchDistance = (touch1, touch2) => {
+            const dx = touch2.clientX - touch1.clientX;
+            const dy = touch2.clientY - touch1.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        };
+        
+        // Android pinch-zoom: Apply transform to image
+        const applyZoomTransform = () => {
+            if (!img) return;
+            const { scale, translateX, translateY } = this.zoomState;
+            img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+            img.style.transition = 'none';
+        };
+        
+        // Android pinch-zoom: Reset zoom state
+        const resetZoom = () => {
+            if (!img) return;
+            this.zoomState = { scale: 1, translateX: 0, translateY: 0, initialDistance: 0, lastScale: 1 };
+            img.style.transform = '';
+            img.style.transition = 'transform 0.3s ease';
+        };
+
+        const onTouchStart = (clientX, clientY, touchCount, e) => {
             if (touchCount >= 2) {
+                // Android pinch-zoom: Initialize pinch gesture
                 this.isZooming = true;
                 this.touchActive = false;
+                if (e && e.touches && e.touches.length >= 2) {
+                    this.zoomState.initialDistance = getTouchDistance(e.touches[0], e.touches[1]);
+                    this.zoomState.lastScale = this.zoomState.scale;
+                }
                 return;
             }
             this.touchStartX = clientX;
@@ -484,51 +526,82 @@ class ModernGallery {
 
         const onTouchMove = (clientX, clientY, touchCount, e) => {
             if (touchCount >= 2) {
+                // Android pinch-zoom: Handle pinch gesture
                 this.isZooming = true;
                 this.touchActive = false;
+                if (e && e.touches && e.touches.length >= 2 && this.zoomState.initialDistance > 0) {
+                    const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
+                    const scaleChange = currentDistance / this.zoomState.initialDistance;
+                    this.zoomState.scale = Math.max(1, Math.min(4, this.zoomState.lastScale * scaleChange));
+                    applyZoomTransform();
+                    // Prevent default to avoid browser zoom
+                    if (e.preventDefault) e.preventDefault();
+                }
                 return;
             }
             if (!this.touchActive) return;
 
+            // Only allow swipe navigation when not zoomed
+            if (this.zoomState.scale > 1.1) {
+                // Android pinch-zoom: Allow panning when zoomed
+                const dx = clientX - this.touchStartX;
+                const dy = clientY - this.touchStartY;
+                this.zoomState.translateX += dx;
+                this.zoomState.translateY += dy;
+                this.touchStartX = clientX;
+                this.touchStartY = clientY;
+                applyZoomTransform();
+                if (e && e.preventDefault) e.preventDefault();
+                return;
+            }
+
             const dx = clientX - this.touchStartX;
             const dy = clientY - this.touchStartY;
 
-            if (Math.abs(dx) > Math.abs(dy)) {
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
                 this.touchMoved = true;
+                // Only prevent default for horizontal swipes (navigation)
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
             }
         };
 
         const onTouchEnd = (clientX, touchCount) => {
             if (this.isZooming) {
+                // Android pinch-zoom: Check if user zoomed out completely, then reset
+                if (this.zoomState.scale <= 1.05) {
+                    resetZoom();
+                }
                 setTimeout(() => { this.isZooming = false; }, 300);
                 this.touchActive = false;
                 return;
             }
             if (!this.touchActive) return;
 
-            const dx = clientX - this.touchStartX;
-            const threshold = 40;
+            // Only navigate if not zoomed
+            if (this.zoomState.scale <= 1.1) {
+                const dx = clientX - this.touchStartX;
+                const threshold = 40;
 
-            if (Math.abs(dx) >= threshold) {
-                if (dx < 0) this.nextImage();
-                else this.previousImage();
+                if (Math.abs(dx) >= threshold) {
+                    if (dx < 0) this.nextImage();
+                    else this.previousImage();
+                }
             }
             this.touchActive = false;
         };
 
-        // Touch
+        // Touch events
         lightbox.addEventListener('touchstart', (e) => {
             if (!e.touches || !e.touches.length) return;
             const t = e.touches[0];
-            onTouchStart(t.clientX, t.clientY, e.touches.length);
+            onTouchStart(t.clientX, t.clientY, e.touches.length, e);
         }, { passive: true });
 
         lightbox.addEventListener('touchmove', (e) => {
             if (!e.touches || !e.touches.length) return;
             const t = e.touches[0];
             onTouchMove(t.clientX, t.clientY, e.touches.length, e);
-        }, { passive: false });
+        }, { passive: false }); // Android pinch-zoom: non-passive to allow preventDefault
 
         lightbox.addEventListener('touchend', (e) => {
             const t = (e.changedTouches && e.changedTouches[0]) || null;
@@ -536,11 +609,13 @@ class ModernGallery {
             if (t) onTouchEnd(t.clientX, touchCount);
         });
 
-        // Pointer (souris / trackpad)
+        // Pointer events (mouse / trackpad)
         let pointerDown = false;
         lightbox.addEventListener('pointerdown', (e) => {
+            // Only handle pointer on nav buttons, not on image
+            if (e.target === img || e.target === imgWrapper) return;
             pointerDown = true;
-            onTouchStart(e.clientX, e.clientY, 1);
+            onTouchStart(e.clientX, e.clientY, 1, e);
         });
 
         lightbox.addEventListener('pointermove', (e) => {
@@ -554,13 +629,23 @@ class ModernGallery {
             onTouchEnd(e.clientX, 1);
         });
 
-        // Empêcher la navigation sur zoom via Ctrl + scroll
+        // Desktop zoom with Ctrl + scroll wheel
         lightbox.addEventListener('wheel', (e) => {
             if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
                 e.stopPropagation();
-                return;
+                const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                this.zoomState.scale = Math.max(1, Math.min(4, this.zoomState.scale * delta));
+                if (this.zoomState.scale <= 1.05) {
+                    resetZoom();
+                } else {
+                    applyZoomTransform();
+                }
             }
-        }, { passive: true });
+        }, { passive: false });
+        
+        // Android pinch-zoom: Reset zoom when image changes
+        this.resetZoomOnImageChange = resetZoom;
     }
 
     openLightbox(index) {
@@ -587,6 +672,11 @@ class ModernGallery {
 
         const menu = document.getElementById('hamburgerMenu');
         if (menu) menu.style.display = 'none';
+
+        // Android pinch-zoom: Reset zoom state when opening new image
+        if (this.resetZoomOnImageChange) {
+            this.resetZoomOnImageChange();
+        }
 
         this.lightboxElement.focus();
     }
@@ -624,45 +714,78 @@ class ModernGallery {
         const image = this.images[this.currentIndex];
         if (!image) return;
 
-        const fileName = (image.alt || 'photo') + '.jpg';
+        // Android save: Generate a proper filename with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const fileName = `photo-${timestamp}.jpg`;
 
-        fetch(image.src, { cache: 'no-store' })
+        fetch(image.src, { 
+            cache: 'no-store',
+            // Android save: Include credentials if image is behind auth
+            credentials: 'include'
+        })
             .then(response => {
                 if (!response.ok) throw new Error('Network response was not ok');
                 return response.blob();
             })
-            .then(blob => {
-                try {
-                    const file = new File([blob], fileName, {
-                        type: blob.type || 'image/jpeg'
-                    });
-                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                        return navigator.share({ files: [file], title: 'Photo' });
+            .then(async blob => {
+                // Android save: Try Web Share API first (better for Android)
+                // This allows users to save to gallery apps or share directly
+                if (navigator.share && navigator.canShare) {
+                    try {
+                        // Ensure blob has correct MIME type
+                        const imageBlob = blob.type.startsWith('image/') 
+                            ? blob 
+                            : new Blob([blob], { type: 'image/jpeg' });
+                        
+                        const file = new File([imageBlob], fileName, {
+                            type: imageBlob.type || 'image/jpeg',
+                            lastModified: Date.now()
+                        });
+                        
+                        // Android save: Check if we can share files
+                        if (navigator.canShare({ files: [file] })) {
+                            await navigator.share({ 
+                                files: [file], 
+                                title: 'Photo',
+                                text: 'Enregistrer la photo'
+                            });
+                            return; // Success, exit early
+                        }
+                    } catch (shareError) {
+                        // Android save: Share cancelled or failed, fall back to download
+                        if (shareError.name === 'AbortError') {
+                            console.log('Partage annulé par l\'utilisateur');
+                            return; // User cancelled, don't show error
+                        }
+                        console.log('Web Share non disponible, utilisation du téléchargement');
                     }
-                } catch (e) {
-                    // fallback classique
                 }
 
+                // Android save: Fallback to standard download
+                // Works on all platforms including Android
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = fileName;
                 a.style.display = 'none';
                 document.body.appendChild(a);
+                
+                // Android save: Trigger download
                 a.click();
 
+                // Android save: Cleanup after download
                 setTimeout(() => {
                     try {
                         document.body.removeChild(a);
                         URL.revokeObjectURL(url);
-                    } catch (e) {}
+                    } catch (e) {
+                        console.log('Cleanup error:', e);
+                    }
                 }, 100);
             })
             .catch(e => {
                 console.error('Erreur lors du téléchargement de la photo:', e);
-                console.log(
-                    'Pour télécharger manuellement, faites clic droit > Enregistrer l\'image'
-                );
+                alert('Erreur lors du téléchargement. Essayez de faire un appui long sur la photo pour l\'enregistrer.');
             });
     }
 

@@ -179,6 +179,10 @@
             object-fit: contain;
             border-radius: 8px;
             box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+            /* Android pinch-zoom: Allow native pinch gestures on image */
+            touch-action: pan-x pan-y pinch-zoom;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         .lightbox-close {

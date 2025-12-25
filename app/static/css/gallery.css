@@ -286,12 +286,31 @@ body {
     display: flex;
 }
 
+/* Android pinch-zoom: Wrapper to contain zoomed image */
+.gallery-lightbox-image-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    /* Android pinch-zoom: Allow pinch and pan gestures */
+    touch-action: pan-x pan-y pinch-zoom;
+}
+
 .gallery-lightbox img {
     max-width: 95%;
     max-height: 95%;
     object-fit: contain;
     border-radius: 8px;
     box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+    /* Android pinch-zoom: Allow pinch gestures on the image */
+    touch-action: pan-x pan-y pinch-zoom;
+    /* Ensure image can be transformed for zoom/pan */
+    transform-origin: center center;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 /* Masquer le hamburger quand la lightbox est ouverte */

@@ -553,11 +553,23 @@
                     Prenez une photo claire de votre visage pour la reconnaissance faciale
                 </p>
                 
-                <div class="file-input-wrapper">
-                    <input type="file" id="selfieFile" accept="image/*">
-                    <label for="selfieFile">
-                        📸 Cliquez ici pour sélectionner votre selfie
-                    </label>
+                <!-- Android camera capture: Two options for better UX -->
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                    <!-- Android camera capture: Direct camera access with capture="user" for front camera -->
+                    <div class="file-input-wrapper">
+                        <input type="file" id="selfieCamera" accept="image/*" capture="user" style="display: none;">
+                        <label for="selfieCamera" class="btn btn-primary" style="margin: 0; cursor: pointer; text-align: center;">
+                            📸 Prendre une photo
+                        </label>
+                    </div>
+                    
+                    <!-- Android camera capture: Gallery option as fallback -->
+                    <div class="file-input-wrapper">
+                        <input type="file" id="selfieGallery" accept="image/*" style="display: none;">
+                        <label for="selfieGallery" class="btn btn-secondary" style="margin: 0; cursor: pointer; text-align: center;">
+                            🖼️ Choisir depuis la galerie
+                        </label>
+                    </div>
                 </div>
                 
                 <img id="selfiePreview" class="selfie-preview" alt="Aperçu du selfie" style="display: none;">
@@ -701,8 +713,8 @@
             document.getElementById('selfieSection').classList.remove('active');
         }
 
-        // Aperçu du selfie
-        document.getElementById('selfieFile').addEventListener('change', function(e) {
+        // Android camera capture: Handle file selection from both camera and gallery inputs
+        function handleSelfieSelection(e) {
             const file = e.target.files[0];
             if (file) {
                 selfieFile = file;
@@ -717,7 +729,11 @@
                 };
                 reader.readAsDataURL(file);
             }
-        });
+        }
+        
+        // Android camera capture: Attach event listeners to both inputs
+        document.getElementById('selfieCamera').addEventListener('change', handleSelfieSelection);
+        document.getElementById('selfieGallery').addEventListener('change', handleSelfieSelection);
 
         function validateSelfie(file) {
             const validation = document.getElementById('selfieValidation');

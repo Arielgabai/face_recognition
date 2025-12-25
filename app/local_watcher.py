@@ -33,25 +33,25 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 # Quality thresholds (tweak as needed). You can also override via environment variables.
 # Note: decision is made immediately when the file arrives (first acceptable photo "wins";
 # later similar ones are rejected and never uploaded).
-MIN_WIDTH = int(os.environ.get("MIN_WIDTH", "800"))
-MIN_HEIGHT = int(os.environ.get("MIN_HEIGHT", "600"))
-MIN_SHARPNESS = float(os.environ.get("MIN_SHARPNESS", "100.0"))  # variance of Laplacian (higher = sharper)
-MIN_BRIGHTNESS = float(os.environ.get("MIN_BRIGHTNESS", "30.0"))  # 0..255 grayscale mean
-MAX_BRIGHTNESS = float(os.environ.get("MAX_BRIGHTNESS", "220.0"))  # 0..255 grayscale mean
+MIN_WIDTH = int(os.environ.get("MIN_WIDTH", "640"))  # Réduit de 800 à 640
+MIN_HEIGHT = int(os.environ.get("MIN_HEIGHT", "480"))  # Réduit de 600 à 480
+MIN_SHARPNESS = float(os.environ.get("MIN_SHARPNESS", "30.0"))  # Réduit de 100 à 30 (variance of Laplacian)
+MIN_BRIGHTNESS = float(os.environ.get("MIN_BRIGHTNESS", "20.0"))  # Réduit de 30 à 20 (0..255 grayscale mean)
+MAX_BRIGHTNESS = float(os.environ.get("MAX_BRIGHTNESS", "235.0"))  # Augmenté de 220 à 235 (0..255 grayscale mean)
 
 # Similarity threshold: Hamming distance between perceptual hashes (dHash here).
 # If distance <= SIMILARITY_THRESHOLD, the new image is considered a near-duplicate and is rejected.
-SIMILARITY_THRESHOLD = int(os.environ.get("SIMILARITY_THRESHOLD", "6"))
+SIMILARITY_THRESHOLD = int(os.environ.get("SIMILARITY_THRESHOLD", "8"))  # Augmenté de 6 à 8 (plus tolérant)
 
 # Face-aware thresholds (applied only when a photo contains faces).
 # Heuristic-based scoring using OpenCV Haar cascades (offline, lightweight).
-FACE_SCORE_MIN = float(os.environ.get("FACE_SCORE_MIN", "0.45"))  # minimum acceptable face score when faces exist
-FACE_MIN_RELATIVE_SIZE = float(os.environ.get("FACE_MIN_RELATIVE_SIZE", "0.03"))  # face area / image area
-MAX_FACE_ROLL_DEG = float(os.environ.get("MAX_FACE_ROLL_DEG", "15.0"))  # proxy via eye line tilt
-MIN_EYE_DISTANCE_RATIO = float(os.environ.get("MIN_EYE_DISTANCE_RATIO", "0.25"))  # eye_dist / face_width
-MAX_EYE_DISTANCE_RATIO = float(os.environ.get("MAX_EYE_DISTANCE_RATIO", "0.65"))  # eye_dist / face_width
-MIN_EYE_Y_RATIO = float(os.environ.get("MIN_EYE_Y_RATIO", "0.15"))  # avg_eye_y / face_height (within face ROI)
-MAX_EYE_Y_RATIO = float(os.environ.get("MAX_EYE_Y_RATIO", "0.55"))
+FACE_SCORE_MIN = float(os.environ.get("FACE_SCORE_MIN", "0.35"))  # Réduit de 0.45 à 0.35 (plus tolérant)
+FACE_MIN_RELATIVE_SIZE = float(os.environ.get("FACE_MIN_RELATIVE_SIZE", "0.02"))  # Réduit de 0.03 à 0.02
+MAX_FACE_ROLL_DEG = float(os.environ.get("MAX_FACE_ROLL_DEG", "20.0"))  # Augmenté de 15 à 20 (proxy via eye line tilt)
+MIN_EYE_DISTANCE_RATIO = float(os.environ.get("MIN_EYE_DISTANCE_RATIO", "0.20"))  # Réduit de 0.25 à 0.20 (eye_dist / face_width)
+MAX_EYE_DISTANCE_RATIO = float(os.environ.get("MAX_EYE_DISTANCE_RATIO", "0.70"))  # Augmenté de 0.65 à 0.70 (eye_dist / face_width)
+MIN_EYE_Y_RATIO = float(os.environ.get("MIN_EYE_Y_RATIO", "0.10"))  # Réduit de 0.15 à 0.10 (avg_eye_y / face_height)
+MAX_EYE_Y_RATIO = float(os.environ.get("MAX_EYE_Y_RATIO", "0.60"))  # Augmenté de 0.55 à 0.60
 
 # Debug (optional): set WATCHER_DEBUG=1 and optionally WATCHER_DEBUG_DIR.
 WATCHER_DEBUG = (os.environ.get("WATCHER_DEBUG", "").strip() or "").lower() in {"1", "true", "yes", "y", "on"}
@@ -61,11 +61,12 @@ WATCHER_DEBUG_DIR = os.environ.get("WATCHER_DEBUG_DIR", "").strip() or None
 WATCHER_AGENT_VERBOSE = (os.environ.get("WATCHER_AGENT_VERBOSE", "1").strip() or "1").lower() in {"1", "true", "yes", "y", "on"}
 WATCHER_LOG_ERRORS = (os.environ.get("WATCHER_LOG_ERRORS", "1").strip() or "1").lower() in {"1", "true", "yes", "y", "on"}
 
-# Optional local folders to move rejected files into (if unset, files are kept in place).
-# If a relative path is provided, it's treated as relative to the watched directory.
-REJECTED_DUPLICATE_DIR = os.environ.get("REJECTED_DUPLICATE_DIR", "").strip() or None
-REJECTED_LOW_QUALITY_DIR = os.environ.get("REJECTED_LOW_QUALITY_DIR", "").strip() or None
-REJECTED_LOW_FACE_QUALITY_DIR = os.environ.get("REJECTED_LOW_FACE_QUALITY_DIR", "").strip() or None
+# Dossiers locaux pour déplacer les fichiers rejetés (créés automatiquement).
+# Si un chemin relatif est fourni, il est relatif au répertoire surveillé.
+# Vous pouvez désactiver en définissant la variable d'environnement à une chaîne vide.
+REJECTED_DUPLICATE_DIR = os.environ.get("REJECTED_DUPLICATE_DIR", "").strip() or ".rejected_duplicates"
+REJECTED_LOW_QUALITY_DIR = os.environ.get("REJECTED_LOW_QUALITY_DIR", "").strip() or ".rejected_low_quality"
+REJECTED_LOW_FACE_QUALITY_DIR = os.environ.get("REJECTED_LOW_FACE_QUALITY_DIR", "").strip() or ".rejected_low_face_quality"
 
 
 def is_image_file(path: str) -> bool:
@@ -359,8 +360,14 @@ def compute_face_metrics(path: str) -> Dict[str, Any]:
     faces_list: list[Dict[str, Any]] = []
     best_score = 0.0
 
+    # Gestion robuste du résultat de detectMultiScale (peut retourner None ou array vide)
+    if faces is None or len(faces) == 0:
+        faces_iter = []
+    else:
+        faces_iter = faces
+
     img_area = float(w_img * h_img)
-    for (x, y, w, h) in (faces or []):
+    for (x, y, w, h) in faces_iter:
         face_area = float(w * h)
         rel = face_area / img_area if img_area > 0 else 0.0
         size_score = max(0.0, min(1.0, rel / max(1e-9, FACE_MIN_RELATIVE_SIZE)))
@@ -373,8 +380,14 @@ def compute_face_metrics(path: str) -> Dict[str, Any]:
         eye_min = max(10, int(min(w, h) * 0.12))
         eyes = eye_cascade.detectMultiScale(roi_gray_eyes, scaleFactor=1.1, minNeighbors=8, minSize=(eye_min, eye_min))
 
+        # Gestion robuste du résultat de detectMultiScale pour les yeux
+        if eyes is None or len(eyes) == 0:
+            eyes_iter = []
+        else:
+            eyes_iter = eyes
+
         # Pick up to 2 largest eyes (by area)
-        eyes_sorted = sorted([(ex, ey, ew, eh) for (ex, ey, ew, eh) in (eyes or [])], key=lambda t: t[2] * t[3], reverse=True)
+        eyes_sorted = sorted([(ex, ey, ew, eh) for (ex, ey, ew, eh) in eyes_iter], key=lambda t: t[2] * t[3], reverse=True)
         eyes_top = eyes_sorted[:2]
         eye_count = len(eyes_top)
         eye_count_score = 1.0 if eye_count >= 2 else (0.6 if eye_count == 1 else 0.0)
