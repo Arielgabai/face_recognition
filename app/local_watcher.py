@@ -15,6 +15,20 @@ import cv2
 import requests
 import mimetypes
 
+# Charger les variables d'environnement depuis .env.local
+try:
+    from dotenv import load_dotenv
+    # Charger .env.local en priorité, puis .env en fallback
+    if os.path.exists('.env.local'):
+        load_dotenv('.env.local', override=True)
+        print("[config] ✓ Loaded configuration from .env.local")
+    elif os.path.exists('.env'):
+        load_dotenv('.env', override=True)
+        print("[config] ✓ Loaded configuration from .env")
+except ImportError:
+    # python-dotenv pas installé, on continue avec les variables système
+    pass
+
 try:
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
@@ -26,6 +40,13 @@ except Exception:
 
 DEFAULT_STABLE_SECONDS = int(os.environ.get("WATCHER_STABLE_SECONDS", "2") or "2")
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+# -----------------------------
+# Photo Selection Algorithm Toggle
+# -----------------------------
+# Set ENABLE_PHOTO_SELECTION=0 to disable the automatic photo selection algorithm
+# and upload ALL photos without quality/duplicate filtering
+ENABLE_PHOTO_SELECTION = (os.environ.get("ENABLE_PHOTO_SELECTION", "1").strip() or "1").lower() in {"1", "true", "yes", "y", "on"}
 
 # -----------------------------
 # Filtering configuration
@@ -657,6 +678,29 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
         print(f"[skip] already uploaded (hash={file_hash[:8]}...): {abspath}")
         return
 
+    # --- Photo Selection Algorithm: can be disabled via ENABLE_PHOTO_SELECTION=0 ---
+    if not ENABLE_PHOTO_SELECTION:
+        # Selection algorithm disabled: upload all photos without filtering
+        print(f"[accept:no-filter] {abspath} | selection algorithm disabled (ENABLE_PHOTO_SELECTION=0)")
+        client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
+        manifest.add(file_hash, abspath)
+        if move_uploaded_dir:
+            try:
+                os.makedirs(move_uploaded_dir, exist_ok=True)
+                dest = os.path.join(move_uploaded_dir, os.path.basename(abspath))
+                # If exists, add suffix
+                base, ext = os.path.splitext(dest)
+                i = 1
+                while os.path.exists(dest):
+                    dest = f"{base}_{i}{ext}"
+                    i += 1
+                os.replace(abspath, dest)
+                print(f"[moved] {abspath} -> {dest}")
+            except Exception:
+                # keep file if move fails
+                print(f"[warn] move failed for {abspath}")
+        return
+
     # --- Filtering layer (quality + similarity) BEFORE uploading ---
     features = compute_image_features(abspath)
     if not features:
@@ -860,6 +904,9 @@ def main() -> None:
         print(f"[agent] LOCAL WATCHER STARTED in AGENT MODE")
         print(f"[agent] machine_label={machine_label}")
         print(f"[agent] API base URL: {base_url}")
+        print(f"[agent] Photo Selection Algorithm: {'ENABLED ✓' if ENABLE_PHOTO_SELECTION else 'DISABLED ✗'}")
+        if not ENABLE_PHOTO_SELECTION:
+            print(f"[agent] ⚠ All photos will be uploaded without quality filtering")
         print(f"[agent] Polling server every 3 seconds for watchers...")
         print(f"{'='*60}\n")
         try:
@@ -984,6 +1031,9 @@ def main() -> None:
     print(f"[start] Watching directory: {watch_dir}")
     print(f"[start] Event ID: {event_id}")
     print(f"[start] API base URL: {base_url}")
+    print(f"[start] Photo Selection Algorithm: {'ENABLED ✓' if ENABLE_PHOTO_SELECTION else 'DISABLED ✗'}")
+    if not ENABLE_PHOTO_SELECTION:
+        print(f"[start] ⚠ All photos will be uploaded without quality filtering")
     print(f"{'='*60}\n")
 
     manifest = Manifest(os.path.join(watch_dir, ".uploaded_manifest.json"))

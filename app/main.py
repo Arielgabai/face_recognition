@@ -67,7 +67,7 @@ from collections import OrderedDict
 from urllib.parse import urlencode
 from base64 import urlsafe_b64encode
 
-app = FastAPI(title="Face Recognition API", version="1.0.0")
+app = FastAPI(title="FindMe", version="1.0.0")
 
 # Créer les tables au démarrage (non-bloquant)
 @app.on_event("startup")
