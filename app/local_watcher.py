@@ -17,16 +17,51 @@ import mimetypes
 
 # Charger les variables d'environnement depuis .env.local
 try:
-    from dotenv import load_dotenv
-    # Charger .env.local en priorité, puis .env en fallback
-    if os.path.exists('.env.local'):
-        load_dotenv('.env.local', override=True)
-        print("[config] ✓ Loaded configuration from .env.local")
-    elif os.path.exists('.env'):
-        load_dotenv('.env', override=True)
-        print("[config] ✓ Loaded configuration from .env")
+    from dotenv import load_dotenv, dotenv_values
+    
+    # Fonction pour trouver .env.local intelligemment
+    def find_env_file(filename):
+        """Cherche le fichier .env dans plusieurs emplacements."""
+        # 1. Répertoire courant
+        if os.path.exists(filename):
+            return filename
+        
+        # 2. Répertoire du script (face_recognition/app/)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate = os.path.join(script_dir, filename)
+        if os.path.exists(candidate):
+            return candidate
+        
+        # 3. Deux niveaux au-dessus (racine du projet face_reco/)
+        project_root = os.path.dirname(os.path.dirname(script_dir))
+        candidate = os.path.join(project_root, filename)
+        if os.path.exists(candidate):
+            return candidate
+        
+        # 4. Un niveau au-dessus du script
+        parent_dir = os.path.dirname(script_dir)
+        candidate = os.path.join(parent_dir, filename)
+        if os.path.exists(candidate):
+            return candidate
+        
+        return None
+    
+    # Chercher .env.local puis .env
+    env_file = find_env_file('.env.local') or find_env_file('.env')
+    
+    if env_file:
+        # Charger et forcer l'override de TOUTES les variables du fichier
+        env_vars = dotenv_values(env_file)
+        for key, value in env_vars.items():
+            if value is not None:  # Ne pas écraser avec des valeurs None
+                os.environ[key] = value
+        print(f"[config] ✓ Loaded configuration from {os.path.basename(env_file)} (path: {env_file})")
+    else:
+        print("[config] ⚠ No .env.local or .env file found, using system environment variables")
+        
 except ImportError:
     # python-dotenv pas installé, on continue avec les variables système
+    print("[config] ⚠ python-dotenv not installed, using system environment variables")
     pass
 
 try:
@@ -47,6 +82,11 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 # Set ENABLE_PHOTO_SELECTION=0 to disable the automatic photo selection algorithm
 # and upload ALL photos without quality/duplicate filtering
 ENABLE_PHOTO_SELECTION = (os.environ.get("ENABLE_PHOTO_SELECTION", "1").strip() or "1").lower() in {"1", "true", "yes", "y", "on"}
+
+# Debug: afficher la valeur au démarrage pour vérification
+if os.environ.get("WATCHER_DEBUG") or os.environ.get("WATCHER_AGENT_VERBOSE", "1") == "1":
+    _raw_value = os.environ.get("ENABLE_PHOTO_SELECTION", "1")
+    print(f"[config] ENABLE_PHOTO_SELECTION raw value: '{_raw_value}' → parsed as: {ENABLE_PHOTO_SELECTION}")
 
 # -----------------------------
 # Filtering configuration

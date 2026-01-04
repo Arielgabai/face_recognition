@@ -3814,6 +3814,9 @@ async def admin_delete_user(
         # Supprimer les FaceMatch de cet utilisateur
         db.query(FaceMatch).filter(FaceMatch.user_id == user_id).delete()
 
+        # Supprimer les tokens de réinitialisation de mot de passe
+        db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user_id).delete()
+
         # Supprimer l'utilisateur
         db.delete(user)
         db.commit()
