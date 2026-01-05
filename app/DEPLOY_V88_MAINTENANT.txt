@@ -1,0 +1,84 @@
+╔════════════════════════════════════════════════════════════════╗
+║          DÉPLOIEMENT v88 - FIX RELATIONS SQLALCHEMY            ║
+╚════════════════════════════════════════════════════════════════╝
+
+✅ MODIFICATIONS APPLIQUÉES dans models.py :
+
+1. Event.photographer → foreign_keys=[photographer_id] ✓
+2. User.primary_event → foreign_keys=[event_id], viewonly=True ✓
+
+Ces changements résolvent l'erreur :
+"Could not determine join condition... multiple foreign key paths"
+
+════════════════════════════════════════════════════════════════
+
+🚀 COMMANDES DE DÉPLOIEMENT (Copy-Paste)
+
+cd face_recognition/app
+
+# 1. Build (2-5 min)
+docker build -t findme-prod:v88 .
+
+# 2. Tag
+docker tag findme-prod:v88 801541932532.dkr.ecr.eu-west-3.amazonaws.com/findme-prod:v88
+
+# 3. Login ECR
+aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 801541932532.dkr.ecr.eu-west-3.amazonaws.com
+
+# 4. Push (2-5 min)
+docker push 801541932532.dkr.ecr.eu-west-3.amazonaws.com/findme-prod:v88
+
+# 5. Modifier update-image.json ligne 6:
+#    "ImageIdentifier": "...findme-prod:v88",
+
+# 6. Update service (5-10 min)
+cd ../..
+aws apprunner update-service --cli-input-json file://face_recognition/app/update-image.json --region eu-west-3
+
+════════════════════════════════════════════════════════════════
+
+⏱️  DURÉE TOTALE : 15-20 minutes
+
+════════════════════════════════════════════════════════════════
+
+✅ TESTS APRÈS DÉPLOIEMENT
+
+1. Health Check:
+   https://g62bncafk2.eu-west-3.awsapprunner.com/api/health-check
+   
+   Attendu : { "status": "healthy" }
+
+2. Login Admin:
+   Se connecter avec compte admin → ✓ Devrait fonctionner
+
+3. Login Photographe:
+   Se connecter avec compte photographe → ✓ Devrait fonctionner
+
+4. Login User:
+   Se connecter avec compte utilisateur → ✓ Devrait fonctionner
+
+════════════════════════════════════════════════════════════════
+
+🎯 RÉSULTAT ATTENDU
+
+TOUTES les connexions devraient maintenant fonctionner :
+  ✓ Admin
+  ✓ Photographe
+  ✓ User/Invité
+
+Plus d'erreur 500 sur /api/login
+
+════════════════════════════════════════════════════════════════
+
+💡 SI TU N'AS PAS DOCKER/AWS CLI
+
+Console AWS App Runner:
+1. https://console.aws.amazon.com/apprunner/
+2. Région : eu-west-3
+3. Service : findme-prod-v7
+4. Operations → Deploy → Manual deployment
+
+Push le code sur GitHub et configure auto-deploy
+
+════════════════════════════════════════════════════════════════
+

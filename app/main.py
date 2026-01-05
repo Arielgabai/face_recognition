@@ -1896,6 +1896,115 @@ async def api_root():
     """Point d'entr+�e de l'API"""
     return {"message": "Face Recognition API"}
 
+@app.get("/api/db-raw-test")
+async def db_raw_test(db: Session = Depends(get_db)):
+    """Test direct SQL sans passer par le modèle SQLAlchemy (pour isoler le problème)"""
+    try:
+        # Test login SQL pur (sans ORM)
+        result = db.execute(_text("""
+            SELECT id, username, email, user_type, event_id, hashed_password
+            FROM users 
+            WHERE user_type = 'photographer'
+            LIMIT 1
+        """))
+        user = result.fetchone()
+        
+        if not user:
+            return {"status": "no_photographer_found", "message": "Aucun photographe en base"}
+        
+        return {
+            "status": "ok",
+            "message": "Requête SQL directe fonctionne",
+            "sample_user": {
+                "id": user[0],
+                "username": user[1],
+                "email": user[2],
+                "user_type": user[3],
+                "event_id": user[4],
+                "has_password": user[5] is not None
+            }
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+
+@app.get("/api/health-check")
+async def health_check(db: Session = Depends(get_db)):
+    """Diagnostic de santé de l'application et de la base de données"""
+    try:
+        # Test 1: Base de données accessible
+        db.execute(_text("SELECT 1"))
+        
+        # Test 2: Vérifier que event_id existe dans la table
+        result = db.execute(_text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'users' AND column_name = 'event_id'
+        """))
+        has_event_id = result.fetchone() is not None
+        
+        # Test 3: Vérifier les contraintes
+        result = db.execute(_text("""
+            SELECT indexname 
+            FROM pg_indexes 
+            WHERE tablename = 'users' 
+            AND indexname IN ('users_email_event_unique', 'users_username_event_unique')
+        """))
+        constraints = [row[0] for row in result.fetchall()]
+        
+        # Test 3b: Vérifier qu'il n'y a PAS les anciennes contraintes
+        result = db.execute(_text("""
+            SELECT indexname 
+            FROM pg_indexes 
+            WHERE tablename = 'users' 
+            AND indexname IN ('ix_users_email', 'ix_users_username')
+        """))
+        old_constraints = [row[0] for row in result.fetchall()]
+        
+        # Test 4: Compter les users
+        user_count = db.query(User).count()
+        
+        # Test 5: Vérifier le modèle Python
+        model_has_event_id = hasattr(User, 'event_id')
+        
+        # Test 6: Tester une requête login simple
+        test_user = db.execute(_text("SELECT id, username FROM users LIMIT 1")).fetchone()
+        
+        return {
+            "status": "healthy" if (has_event_id and len(constraints) == 2 and model_has_event_id and len(old_constraints) == 0) else "degraded",
+            "database": {
+                "connected": True,
+                "event_id_column_exists": has_event_id,
+                "composite_constraints": constraints,
+                "old_constraints_present": old_constraints,
+                "user_count": user_count,
+                "sample_user": test_user[1] if test_user else None
+            },
+            "model": {
+                "has_event_id_field": model_has_event_id,
+                "has_table_args": hasattr(User, '__table_args__')
+            },
+            "warnings": [
+                "Anciennes contraintes unique encore présentes - login échouera" if old_constraints else None,
+                "Contraintes composites manquantes" if len(constraints) < 2 else None,
+                "Modèle Python sans event_id" if not model_has_event_id else None
+            ],
+            "message": "All checks passed" if (has_event_id and model_has_event_id and len(old_constraints) == 0) else "Issues detected"
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+
 # === PAGES JINJA ===
 @app.get("/gallery", response_class=HTMLResponse)
 async def jinja_gallery(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -2240,25 +2349,39 @@ async def register_invite_with_selfie(
 @app.post("/api/login", response_model=Token)
 async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     """Connexion utilisateur - accepte username OU email"""
-    # Chercher l'utilisateur par username OU par email (case-insensitive pour email)
-    user = db.query(User).filter(
-        (User.username == user_credentials.username) | 
-        (func.lower(User.email) == func.lower(user_credentials.username))
-    ).first()
-    
-    if not user or not verify_password(user_credentials.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Identifiant ou mot de passe incorrect",
-            headers={"WWW-Authenticate": "Bearer"},
+    try:
+        # Chercher l'utilisateur par username OU par email (case-insensitive pour email)
+        user = db.query(User).filter(
+            (User.username == user_credentials.username) | 
+            (func.lower(User.email) == func.lower(user_credentials.username))
+        ).first()
+        
+        if not user or not verify_password(user_credentials.password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Identifiant ou mot de passe incorrect",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        access_token_expires = timedelta(minutes=30)
+        access_token = create_access_token(
+            data={"sub": user.username}, expires_delta=access_token_expires
         )
-    
-    access_token_expires = timedelta(minutes=30)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+    except HTTPException:
+        # Re-raise les HTTPException (401, etc.)
+        raise
+    except Exception as e:
+        # Log l'erreur et renvoyer 500 avec détails
+        import traceback
+        error_detail = f"{type(e).__name__}: {str(e)}"
+        print(f"[LOGIN ERROR] {error_detail}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur interne lors de la connexion: {error_detail}"
+        )
 
 @app.get("/api/me", response_model=UserSchema)
 async def get_current_user_info(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

@@ -17,7 +17,7 @@ class Event(Base):
     date = Column(DateTime(timezone=True), nullable=True)
     photographer_id = Column(Integer, ForeignKey("users.id"))
 
-    photographer = relationship("User", back_populates="events")
+    photographer = relationship("User", foreign_keys=[photographer_id], back_populates="events")
     photos = relationship("Photo", back_populates="event")
     users = relationship("UserEvent", back_populates="event")
 
@@ -59,7 +59,7 @@ class User(Base):
     face_matches = relationship("FaceMatch", back_populates="user")
     events = relationship("Event", back_populates="photographer", foreign_keys="Event.photographer_id")
     user_events = relationship("UserEvent", back_populates="user")
-    primary_event = relationship("Event", foreign_keys=[event_id])  # NEW: relation vers l'événement principal
+    primary_event = relationship("Event", foreign_keys=[event_id], viewonly=True)  # NEW: relation vers l'événement principal (lecture seule)
 
 class Photo(Base):
     __tablename__ = "photos"
