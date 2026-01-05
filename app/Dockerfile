@@ -57,11 +57,11 @@ RUN if [ -d "./dlib" ]; then \
 # Créer les dossiers nécessaires
 RUN mkdir -p static/uploads/selfies static/uploads/photos
 
-# Rendre le script de démarrage exécutable
-RUN chmod +x start.sh
+# Convertir les fins de ligne Windows (CRLF) vers Linux (LF) et rendre exécutable
+RUN sed -i 's/\r$//' start.sh && chmod +x start.sh
 
 # Exposer le port (Render utilisera la variable PORT)
 EXPOSE 10000
 
 # Utiliser le script de démarrage pour Render
-CMD ["./start.sh"]
+CMD ["/bin/bash", "./start.sh"]
