@@ -2096,21 +2096,24 @@ async def register_invite(
     db: Session = Depends(get_db)
 ):
     """Inscription d'un invit+� +� partir d'un event_code (QR code)"""
-    # V+�rifier si l'utilisateur existe d+�j+�
+    # V+�rifier l'event_code d'abord
+    event = find_event_by_code(db, event_code)
+    if not event:
+        raise HTTPException(status_code=404, detail="event_code invalide")
+    
+    # V+�rifier si l'utilisateur existe d+�j+� POUR CET ÉVÉNEMENT
     existing_user = db.query(User).filter(
-        (User.username == user_data.username) | (User.email == user_data.email)
+        ((User.username == user_data.username) | (User.email == user_data.email)) &
+        (User.event_id == event.id)
     ).first()
     if existing_user:
         # Message précis selon le conflit
         if existing_user.username == user_data.username:
-            raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
+            raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris pour cet événement")
         if existing_user.email == user_data.email:
-            raise HTTPException(status_code=400, detail="Email déjà utilisé")
-        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
-    # V+�rifier l'event_code
-    event = find_event_by_code(db, event_code)
-    if not event:
-        raise HTTPException(status_code=404, detail="event_code invalide")
+            raise HTTPException(status_code=400, detail="Email déjà utilisé pour cet événement")
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé pour cet événement")
+    
     # Vérifier la robustesse du mot de passe
     assert_password_valid(user_data.password)
     # Cr+�er le nouvel utilisateur
@@ -2119,7 +2122,8 @@ async def register_invite(
         username=user_data.username,
         email=user_data.email,
         hashed_password=hashed_password,
-        user_type=UserType.USER
+        user_type=UserType.USER,
+        event_id=event.id  # NEW: Lier l'utilisateur à son événement principal
     )
     db.add(db_user)
     db.commit()
@@ -2158,16 +2162,18 @@ async def register_invite_with_selfie(
     # Validation stricte du selfie (1 visage, taille minimale)
     validate_selfie_image(selfie_bytes)
 
-    # Vérifier collision username/email après validations (pour agréger les erreurs côté UI en amont)
+    # Vérifier collision username/email POUR CET ÉVÉNEMENT SPÉCIFIQUE
+    # Permet le même email/username pour des événements différents
     existing_user = db.query(User).filter(
-        (User.username == username) | (User.email == email)
+        ((User.username == username) | (User.email == email)) &
+        (User.event_id == event.id)
     ).first()
     if existing_user:
         if existing_user.username == username:
-            raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
+            raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris pour cet événement")
         if existing_user.email == email:
-            raise HTTPException(status_code=400, detail="Email déjà utilisé")
-        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
+            raise HTTPException(status_code=400, detail="Email déjà utilisé pour cet événement")
+        raise HTTPException(status_code=400, detail="Username ou email déjà utilisé pour cet événement")
 
     # Vérifier la robustesse du mot de passe
     assert_password_valid(password)
@@ -2178,7 +2184,8 @@ async def register_invite_with_selfie(
         username=username,
         email=email,
         hashed_password=hashed_password,
-        user_type=UserType.USER
+        user_type=UserType.USER,
+        event_id=event.id  # NEW: Lier l'utilisateur à son événement principal
     )
     db.add(db_user)
     db.commit()
@@ -3476,20 +3483,23 @@ async def admin_create_photographer(
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent cr+�er des photographes")
     
-    # V+�rifier si l'utilisateur existe d+�j+�
+    # V+�rifier si l'utilisateur existe déjà parmi les photographes/admins (event_id=NULL)
+    # Les photographes ont event_id=NULL et doivent rester uniques globalement entre eux
     existing_user = db.query(User).filter(
-        (User.username == username) | (User.email == email)
+        ((User.username == username) | (User.email == email)) &
+        (User.event_id == None)  # Vérifier uniquement parmi les photographes/admins
     ).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username ou email d+�j+� utilis+�")
     
-    # Cr+�er le nouveau photographe
+    # Cr+�er le nouveau photographe (event_id reste NULL)
     hashed_password = get_password_hash(password)
     db_photographer = User(
         username=username,
         email=email,
         hashed_password=hashed_password,
         user_type=UserType.PHOTOGRAPHER
+        # event_id reste NULL (par défaut)
     )
     
     db.add(db_photographer)
@@ -3869,7 +3879,11 @@ async def register_admin(
     existing_admin = db.query(User).filter(User.user_type == UserType.ADMIN).first()
     if existing_admin:
         raise HTTPException(status_code=403, detail="Un admin existe d+�j+�")
-    if db.query(User).filter((User.username == username) | (User.email == email)).first():
+    # Vérifier uniquement parmi les photographes/admins (event_id=NULL)
+    if db.query(User).filter(
+        ((User.username == username) | (User.email == email)) &
+        (User.event_id == None)
+    ).first():
         raise HTTPException(status_code=400, detail="Username ou email d+�j+� utilis+�")
     hashed_password = get_password_hash(password)
     db_user = User(
@@ -3877,6 +3891,7 @@ async def register_admin(
         email=email,
         hashed_password=hashed_password,
         user_type=UserType.ADMIN
+        # event_id reste NULL (par défaut)
     )
     db.add(db_user)
     db.commit()
@@ -3895,8 +3910,11 @@ async def admin_create_admin(
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent créer un admin")
 
-    # Vérifier unicité username/email
-    existing_user = db.query(User).filter((User.username == username) | (User.email == email)).first()
+    # Vérifier unicité username/email parmi les photographes/admins (event_id=NULL)
+    existing_user = db.query(User).filter(
+        ((User.username == username) | (User.email == email)) &
+        (User.event_id == None)
+    ).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username ou email déjà utilisé")
 
@@ -3906,6 +3924,7 @@ async def admin_create_admin(
         email=email,
         hashed_password=hashed_password,
         user_type=UserType.ADMIN
+        # event_id reste NULL (par défaut)
     )
     db.add(db_user)
     db.commit()
@@ -4674,19 +4693,27 @@ async def register_with_event_code(
     """Inscription d'un utilisateur avec un code événement saisi manuellement, avec agrégation des erreurs"""
     errors: list[str] = []
 
-    # Vérifier disponibilité username/email (agrégé)
+    # Vérifier l'event_code d'abord (nécessaire pour vérifier l'unicité par événement)
+    event = find_event_by_code(db, event_code)
+    if not event:
+        errors.append("Code événement invalide")
+        # Si pas d'event, impossible de vérifier l'unicité par événement
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+
+    # Vérifier disponibilité username/email POUR CET ÉVÉNEMENT (agrégé)
     existing_user = db.query(User).filter(
-        (User.username == user_data.username) | (User.email == user_data.email)
+        ((User.username == user_data.username) | (User.email == user_data.email)) &
+        (User.event_id == event.id)
     ).first()
     if existing_user:
         try:
             if existing_user.username == user_data.username:
-                errors.append("Nom d'utilisateur déjà pris")
+                errors.append("Nom d'utilisateur déjà pris pour cet événement")
         except Exception:
             pass
         try:
             if existing_user.email == user_data.email:
-                errors.append("Email déjà utilisé")
+                errors.append("Email déjà utilisé pour cet événement")
         except Exception:
             pass
 
@@ -4697,11 +4724,6 @@ async def register_with_event_code(
         msg = str(e.detail) if hasattr(e, "detail") else "Mot de passe invalide"
         if msg not in errors:
             errors.append(msg)
-
-    # Vérifier l'event_code (sans interrompre)
-    event = find_event_by_code(db, event_code)
-    if not event:
-        errors.append("Code événement invalide")
 
     # Si erreurs, les renvoyer toutes ensemble
     if errors:
@@ -4714,7 +4736,8 @@ async def register_with_event_code(
         username=user_data.username,
         email=user_data.email,
         hashed_password=hashed_password,
-        user_type=UserType.USER
+        user_type=UserType.USER,
+        event_id=event.id  # NEW: Lier l'utilisateur à son événement principal
     )
     db.add(db_user)
     db.commit()

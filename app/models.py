@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table, LargeBinary, Float
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table, LargeBinary, Float, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -36,14 +36,22 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
+    username = Column(String, index=True)  # Removed unique=True (now handled by composite constraint)
+    email = Column(String, index=True)  # Removed unique=True (now handled by composite constraint)
     hashed_password = Column(String)
     user_type = Column(String, default=UserType.USER)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True)  # NEW: événement principal
     selfie_path = Column(String, nullable=True)
     selfie_data = Column(LargeBinary, nullable=True)  # Données binaires du selfie
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Contraintes unique composites : permet le même email/username pour des événements différents
+    # COALESCE(event_id, -1) traite NULL comme -1 pour garantir l'unicité des photographes/admins
+    __table_args__ = (
+        Index('users_email_event_unique', 'email', func.coalesce(event_id, -1), unique=True),
+        Index('users_username_event_unique', 'username', func.coalesce(event_id, -1), unique=True),
+    )
     
     # Relations - spécifier explicitement les clés étrangères
     photos = relationship("Photo", back_populates="owner", foreign_keys="Photo.user_id")
@@ -51,6 +59,7 @@ class User(Base):
     face_matches = relationship("FaceMatch", back_populates="user")
     events = relationship("Event", back_populates="photographer", foreign_keys="Event.photographer_id")
     user_events = relationship("UserEvent", back_populates="user")
+    primary_event = relationship("Event", foreign_keys=[event_id])  # NEW: relation vers l'événement principal
 
 class Photo(Base):
     __tablename__ = "photos"
