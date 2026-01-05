@@ -47,6 +47,25 @@ echo "  - PORT: ${PORT:-10000}"
 echo "  - DATABASE_URL: ${DATABASE_URL:-sqlite:///./face_recognition.db}"
 
 
-# Démarrer l'application
-echo "🌐 Démarrage du serveur sur le port ${PORT:-10000}..."
-exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000} --log-level info 
+# Calculer le nombre optimal de workers
+# Formule: (2 x CPU) + 1
+# AWS a 2 vCPU donc: (2 x 2) + 1 = 5 workers
+WORKERS=${GUNICORN_WORKERS:-5}
+
+# Démarrer l'application avec Gunicorn pour multi-workers
+echo "🌐 Démarrage du serveur avec Gunicorn..."
+echo "  - Workers: ${WORKERS}"
+echo "  - Port: ${PORT:-10000}"
+echo "  - Timeout: 120s"
+
+exec gunicorn main:app \
+  --workers ${WORKERS} \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --bind 0.0.0.0:${PORT:-10000} \
+  --timeout 120 \
+  --keep-alive 5 \
+  --max-requests 1000 \
+  --max-requests-jitter 100 \
+  --access-logfile - \
+  --error-logfile - \
+  --log-level info

@@ -1,0 +1,92 @@
+# ============================================================================
+# CONFIGURATION OPTIMISÉE POUR AWS (2 vCPU)
+# ============================================================================
+# Ce fichier contient les variables d'environnement recommandées pour
+# supporter 30+ utilisateurs simultanés sur une instance AWS avec 2 CPU
+# ============================================================================
+
+# === GUNICORN / SERVEUR ===
+# Nombre de workers: formule (2 x CPU) + 1 = 5 pour 2 vCPU
+GUNICORN_WORKERS=5
+
+# === AWS REKOGNITION ===
+# Augmentation du nombre de requêtes AWS concurrentes
+# Avec 5 workers, on peut gérer plus de requêtes en parallèle
+AWS_CONCURRENT_REQUESTS=20
+
+# Autres paramètres AWS (ajuster selon vos besoins)
+AWS_REKOGNITION_SEARCH_MAXFACES=10
+AWS_REKOGNITION_SELFIE_SEARCH_MAXFACES=500
+AWS_REKOGNITION_SIMILARITY_THRESHOLD=80
+
+# === BASE DE DONNÉES ===
+# Pool de connexions adapté aux multi-workers
+# 5 workers × 6 connexions/worker = 30 connexions de base + overflow
+DB_POOL_SIZE=30
+DB_MAX_OVERFLOW=70
+DB_POOL_RECYCLE=1800
+DB_POOL_TIMEOUT=60
+
+# === PERFORMANCE ===
+# Limite le nombre de threads pour éviter la sur-utilisation CPU
+MKL_NUM_THREADS=1
+NUMEXPR_NUM_THREADS=1
+OMP_NUM_THREADS=1
+OPENBLAS_NUM_THREADS=1
+OPENCV_NUM_THREADS=1
+
+# === UPLOADS ===
+# Traitement par batch pour les uploads massifs
+UPLOAD_SUB_BATCH_SIZE=5
+
+# === LOGS ===
+# Niveau de log (info recommandé en production)
+LOG_LEVEL=info
+
+# === AUTRES PARAMÈTRES ===
+# (À personnaliser selon votre configuration AWS)
+
+# Port (défini généralement par AWS App Runner)
+# PORT=10000
+
+# Base de données PostgreSQL
+# DATABASE_URL=postgresql://user:password@host:5432/dbname
+
+# Clé secrète pour JWT (IMPORTANT: changer en production!)
+# SECRET_KEY=votre-clé-secrète-très-longue-et-complexe
+
+# AWS Credentials (si pas dans IAM Role)
+# AWS_ACCESS_KEY_ID=votre-access-key
+# AWS_SECRET_ACCESS_KEY=votre-secret-key
+# AWS_REGION=eu-west-3
+
+# Email SMTP (optionnel)
+# SMTP_HOST=smtp.gmail.com
+# SMTP_PORT=587
+# SMTP_USERNAME=votre@email.com
+# SMTP_PASSWORD=votre-mot-de-passe-application
+# SMTP_USE_TLS=true
+# MAIL_FROM=noreply@votredomaine.com
+# MAIL_FROM_NAME=Votre App
+
+# ============================================================================
+# NOTES DE DÉPLOIEMENT
+# ============================================================================
+#
+# 1. Copier les variables pertinentes dans votre console AWS App Runner
+#    ou dans votre service.json
+#
+# 2. Après modification, redéployer l'application
+#
+# 3. Vérifier que les workers tournent correctement:
+#    - Connexion SSH à votre instance
+#    - Commande: ps aux | grep gunicorn
+#    - Vous devriez voir 6 processus (1 master + 5 workers)
+#
+# 4. Monitoring des performances:
+#    - CPU: devrait atteindre 70-90% sous charge
+#    - Connexions DB: surveiller avec pgAdmin ou AWS CloudWatch
+#    - Logs AWS Rekognition: vérifier les limites de quota
+#
+# ============================================================================
+
