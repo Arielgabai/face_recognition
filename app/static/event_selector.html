@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sélection d'Événement</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .event-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #fff;
+        }
+        
+        .event-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+        
+        .event-card.selected {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .event-name {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .event-details {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .event-code {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        
+        .event-date {
+            color: #999;
+            font-size: 13px;
+            margin-top: 5px;
+        }
+        
+        .btn-container {
+            margin-top: 30px;
+            text-align: center;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .back-link a {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+        
+        .info-box {
+            background: #e8f4ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 8px;
+        }
+        
+        .info-box p {
+            color: #555;
+            margin: 0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎉 Sélection d'Événement</h1>
+        <p class="subtitle">Plusieurs comptes sont associés à cette adresse email</p>
+        
+        <div class="info-box">
+            <p>💡 Sélectionnez l'événement auquel vous souhaitez accéder</p>
+        </div>
+        
+        <div id="events-list">
+            <!-- Les événements seront injectés ici par JavaScript -->
+        </div>
+        
+        <div class="btn-container">
+            <button id="confirm-btn" class="btn" onclick="confirmSelection()" disabled>
+                Continuer vers cet événement
+            </button>
+        </div>
+        
+        <div class="back-link">
+            <a href="/">← Retour à la connexion</a>
+        </div>
+    </div>
+
+    <script>
+        let selectedUserId = null;
+        let accounts = [];
+        let credentials = null;
+
+        // Récupérer les données passées via localStorage ou sessionStorage
+        function loadAccounts() {
+            try {
+                const data = sessionStorage.getItem('login_accounts');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    accounts = parsed.accounts || [];
+                    credentials = parsed.credentials || null;
+                    displayAccounts();
+                } else {
+                    // Rediriger vers login si pas de données
+                    window.location.href = '/';
+                }
+            } catch (e) {
+                console.error('Erreur chargement comptes:', e);
+                window.location.href = '/';
+            }
+        }
+
+        function displayAccounts() {
+            const container = document.getElementById('events-list');
+            if (!accounts || accounts.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #999;">Aucun événement trouvé</p>';
+                return;
+            }
+
+            container.innerHTML = accounts.map(account => `
+                <div class="event-card" onclick="selectEvent(${account.user_id})">
+                    <div class="event-name">${account.event_name || 'Événement'}</div>
+                    <div class="event-details">
+                        Compte : ${account.username}
+                        ${account.event_code ? '<span class="event-code">' + account.event_code + '</span>' : ''}
+                    </div>
+                    ${account.event_date ? '<div class="event-date">📅 ' + new Date(account.event_date).toLocaleDateString('fr-FR') + '</div>' : ''}
+                </div>
+            `).join('');
+        }
+
+        function selectEvent(userId) {
+            selectedUserId = userId;
+            
+            // Highlight la sélection
+            document.querySelectorAll('.event-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            event.target.closest('.event-card').classList.add('selected');
+            
+            // Activer le bouton
+            document.getElementById('confirm-btn').disabled = false;
+        }
+
+        async function confirmSelection() {
+            if (!selectedUserId || !credentials) {
+                alert('Erreur: sélection invalide');
+                return;
+            }
+
+            try {
+                // Re-tenter le login avec le user_id spécifique
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: credentials.username,
+                        password: credentials.password,
+                        user_id: selectedUserId
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.access_token) {
+                    // Stocker le token
+                    localStorage.setItem('token', data.access_token);
+                    
+                    // Nettoyer sessionStorage
+                    sessionStorage.removeItem('login_accounts');
+                    
+                    // Rediriger selon le type d'utilisateur
+                    const account = accounts.find(a => a.user_id === selectedUserId);
+                    if (account) {
+                        if (account.user_type === 'admin') {
+                            window.location.href = '/admin';
+                        } else if (account.user_type === 'photographer') {
+                            window.location.href = '/photographer';
+                        } else {
+                            window.location.href = '/gallery';
+                        }
+                    } else {
+                        window.location.href = '/';
+                    }
+                } else {
+                    alert(data.detail || 'Erreur de connexion');
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                alert('Erreur de connexion');
+            }
+        }
+
+        // Charger au démarrage
+        document.addEventListener('DOMContentLoaded', loadAccounts);
+    </script>
+</body>
+</html>
+

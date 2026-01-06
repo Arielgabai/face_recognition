@@ -2087,13 +2087,31 @@ async def register_page(event_code: str = None):
 async def check_user_availability(
     username: str = Body(None),
     email: str = Body(None),
+    event_code: str = Body(None),
     db: Session = Depends(get_db)
 ):
+    """Vérifier la disponibilité username/email POUR UN ÉVÉNEMENT SPÉCIFIQUE"""
     result = {"username_taken": False, "email_taken": False}
+    
+    # Si pas d'event_code, on ne peut pas vérifier correctement (retour par défaut)
+    if not event_code:
+        return result
+    
+    # Trouver l'événement
+    event = find_event_by_code(db, event_code)
+    if not event:
+        return result
+    
+    # Vérifier uniquement pour CET événement
     if username:
-        result["username_taken"] = db.query(User).filter(User.username == username).first() is not None
+        result["username_taken"] = db.query(User).filter(
+            (User.username == username) & (User.event_id == event.id)
+        ).first() is not None
     if email:
-        result["email_taken"] = db.query(User).filter(User.email == email).first() is not None
+        result["email_taken"] = db.query(User).filter(
+            (User.email == email) & (User.event_id == event.id)
+        ).first() is not None
+    
     return result
 
 # Vérification validité code événement
@@ -2121,6 +2139,15 @@ async def spa_login():
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Face Recognition API</h1><p>Frontend not found</p>")
+
+@app.get("/select-event", response_class=HTMLResponse)
+async def select_event_page():
+    """Page de sélection d'événement pour les utilisateurs avec plusieurs comptes"""
+    try:
+        with open("static/event_selector.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Sélection d'Événement</h1><p>Page non trouvée</p>")
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def spa_dashboard():
@@ -2346,29 +2373,91 @@ async def register_invite_with_selfie(
 
     return db_user
 
-@app.post("/api/login", response_model=Token)
-async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    """Connexion utilisateur - accepte username OU email"""
+@app.post("/api/login")
+async def login(user_credentials: UserLogin, user_id: int = Body(None), db: Session = Depends(get_db)):
+    """Connexion utilisateur - accepte username OU email.
+    
+    Si plusieurs comptes existent pour le même email (événements différents),
+    retourne la liste des événements pour que l'utilisateur choisisse.
+    
+    Si user_id est fourni, authentifie directement ce compte spécifique.
+    """
     try:
-        # Chercher l'utilisateur par username OU par email (case-insensitive pour email)
-        user = db.query(User).filter(
+        # Si user_id fourni, authentifier ce compte spécifique
+        if user_id:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user or not verify_password(user_credentials.password, user.hashed_password):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Identifiant ou mot de passe incorrect",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # Créer le token pour ce compte spécifique
+            access_token_expires = timedelta(minutes=30)
+            access_token = create_access_token(
+                data={"sub": user.username, "user_id": user.id}, expires_delta=access_token_expires
+            )
+            
+            return {"access_token": access_token, "token_type": "bearer"}
+        
+        # Chercher TOUS les utilisateurs avec cet identifiant (username OU email)
+        users = db.query(User).filter(
             (User.username == user_credentials.username) | 
             (func.lower(User.email) == func.lower(user_credentials.username))
-        ).first()
+        ).all()
         
-        if not user or not verify_password(user_credentials.password, user.hashed_password):
+        if not users:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Identifiant ou mot de passe incorrect",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        access_token_expires = timedelta(minutes=30)
-        access_token = create_access_token(
-            data={"sub": user.username}, expires_delta=access_token_expires
-        )
+        # Vérifier le mot de passe pour chaque compte trouvé
+        valid_users = [u for u in users if verify_password(user_credentials.password, u.hashed_password)]
         
-        return {"access_token": access_token, "token_type": "bearer"}
+        if not valid_users:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Identifiant ou mot de passe incorrect",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Si un seul compte valide, connecter directement
+        if len(valid_users) == 1:
+            user = valid_users[0]
+            access_token_expires = timedelta(minutes=30)
+            access_token = create_access_token(
+                data={"sub": user.username, "user_id": user.id}, expires_delta=access_token_expires
+            )
+            return {"access_token": access_token, "token_type": "bearer"}
+        
+        # Si plusieurs comptes (événements différents), retourner la liste pour sélection
+        events_list = []
+        for u in valid_users:
+            event_info = {"user_id": u.id, "username": u.username, "user_type": u.user_type}
+            
+            # Récupérer l'événement principal
+            if u.event_id:
+                event = db.query(Event).filter(Event.id == u.event_id).first()
+                if event:
+                    event_info.update({
+                        "event_id": event.id,
+                        "event_name": event.name,
+                        "event_code": event.event_code,
+                        "event_date": event.date.isoformat() if event.date else None
+                    })
+            
+            events_list.append(event_info)
+        
+        # Retourner la liste pour que le frontend affiche un sélecteur
+        return {
+            "multiple_accounts": True,
+            "accounts": events_list,
+            "message": "Plusieurs comptes trouvés. Veuillez choisir votre événement."
+        }
+        
     except HTTPException:
         # Re-raise les HTTPException (401, etc.)
         raise
