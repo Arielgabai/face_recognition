@@ -38,6 +38,7 @@ export interface UserProfile {
 export interface LoginCredentials {
   username: string;
   password: string;
+  user_id?: number; // Pour se connecter à un compte spécifique quand plusieurs existent
 }
 
 export interface RegisterData {
@@ -50,7 +51,7 @@ export interface RegisterData {
 export interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (credentials: LoginCredentials) => Promise<void>;
+  login: (credentials: LoginCredentials) => Promise<any>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
   isLoading: boolean;

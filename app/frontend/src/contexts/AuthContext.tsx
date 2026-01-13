@@ -62,6 +62,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (credentials: LoginCredentials) => {
     try {
       const response = await authService.login(credentials);
+      
+      // Vérifier si plusieurs comptes existent (email utilisé pour plusieurs événements)
+      if (response.data.multiple_accounts) {
+        // Retourner les informations pour que le composant Login affiche le sélecteur
+        return response.data;
+      }
+      
       const access_token: string = response.data.access_token;
 
       // Récupérer les informations de l'utilisateur
@@ -73,6 +80,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       localStorage.setItem('token', access_token);
       localStorage.setItem('user', JSON.stringify(userData));
+      
+      return response.data;
     } catch (error) {
       throw error;
     }

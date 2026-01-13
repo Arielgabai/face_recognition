@@ -2090,27 +2090,60 @@ async def check_user_availability(
     event_code: str = Body(None),
     db: Session = Depends(get_db)
 ):
-    """Vérifier la disponibilité username/email POUR UN ÉVÉNEMENT SPÉCIFIQUE"""
-    result = {"username_taken": False, "email_taken": False}
+    """Vérifier la disponibilité username/email.
     
-    # Si pas d'event_code, on ne peut pas vérifier correctement (retour par défaut)
-    if not event_code:
-        return result
+    Si event_code fourni : vérifie pour CET événement spécifique
+    Si pas d'event_code : vérifie globalement (pour validation temps réel)
+    """
+    result = {
+        "username_taken": False, 
+        "email_taken": False,
+        "email_exists_other_events": False,
+        "username_exists_other_events": False
+    }
     
-    # Trouver l'événement
-    event = find_event_by_code(db, event_code)
-    if not event:
-        return result
+    # Trouver l'événement si fourni
+    event = None
+    if event_code:
+        event = find_event_by_code(db, event_code)
     
-    # Vérifier uniquement pour CET événement
     if username:
-        result["username_taken"] = db.query(User).filter(
-            (User.username == username) & (User.event_id == event.id)
-        ).first() is not None
+        if event:
+            # Vérifier pour cet événement spécifique
+            result["username_taken"] = db.query(User).filter(
+                (User.username == username) & (User.event_id == event.id)
+            ).first() is not None
+            
+            # Vérifier si existe pour d'autres événements (info)
+            if not result["username_taken"]:
+                other_count = db.query(User).filter(
+                    (User.username == username) & (User.event_id != event.id)
+                ).count()
+                result["username_exists_other_events"] = other_count > 0
+        else:
+            # Vérifier globalement (feedback temps réel)
+            result["username_taken"] = db.query(User).filter(User.username == username).first() is not None
+    
     if email:
-        result["email_taken"] = db.query(User).filter(
-            (User.email == email) & (User.event_id == event.id)
-        ).first() is not None
+        if event:
+            # Vérifier pour cet événement spécifique
+            result["email_taken"] = db.query(User).filter(
+                (User.email == email) & (User.event_id == event.id)
+            ).first() is not None
+            
+            # Vérifier si existe pour d'autres événements (info)
+            if not result["email_taken"]:
+                other_count = db.query(User).filter(
+                    (User.email == email) & (User.event_id != event.id)
+                ).count()
+                result["email_exists_other_events"] = other_count > 0
+        else:
+            # Vérifier globalement (feedback temps réel)
+            existing = db.query(User).filter(User.email == email).first()
+            result["email_taken"] = existing is not None
+            # Info : si email existe, c'est peut-être pour un autre événement
+            if existing:
+                result["email_exists_other_events"] = True
     
     return result
 
@@ -2374,18 +2407,18 @@ async def register_invite_with_selfie(
     return db_user
 
 @app.post("/api/login")
-async def login(user_credentials: UserLogin, user_id: int = Body(None), db: Session = Depends(get_db)):
+async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     """Connexion utilisateur - accepte username OU email.
     
     Si plusieurs comptes existent pour le même email (événements différents),
     retourne la liste des événements pour que l'utilisateur choisisse.
     
-    Si user_id est fourni, authentifie directement ce compte spécifique.
+    Si user_id est fourni dans user_credentials, authentifie directement ce compte spécifique.
     """
     try:
         # Si user_id fourni, authentifier ce compte spécifique
-        if user_id:
-            user = db.query(User).filter(User.id == user_id).first()
+        if user_credentials.user_id:
+            user = db.query(User).filter(User.id == user_credentials.user_id).first()
             if not user or not verify_password(user_credentials.password, user.hashed_password):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

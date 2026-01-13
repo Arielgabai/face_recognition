@@ -20,6 +20,7 @@ class UserCreateWithSelfie(UserBase):
 class UserLogin(BaseModel):
     username: str
     password: str
+    user_id: Optional[int] = None  # Pour sélection de compte spécifique quand plusieurs événements
 
 class User(UserBase):
     id: int

@@ -11,12 +11,25 @@ import {
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import AccountSelector from './AccountSelector';
+
+interface AccountInfo {
+  user_id: number;
+  username: string;
+  user_type: string;
+  event_id?: number;
+  event_name?: string;
+  event_code?: string;
+  event_date?: string;
+}
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAccountSelector, setShowAccountSelector] = useState(false);
+  const [availableAccounts, setAvailableAccounts] = useState<AccountInfo[]>([]);
   
   const { login, user, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -40,7 +53,33 @@ const Login: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await login({ username, password });
+      const result = await login({ username, password });
+      
+      // Si plusieurs comptes existent, afficher le sélecteur
+      if (result && result.multiple_accounts && result.accounts) {
+        setAvailableAccounts(result.accounts);
+        setShowAccountSelector(true);
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Connexion réussie avec un seul compte
+      navigate('/dashboard');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Erreur de connexion');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAccountSelection = async (account: AccountInfo) => {
+    setShowAccountSelector(false);
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      // Se connecter avec l'user_id spécifique
+      await login({ username, password, user_id: account.user_id });
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Erreur de connexion');
@@ -130,6 +169,14 @@ const Login: React.FC = () => {
           </Box>
         </Paper>
       </Box>
+      
+      {/* Sélecteur de compte pour emails utilisés sur plusieurs événements */}
+      <AccountSelector
+        open={showAccountSelector}
+        accounts={availableAccounts}
+        onSelectAccount={handleAccountSelection}
+        onClose={() => setShowAccountSelector(false)}
+      />
     </Container>
   );
 };

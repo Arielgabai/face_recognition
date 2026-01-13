@@ -122,8 +122,8 @@ export const photoService = {
 
 // Validation / helpers
 export const validationService = {
-  checkUserAvailability: (payload: { username?: string; email?: string }) =>
-    api.post('/check-user-availability', payload).then(r => r.data as { username_taken: boolean; email_taken: boolean }),
+  checkUserAvailability: (payload: { username?: string; email?: string; event_code?: string }) =>
+    api.post('/check-user-availability', payload).then(r => r.data as { username_taken: boolean; email_taken: boolean; email_exists_other_events?: boolean; username_exists_other_events?: boolean }),
   checkEventCode: (eventCode: string) =>
     api.post('/check-event-code', { event_code: eventCode }).then(r => r.data as { valid: boolean }),
 };

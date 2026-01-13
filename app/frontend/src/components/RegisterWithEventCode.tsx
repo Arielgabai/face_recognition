@@ -103,13 +103,14 @@ const RegisterWithEventCode: React.FC<RegisterWithEventCodeProps> = ({ eventCode
       const availability = await validationService.checkUserAvailability({
         username: formData.username,
         email: formData.email,
+        event_code: formData.eventCode, // Vérifier pour cet événement spécifique
       });
       if (availability?.username_taken) {
-        setUsernameError("Nom d'utilisateur déjà pris");
+        setUsernameError("Nom d'utilisateur déjà pris pour cet événement");
         hasError = true;
       }
       if (availability?.email_taken) {
-        setEmailError('Email déjà utilisé');
+        setEmailError('Email déjà utilisé pour cet événement');
         hasError = true;
       }
     } catch {}
