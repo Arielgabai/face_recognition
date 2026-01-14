@@ -2418,20 +2418,8 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     try:
         # Si user_id fourni, authentifier ce compte spécifique
         if user_credentials.user_id:
-            print(f"[LOGIN] Attempting login with user_id: {user_credentials.user_id}")
             user = db.query(User).filter(User.id == user_credentials.user_id).first()
-            if not user:
-                print(f"[LOGIN] User not found with id: {user_credentials.user_id}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Identifiant ou mot de passe incorrect",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            
-            print(f"[LOGIN] User found: {user.username} (id={user.id}, event_id={user.event_id})")
-            
-            if not verify_password(user_credentials.password, user.hashed_password):
-                print(f"[LOGIN] Invalid password for user_id: {user_credentials.user_id}")
+            if not user or not verify_password(user_credentials.password, user.hashed_password):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Identifiant ou mot de passe incorrect",
@@ -2444,7 +2432,6 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
                 data={"sub": user.username, "user_id": user.id}, expires_delta=access_token_expires
             )
             
-            print(f"[LOGIN] Login successful for user_id: {user.id}, event_id: {user.event_id}")
             return {"access_token": access_token, "token_type": "bearer"}
         
         # Chercher TOUS les utilisateurs avec cet identifiant (username OU email)

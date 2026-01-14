@@ -2379,8 +2379,9 @@
 
             // Stocker les credentials
             tempLoginCredentials = { username, password };
+            console.log('[Account Selector] Credentials stored');
 
-            // Créer l'overlay de sélection avec design harmonieux
+            // Créer l'overlay de sélection avec design sombre harmonieux
             const overlay = document.createElement('div');
             overlay.id = 'accountSelectorOverlay';
             overlay.style.cssText = `
@@ -2389,7 +2390,7 @@
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(118, 75, 162, 0.9) 100%);
+                background: rgba(0, 0, 0, 0.85);
                 backdrop-filter: blur(10px);
                 display: flex;
                 align-items: center;
@@ -2400,14 +2401,15 @@
 
             const modal = document.createElement('div');
             modal.style.cssText = `
-                background: white;
+                background: linear-gradient(135deg, rgba(13, 13, 28, 0.95) 0%, rgba(22, 22, 58, 0.95) 100%);
+                border: 1px solid rgba(138, 43, 226, 0.35);
                 border-radius: 20px;
                 padding: 32px;
                 max-width: 500px;
                 width: 90%;
                 max-height: 85vh;
                 overflow-y: auto;
-                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 40px rgba(138, 43, 226, 0.3);
                 animation: slideUp 0.3s ease-out;
             `;
 
@@ -2422,57 +2424,59 @@
                         to { transform: translateY(0); opacity: 1; }
                     }
                     .account-card {
-                        border: 2px solid #e0e0e0;
+                        border: 1px solid rgba(138, 43, 226, 0.35);
                         border-radius: 12px;
                         padding: 20px;
-                        background: white;
+                        background: rgba(255, 255, 255, 0.03);
                         cursor: pointer;
                         text-align: left;
                         transition: all 0.2s ease;
                         width: 100%;
                         margin-bottom: 12px;
+                        backdrop-filter: blur(10px);
                     }
                     .account-card:hover {
-                        border-color: #667eea;
-                        background: linear-gradient(135deg, #f8f9ff 0%, #f0f2ff 100%);
+                        border-color: #8a2be2;
+                        background: rgba(138, 43, 226, 0.12);
                         transform: translateY(-2px);
-                        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+                        box-shadow: 0 6px 20px rgba(138, 43, 226, 0.35), 0 0 15px rgba(57, 255, 20, 0.15);
                     }
                     .account-card:active {
                         transform: translateY(0);
                     }
                     .badge {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        background: linear-gradient(135deg, #8a2be2, #6a1fbf);
                         color: white;
                         padding: 4px 12px;
                         border-radius: 20px;
                         font-size: 0.75rem;
                         font-weight: 600;
                         display: inline-block;
+                        box-shadow: 0 2px 8px rgba(138, 43, 226, 0.4);
                     }
                     .cancel-btn {
                         margin-top: 16px;
                         width: 100%;
                         padding: 14px;
-                        border: 2px solid #e0e0e0;
+                        border: 1px solid rgba(255, 255, 255, 0.15);
                         border-radius: 12px;
-                        background: white;
+                        background: rgba(255, 255, 255, 0.05);
                         cursor: pointer;
                         font-size: 1rem;
                         font-weight: 500;
-                        color: #666;
+                        color: #e6e7ff;
                         transition: all 0.2s ease;
                     }
                     .cancel-btn:hover {
-                        border-color: #667eea;
-                        color: #667eea;
-                        background: #f8f9ff;
+                        border-color: rgba(138, 43, 226, 0.5);
+                        background: rgba(138, 43, 226, 0.08);
+                        box-shadow: 0 4px 12px rgba(138, 43, 226, 0.2);
                     }
                 </style>
-                <h2 style="margin: 0 0 8px 0; font-size: 1.75rem; color: #667eea; text-align: center; font-weight: 700;">
+                <h2 style="margin: 0 0 8px 0; font-size: 1.75rem; color: #e6e7ff; text-align: center; font-weight: 700; text-shadow: 0 0 20px rgba(138, 43, 226, 0.6);">
                     Sélectionnez votre événement
                 </h2>
-                <p style="color: #666; margin: 0 0 24px 0; font-size: 0.95rem; text-align: center; line-height: 1.5;">
+                <p style="color: #a7a9d6; margin: 0 0 24px 0; font-size: 0.95rem; text-align: center; line-height: 1.5;">
                     Plusieurs comptes sont associés à cet identifiant.<br>
                     Veuillez choisir l'événement auquel vous souhaitez accéder.
                 </p>
@@ -2492,15 +2496,15 @@
                 html += `
                     <button class="account-card" data-account-index="${index}" data-user-id="${account.user_id}">
                         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                            <strong style="font-size: 1.25rem; color: #333; flex: 1;">${eventName}</strong>
+                            <strong style="font-size: 1.25rem; color: #e6e7ff; flex: 1;">${eventName}</strong>
                             ${isPhotographer ? '<span class="badge">📸 Photographe</span>' : ''}
                         </div>
-                        <div style="font-size: 0.9rem; color: #666; line-height: 1.6;">
+                        <div style="font-size: 0.9rem; color: #a7a9d6; line-height: 1.6;">
                             <div style="margin-bottom: 4px;">
-                                <span style="font-weight: 600; color: #667eea;">👤</span> ${account.username}
+                                <span style="font-weight: 600; color: #8a2be2;">👤</span> ${account.username}
                             </div>
-                            ${eventCode ? `<div style="margin-bottom: 4px;"><span style="font-weight: 600; color: #667eea;">🎫</span> ${eventCode}</div>` : ''}
-                            ${eventDate ? `<div><span style="font-weight: 600; color: #667eea;">📅</span> ${eventDate}</div>` : ''}
+                            ${eventCode ? `<div style="margin-bottom: 4px;"><span style="font-weight: 600; color: #8a2be2;">🎫</span> ${eventCode}</div>` : ''}
+                            ${eventDate ? `<div><span style="font-weight: 600; color: #8a2be2;">📅</span> ${eventDate}</div>` : ''}
                         </div>
                     </button>
                 `;
@@ -2508,7 +2512,7 @@
 
             html += `
                 </div>
-                <button class="cancel-btn" onclick="closeAccountSelector()">
+                <button class="cancel-btn" id="cancelAccountSelector">
                     Annuler
                 </button>
             `;
@@ -2519,13 +2523,22 @@
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
-            // Ajouter les event listeners pour chaque carte
+            // Ajouter les event listeners pour chaque carte avec closure
             accounts.forEach((account, index) => {
                 const card = modal.querySelector(`[data-account-index="${index}"]`);
                 if (card) {
-                    card.addEventListener('click', () => selectAccount(account.user_id));
+                    card.addEventListener('click', function() {
+                        console.log('[Account Selector] Card clicked for user_id:', account.user_id);
+                        selectAccount(account.user_id, username, password);
+                    });
                 }
             });
+
+            // Event listener pour le bouton annuler
+            const cancelBtn = modal.querySelector('#cancelAccountSelector');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', closeAccountSelector);
+            }
 
             // Fermer avec Escape
             const escHandler = (e) => {
@@ -2540,18 +2553,30 @@
         function closeAccountSelector() {
             const overlay = document.getElementById('accountSelectorOverlay');
             if (overlay) {
+                overlay.style.transition = 'opacity 0.2s ease-out';
                 overlay.style.opacity = '0';
-                setTimeout(() => overlay.remove(), 200);
+                setTimeout(() => {
+                    overlay.remove();
+                    // Nettoyer les credentials seulement après fermeture complète
+                    tempLoginCredentials = null;
+                }, 200);
+            } else {
+                tempLoginCredentials = null;
             }
-            tempLoginCredentials = null;
         }
 
-        async function selectAccount(userId) {
+        async function selectAccount(userId, username, password) {
             console.log('[Account Selection] userId:', userId);
             
-            if (!tempLoginCredentials) {
-                showAlert('Erreur: informations de connexion manquantes', 'error');
-                return;
+            // Utiliser les paramètres passés directement plutôt que tempLoginCredentials
+            if (!username || !password) {
+                // Fallback sur tempLoginCredentials si les paramètres ne sont pas passés
+                if (!tempLoginCredentials) {
+                    showAlert('Erreur: informations de connexion manquantes', 'error');
+                    return;
+                }
+                username = tempLoginCredentials.username;
+                password = tempLoginCredentials.password;
             }
 
             closeAccountSelector();
@@ -2567,11 +2592,11 @@
 
             try {
                 const loginPayload = { 
-                    username: tempLoginCredentials.username, 
-                    password: tempLoginCredentials.password, 
+                    username: username, 
+                    password: password, 
                     user_id: userId 
                 };
-                console.log('[Account Selection] Login payload:', { ...loginPayload, password: '***' });
+                console.log('[Account Selection] Login payload:', { username, user_id: userId, password: '***' });
 
                 const response = await fetch('/api/login', {
                     method: 'POST',
