@@ -49,12 +49,21 @@ def verify_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
+        user_id: int = payload.get("user_id")  # Récupérer l'user_id si présent
+        
         if username is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
     
-    user = db.query(User).filter(User.username == username).first()
+    # Si user_id est présent dans le token, l'utiliser en priorité
+    # (important pour gérer plusieurs comptes avec le même username sur des événements différents)
+    if user_id is not None:
+        user = db.query(User).filter(User.id == user_id).first()
+    else:
+        # Fallback: chercher par username (pour compatibilité avec anciens tokens)
+        user = db.query(User).filter(User.username == username).first()
+    
     if user is None:
         raise credentials_exception
     return user
