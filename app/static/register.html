@@ -668,11 +668,11 @@
                 const resp = await fetch('/api/check-user-availability', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, email })
+                    body: JSON.stringify({ username, email, event_code: eventCode })
                 });
                 const data = await resp.json().catch(() => ({}));
-                if (data.username_taken) { uErr.textContent = 'Nom d\'utilisateur déjà pris'; uErr.style.display='block'; hasError = true; }
-                if (data.email_taken) { eErr.textContent = 'Email déjà utilisé'; eErr.style.display='block'; hasError = true; }
+                if (data.username_taken) { uErr.textContent = 'Nom d\'utilisateur déjà pris pour cet événement'; uErr.style.display='block'; hasError = true; }
+                if (data.email_taken) { eErr.textContent = 'Email déjà utilisé pour cet événement'; eErr.style.display='block'; hasError = true; }
             } catch {}
             if (hasError) return;
 
@@ -844,11 +844,11 @@
                 const avail = await fetch('/api/check-user-availability', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, email })
+                    body: JSON.stringify({ username, email, event_code: eventCode })
                 }).then(r => r.json()).catch(() => ({}));
                 let taken = false;
-                if (avail && avail.username_taken) { uErr.textContent = "Nom d'utilisateur déjà pris"; uErr.style.display='block'; taken = true; }
-                if (avail && avail.email_taken) { eErr.textContent = "Email déjà utilisé"; eErr.style.display='block'; taken = true; }
+                if (avail && avail.username_taken) { uErr.textContent = "Nom d'utilisateur déjà pris pour cet événement"; uErr.style.display='block'; taken = true; }
+                if (avail && avail.email_taken) { eErr.textContent = "Email déjà utilisé pour cet événement"; eErr.style.display='block'; taken = true; }
                 if (taken) hasError = true;
             } catch {}
             if (hasError) return;
