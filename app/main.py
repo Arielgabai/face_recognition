@@ -1632,66 +1632,21 @@ def validate_selfie_image(image_bytes: bytes) -> None:
         np_img = _np.array(pil_img)
         img_h, img_w = (np_img.shape[0], np_img.shape[1])
 
-        # Si provider Azure actif, tenter une validation via Azure Face Detect d'abord
-        try:
-            provider_env = os.getenv("FACE_RECOGNIZER_PROVIDER", "local").strip().lower()
-            azure_ep = os.getenv("AZURE_FACE_ENDPOINT", "").rstrip("/")
-            azure_key = os.getenv("AZURE_FACE_KEY", "")
-            if provider_env == "azure" and azure_ep and azure_key:
-                resp = requests.post(
-                    f"{azure_ep}/face/v1.0/detect?returnFaceId=true&recognitionModel=recognition_04&detectionModel=detection_03",
-                    headers={
-                        "Ocp-Apim-Subscription-Key": azure_key,
-                        "Content-Type": "application/octet-stream",
-                    },
-                    data=image_bytes,
-                    timeout=15,
-                )
-                if resp.ok:
-                    faces = resp.json() or []
-                    print(f"[SelfieValidation][Azure] faces_detected={len(faces)} img_w={img_w} img_h={img_h}")
-                    if len(faces) == 0:
-                        raise HTTPException(status_code=400, detail="Aucun visage détecté (Azure).")
-                    if len(faces) > 1:
-                        raise HTTPException(status_code=400, detail="Plusieurs visages détectés (Azure).")
-                    rect = faces[0].get("faceRectangle") or {}
-                    face_width = int(rect.get("width", 0))
-                    face_height = int(rect.get("height", 0))
-                    face_area = face_width * face_height
-                    min_abs_area = 5000
-                    min_rel_ratio = 0.008
-                    min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio))
-                    min_side = 44
-                    print(f"[SelfieValidation][Azure] face_w={face_width} face_h={face_height} face_area={face_area} thresholds: min_area={min_face_area} min_side={min_side}")
-                    if face_area < min_face_area or face_width < min_side or face_height < min_side:
-                        raise HTTPException(status_code=400, detail="Visage trop petit (Azure).")
-                    # Azure OK → on valide et on sort
-                    return
-                else:
-                    try:
-                        print(f"[SelfieValidation][Azure] Detect failed: {resp.status_code} {resp.text}")
-                    except Exception:
-                        pass
-        except HTTPException:
-            raise
-        except Exception:
-            # En cas d'erreur Azure, fallback local
-            pass
-
         # Détections multi-techniques (HOG prioritaire, Haar en fallback uniquement si HOG ne trouve rien)
+        # OPTIMISÉ : Réduction de l'upsampling pour performances (0 au lieu de 1)
         import face_recognition as _fr
         faces = []  # (top, right, bottom, left)
 
         try:
-            faces_hog = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=1)
+            faces_hog = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=0)
         except Exception:
             faces_hog = []
         faces.extend(faces_hog or [])
 
-        # Optionnel: upsample supplémentaire uniquement si aucun visage trouvé, pas pour en ajouter d'autres
+        # Si aucun visage trouvé, un seul upsample supplémentaire (1 au lieu de 2)
         if len(faces) == 0:
             try:
-                faces_hog2 = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=2)
+                faces_hog2 = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=1)
             except Exception:
                 faces_hog2 = []
             faces.extend(faces_hog2 or [])
@@ -2636,6 +2591,141 @@ async def delete_my_selfie(
 
 # === GESTION DES SELFIES ===
 
+def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, strict: bool):
+    """
+    Fonction de validation et matching en arrière-plan (OPTIMISÉE).
+    - Valide le selfie (1 visage, qualité OK)
+    - Si invalide : supprime le selfie et notifie l'échec
+    - Si valide : supprime anciennes correspondances et lance le matching
+    """
+    session = next(get_db())
+    try:
+        user = session.query(User).filter(User.id == user_id).first()
+        if not user:
+            print(f"[SelfieValidationBg] User {user_id} not found")
+            return
+        
+        # 1. VALIDATION (si strict activé)
+        strict_env = os.getenv("SELFIE_VALIDATION_STRICT", "true").strip().lower() not in {"false", "0", "no"}
+        if strict and strict_env:
+            try:
+                print(f"[SelfieValidationBg] Validating selfie for user_id={user_id}")
+                validate_selfie_image(file_data)
+                print(f"[SelfieValidationBg] ✅ Validation succeeded for user_id={user_id}")
+            except HTTPException as e:
+                # Validation a échoué : supprimer le selfie
+                print(f"[SelfieValidationBg] ❌ Validation failed for user_id={user_id}: {e.detail}")
+                user.selfie_data = None
+                session.commit()
+                try:
+                    REMATCH_STATUS[user_id] = {
+                        "status": "validation_failed",
+                        "error": e.detail,
+                        "finished_at": time.time(),
+                    }
+                except Exception:
+                    pass
+                return
+            except Exception as e:
+                print(f"[SelfieValidationBg] ❌ Validation error for user_id={user_id}: {e}")
+                user.selfie_data = None
+                session.commit()
+                try:
+                    REMATCH_STATUS[user_id] = {
+                        "status": "validation_failed",
+                        "error": str(e),
+                        "finished_at": time.time(),
+                    }
+                except Exception:
+                    pass
+                return
+        
+        # 2. SUPPRESSION DES ANCIENNES CORRESPONDANCES (optimisé avec subquery)
+        print(f"[SelfieValidationBg] Deleting old face matches for user_id={user_id}")
+        user_events = session.query(UserEvent.event_id).filter(UserEvent.user_id == user_id).all()
+        event_ids = [ue.event_id for ue in user_events]
+        
+        if event_ids:
+            from sqlalchemy import delete, and_, select
+            # DELETE optimisé avec subquery (pas de fetch des photo_ids)
+            stmt = delete(FaceMatch).where(
+                and_(
+                    FaceMatch.user_id == user_id,
+                    FaceMatch.photo_id.in_(
+                        select(Photo.id).where(Photo.event_id.in_(event_ids))
+                    )
+                )
+            )
+            result = session.execute(stmt)
+            session.commit()
+            deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
+            print(f"[SelfieValidationBg] Deleted {deleted_count} old face matches")
+        
+        # 3. MATCHING (rematching de tous les événements)
+        print(f"[SelfieValidationBg] Starting rematch for user_id={user_id}")
+        try:
+            REMATCH_STATUS[user_id] = {
+                "status": "running",
+                "started_at": time.time(),
+                "matched": 0,
+            }
+        except Exception:
+            pass
+        
+        events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
+        total_matches = 0
+        for ue in events:
+            try:
+                from aws_metrics import aws_metrics as _m
+                with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
+                    # S'assurer que les photos de l'événement sont indexées
+                    try:
+                        if hasattr(face_recognizer, 'ensure_event_photos_indexed_once'):
+                            face_recognizer.ensure_event_photos_indexed_once(ue.event_id, session)
+                        elif hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                            if ue.event_id not in getattr(face_recognizer, '_photos_indexed_events', set()):
+                                face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
+                    except Exception as _e:
+                        print(f"[SelfieValidationBg] ensure photos indexed failed: {_e}")
+                    
+                    # Matching
+                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                        total_matches += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
+                    else:
+                        total_matches += face_recognizer.match_user_selfie_with_photos(user, session)
+            except Exception as e:
+                print(f"[SelfieValidationBg] Error matching event {ue.event_id}: {e}")
+                continue
+        
+        print(f"[SelfieValidationBg] ✅ Rematch completed for user_id={user_id}, total_matches={total_matches}")
+        try:
+            REMATCH_STATUS[user_id] = {
+                "status": "done",
+                "finished_at": time.time(),
+                "matched": int(total_matches or 0),
+            }
+        except Exception:
+            pass
+            
+    except Exception as e:
+        print(f"[SelfieValidationBg] Unexpected error for user_id={user_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            REMATCH_STATUS[user_id] = {
+                "status": "error",
+                "error": str(e),
+                "finished_at": time.time(),
+            }
+        except Exception:
+            pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+
 @app.post("/api/upload-selfie")
 async def upload_selfie(
     file: UploadFile = File(...),
@@ -2644,7 +2734,13 @@ async def upload_selfie(
     strict: bool = True,
     background_tasks: BackgroundTasks = None,
 ):
-    """Upload d'un selfie pour l'utilisateur"""
+    """
+    Upload d'un selfie pour l'utilisateur (VERSION OPTIMISÉE ASYNCHRONE).
+    
+    - Sauvegarde immédiate du selfie (réponse rapide au client)
+    - Validation + matching en arrière-plan (ne bloque pas)
+    - Si validation échoue en background, le selfie est supprimé automatiquement
+    """
     if current_user.user_type == UserType.PHOTOGRAPHER:
         raise HTTPException(
             status_code=403, 
@@ -2652,103 +2748,51 @@ async def upload_selfie(
         )
     
     if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Le fichier doit +�tre une image")
+        raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     
     # Lire les données binaires du fichier
     file_data = await file.read()
-    # Valider le selfie (1 visage, taille minimale) sauf si désactivée
-    strict_env = os.getenv("SELFIE_VALIDATION_STRICT", "true").strip().lower() not in {"false", "0", "no"}
-    if strict and strict_env:
-        validate_selfie_image(file_data)
-
-    # Mettre à jour l'utilisateur avec les données binaires
-    current_user.selfie_data = file_data
-    current_user.selfie_path = None  # Plus besoin du chemin de fichier
-    db.commit()
-
-    # Supprimer les anciennes correspondances pour cet utilisateur sur tous ses événements
-    user_events = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).all()
-    from sqlalchemy import and_
-    total_deleted = 0
-    for ue in user_events:
-        photo_ids = [p.id for p in db.query(Photo).filter(Photo.event_id == ue.event_id).all()]
-        if photo_ids:
-            deleted = db.query(FaceMatch).filter(
-                and_(FaceMatch.user_id == current_user.id, FaceMatch.photo_id.in_(photo_ids))
-            ).delete(synchronize_session=False)
-            try:
-                total_deleted += int(deleted or 0)
-            except Exception:
-                pass
-    db.commit()
-
-    # Marquer l'état de rematching en cours pour ce user
+    
+    # Validation rapide : taille maximale
+    if len(file_data) > 10 * 1024 * 1024:  # 10MB max
+        raise HTTPException(status_code=400, detail="Image trop volumineuse (maximum 10MB)")
+    
+    # Validation rapide : format d'image valide
     try:
-        REMATCH_STATUS[current_user.id] = {
-            "status": "running",
-            "started_at": time.time(),
-            "matched": 0,
-        }
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(file_data))
+        img.verify()  # Vérification basique du format
     except Exception:
-        pass
-
-    # Lancer le matching en tâche de fond pour éviter les timeouts côté client
-    def _rematch_all_events(user_id: int):
-        try:
-            session = next(get_db())
-            try:
-                user = session.query(User).filter(User.id == user_id).first()
-                if not user:
-                    return
-                events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
-                total = 0
-                for ue in events:
-                    try:
-                        from aws_metrics import aws_metrics as _m
-                        with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
-                            # S'assurer que les photos de l'événement sont indexées (une seule fois)
-                            # Nécessaire pour que SearchFaces trouve les photos
-                            try:
-                                if hasattr(face_recognizer, 'ensure_event_photos_indexed_once'):
-                                    face_recognizer.ensure_event_photos_indexed_once(ue.event_id, session)
-                                elif hasattr(face_recognizer, 'ensure_event_photos_indexed'):
-                                    # Fallback si la méthode optimisée n'existe pas encore
-                                    if ue.event_id not in getattr(face_recognizer, '_photos_indexed_events', set()):
-                                        face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
-                            except Exception as _e:
-                                print(f"[SelfieUpdate] ensure photos indexed failed: {_e}")
-                            
-                            if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                                total += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
-                            else:
-                                total += face_recognizer.match_user_selfie_with_photos(user, session)
-                    except Exception:
-                        continue
-                print(f"[SelfieUpdate][bg] user_id={user_id} rematch_total={total}")
-                try:
-                    REMATCH_STATUS[user_id] = {
-                        "status": "done",
-                        "finished_at": time.time(),
-                        "matched": int(total or 0),
-                    }
-                except Exception:
-                    pass
-            finally:
-                try:
-                    session.close()
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"[SelfieUpdate][bg] error: {e}")
-
+        raise HTTPException(status_code=400, detail="Format d'image invalide")
+    
+    # ✅ SAUVEGARDE IMMÉDIATE (réponse rapide au client)
+    current_user.selfie_data = file_data
+    current_user.selfie_path = None
+    db.commit()
+    
+    print(f"[SelfieUpload] Selfie saved for user_id={current_user.id}, scheduling validation+matching")
+    
+    # ✅ VALIDATION + MATCHING EN ARRIÈRE-PLAN
     if background_tasks is not None:
-        background_tasks.add_task(_rematch_all_events, current_user.id)
+        background_tasks.add_task(
+            _validate_and_rematch_selfie_background,
+            current_user.id,
+            file_data,
+            strict
+        )
+        return {
+            "message": "Selfie uploadé avec succès. La validation et le matching sont en cours...",
+            "status": "processing"
+        }
     else:
-        # Fallback (ne devrait pas arriver), on exécute en direct
-        _rematch_all_events(current_user.id)
-
-    print(f"[SelfieUpdate] scheduled rematch; deleted_matches={total_deleted} user_id={current_user.id}")
-    return {"message": "Selfie uploadée avec succès", "deleted": total_deleted, "scheduled": True}
+        # Fallback synchrone (si pas de background_tasks)
+        print("[SelfieUpload] WARNING: No background_tasks available, running synchronously")
+        _validate_and_rematch_selfie_background(current_user.id, file_data, strict)
+        return {
+            "message": "Selfie uploadé et traité avec succès",
+            "status": "completed"
+        }
 
 @app.get("/api/rematch-status")
 def get_rematch_status(current_user: User = Depends(get_current_user)):
