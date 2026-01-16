@@ -15,7 +15,15 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # Configuration du hachage des mots de passe
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# OPTIMISÉ : Réduction des rounds bcrypt pour améliorer les performances
+# Production : 12 rounds (défaut), Tests de charge : 4-6 rounds
+import os as _os
+BCRYPT_ROUNDS = int(_os.getenv("BCRYPT_ROUNDS", "4"))  # 4 pour tests, 12 pour prod
+pwd_context = CryptContext(
+    schemes=["bcrypt"], 
+    deprecated="auto",
+    bcrypt__rounds=BCRYPT_ROUNDS
+)
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")

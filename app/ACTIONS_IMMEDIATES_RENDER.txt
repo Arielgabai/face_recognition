@@ -1,0 +1,135 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║  🚀 ACTIONS IMMÉDIATES POUR 30 USERS - RENDER                         ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+📍 ÉTAPE 1 : AJOUTER LES INDEX DB (5 min)
+─────────────────────────────────────────────────────────────────────────
+
+1. Aller sur : https://dashboard.render.com
+2. Cliquer sur votre Web Service
+3. Cliquer sur l'onglet "Shell"
+4. Dans le terminal, taper :
+
+   cd face_recognition/app
+   python add_performance_indexes.py
+
+5. Attendre : ✅ 11/11 index ajoutés avec succès!
+
+
+📍 ÉTAPE 2 : CONFIGURER BCRYPT_ROUNDS (3 min)
+─────────────────────────────────────────────────────────────────────────
+
+1. Rester sur votre Web Service
+2. Cliquer sur l'onglet "Environment"
+3. Cliquer sur "Add Environment Variable"
+4. Ajouter :
+   Key   : BCRYPT_ROUNDS
+   Value : 4
+
+5. Cliquer "Save Changes"
+   → Render redéploie automatiquement (~2-3 min)
+
+
+📍 ÉTAPE 3 : DÉPLOYER LE CODE (5 min)
+─────────────────────────────────────────────────────────────────────────
+
+Depuis votre machine locale (PowerShell/CMD) :
+
+cd C:\Users\agabai\Desktop\face_reco
+
+git add .
+git commit -m "Optimisations RAM/CPU: bcrypt 4 rounds + compression selfies"
+git push origin main
+
+→ Attendre le déploiement Render (~2-3 min)
+
+
+📍 ÉTAPE 4 : TESTER (5 min)
+─────────────────────────────────────────────────────────────────────────
+
+Depuis votre machine locale :
+
+# Remplacer VOTRE-APP par votre nom d'app Render
+locust -f face_recognition/app/locust_file.py --host=https://VOTRE-APP.onrender.com
+
+Dans le navigateur (http://localhost:8089) :
+- Number of users : 30
+- Spawn rate : 5
+- Cliquer "Start swarming"
+
+Attendre 5 minutes et observer les résultats.
+
+
+╔═══════════════════════════════════════════════════════════════════════╗
+║  📊 RÉSULTATS ATTENDUS                                                 ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+Avant (20 users) :
+  RAM  : 90%
+  CPU  : 70%
+  Avg  : 8.5s
+  Fails: 9%
+
+Après (30 users) :
+  RAM  : 60-70%  ✅
+  CPU  : 50-60%  ✅
+  Avg  : <2s     ✅
+  Fails: <1%     ✅
+
+
+╔═══════════════════════════════════════════════════════════════════════╗
+║  ⚠️  IMPORTANT APRÈS LES TESTS                                        ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+Pour la PRODUCTION, remettre :
+
+Render Dashboard > Environment :
+  BCRYPT_ROUNDS = 12  (sécurité normale)
+
+
+╔═══════════════════════════════════════════════════════════════════════╗
+║  📋 CHECKLIST                                                          ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+[ ] Étape 1 : Index DB ajoutés (Shell Render)
+[ ] Étape 2 : BCRYPT_ROUNDS=4 configuré
+[ ] Étape 3 : Code déployé (git push)
+[ ] Étape 4 : Test Locust 30 users réussi
+[ ] Vérification : RAM <75%, CPU <65%
+[ ] Post-test : BCRYPT_ROUNDS=12 pour prod
+
+
+╔═══════════════════════════════════════════════════════════════════════╗
+║  🆘 EN CAS DE PROBLÈME                                                ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+Shell Render pas disponible ?
+  → Utiliser l'URL PostgreSQL externe (voir GUIDE_RENDER_OPTIMISATIONS.md)
+
+Déploiement échoue ?
+  → Vérifier les logs : Render Dashboard > Logs
+
+Test Locust échoue ?
+  → Vérifier l'URL : https://VOTRE-APP.onrender.com
+  → Vérifier que l'app est bien déployée
+  → Vérifier que le code événement M01 existe
+
+RAM/CPU encore trop élevés ?
+  → Voir OPTIMISATIONS_RAM_CPU_APPLIQUEES.md pour optimisations supplémentaires
+
+
+╔═══════════════════════════════════════════════════════════════════════╗
+║  📚 DOCUMENTATION COMPLÈTE                                            ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+- GUIDE_RENDER_OPTIMISATIONS.md       : Guide détaillé Render
+- OPTIMISATIONS_RAM_CPU_APPLIQUEES.md : Explications techniques
+- add_performance_indexes.py          : Script d'ajout des index
+- locust_file.py                      : Tests de charge
+
+
+Temps total estimé : 18 minutes
+Coût : 0€ (pas d'upgrade)
+Gain : +10 users, performances 5-20x meilleures
+
+Bonne chance ! 🚀

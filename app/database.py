@@ -13,10 +13,11 @@ if DATABASE_URL.startswith("postgres://"):
 
 # Options de pool pour éviter les connexions mortes et élargir la capacité
 # Ajustables via variables d'environnement côté déploiement (Render)
-POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20") or "20")
-MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "50") or "50")
+# OPTIMISÉ : Valeurs par défaut réduites pour économiser la RAM (10/20 au lieu de 20/50)
+POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10") or "10")
+MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20") or "20")
 POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800") or "1800")
-POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "60") or "60")
+POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30") or "30")  # Réduit à 30s
 
 # Pour SQLite, désactiver check_same_thread pour éviter les erreurs en environnement async/multithread
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
