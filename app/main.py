@@ -1616,12 +1616,12 @@ def compress_selfie_for_storage(image_bytes: bytes, max_size_kb: int = 200) -> b
     - Réduit la résolution si nécessaire
     - Cible : <200KB par selfie
     """
-    from PIL import Image
+    from PIL import Image, ImageOps
     import io as _io
     
     # Charger l'image
     img = Image.open(_io.BytesIO(image_bytes))
-    img = Image.ImageOps.exif_transpose(img)
+    img = ImageOps.exif_transpose(img)
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
     
