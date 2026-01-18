@@ -12,8 +12,9 @@ import multiprocessing
 import os
 
 # ========== WORKERS ==========
-# Formule recommandée : (2 x CPU cores) + 1
-workers = int(os.getenv("GUNICORN_WORKERS", multiprocessing.cpu_count() * 2 + 1))
+# OPTIMISÉ : 3 workers par défaut (stable avec semaphores dlib/face_recognition)
+# Peut être augmenté à 4 si ressources suffisantes
+workers = int(os.getenv("GUNICORN_WORKERS", "3"))
 worker_class = "uvicorn.workers.UvicornWorker"  # Async workers pour FastAPI
 worker_connections = 1000
 threads = 4  # Threads par worker pour I/O parallèle

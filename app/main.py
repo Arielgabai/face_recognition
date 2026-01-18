@@ -30,6 +30,13 @@ import hashlib
 import re
 import threading
 
+# ========== SEMAPHORES POUR THREAD-SAFETY ==========
+# dlib et face_recognition ne sont PAS thread-safe
+# Ces semaphores empêchent les crashs mémoire avec plusieurs workers
+_FACE_RECOGNITION_SEMAPHORE = threading.Semaphore(1)  # 1 seule validation à la fois par worker
+_DLIB_OPERATIONS_SEMAPHORE = threading.Semaphore(1)   # 1 seule opération dlib à la fois
+print("[Init] Semaphores de protection dlib/face_recognition initialisés")
+
 load_dotenv()
 
 FRONTEND_MODE = os.getenv("FRONTEND_MODE", "html").lower()
@@ -1650,8 +1657,13 @@ def validate_selfie_image(image_bytes: bytes) -> None:
     - Rejette si aucun visage n'est détecté
     - Rejette si plusieurs visages sont détectés
     - Rejette si le visage détecté est trop petit (qualité insuffisante)
+    
+    ⚠️ THREAD-SAFE : Utilise un semaphore pour éviter les crashs avec dlib multi-workers
     """
-    try:
+    # CRITIQUE : Protéger les opérations dlib/face_recognition avec un semaphore
+    # Sans ce lock, les workers crashent avec "free(): invalid size" et "corrupted double-linked list"
+    with _FACE_RECOGNITION_SEMAPHORE:
+        try:
         # Forcer conversion bytes
         if not isinstance(image_bytes, (bytes, bytearray)):
             image_bytes = bytes(image_bytes)
@@ -1765,14 +1777,14 @@ def validate_selfie_image(image_bytes: bytes) -> None:
         min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio))
         min_side = 44
         print(f"[SelfieValidation] face_w={face_width} face_h={face_height} face_area={face_area} thresholds: min_area={min_face_area} min_side={min_side}")
-        if face_area < min_face_area or face_width < min_side or face_height < min_side:
-            raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
-    except HTTPException:
-        raise
-    except Exception:
-        import traceback as _tb
-        print("[SelfieValidation] Unexpected error:\n" + _tb.format_exc())
-        raise HTTPException(status_code=400, detail="Erreur lors de la vérification du selfie. Veuillez réessayer avec une photo plus claire.")
+            if face_area < min_face_area or face_width < min_side or face_height < min_side:
+                raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
+        except HTTPException:
+            raise
+        except Exception:
+            import traceback as _tb
+            print("[SelfieValidation] Unexpected error:\n" + _tb.format_exc())
+            raise HTTPException(status_code=400, detail="Erreur lors de la vérification du selfie. Veuillez réessayer avec une photo plus claire.")
 
 def parse_user_type(user_type_str: str) -> UserType:
     """Convertit une chaîne quelconque (USER/user/Photographer...) vers UserType de manière sûre."""

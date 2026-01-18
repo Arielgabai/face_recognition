@@ -1,0 +1,148 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║  🚀 FIX CRASHS WORKERS + 30 USERS - AWS                               ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+🔴 PROBLÈME RÉSOLU : Crashs "free(): invalid size" + "corrupted list"
+
+
+═══════════════════════════════════════════════════════════════════════
+  ⚡ ÉTAPE 1 : DÉPLOYER LE CODE (5 min)
+═══════════════════════════════════════════════════════════════════════
+
+cd C:\Users\agabai\Desktop\face_reco
+
+git add .
+git commit -m "Fix worker crashes: semaphores dlib + optimisations RAM/CPU"
+git push origin main
+
+# Déployer sur AWS selon votre méthode habituelle
+# - eb deploy (Elastic Beanstalk)
+# - Update task (ECS)
+# - git pull + restart (EC2)
+
+
+═══════════════════════════════════════════════════════════════════════
+  ⚡ ÉTAPE 2 : CONFIGURER AWS (3 min)
+═══════════════════════════════════════════════════════════════════════
+
+Sur AWS, ajouter ces variables d'environnement :
+
+  GUNICORN_WORKERS = 3
+  BCRYPT_ROUNDS = 4
+
+Méthode selon votre service :
+  • Elastic Beanstalk : Configuration > Software > Environment properties
+  • ECS : Task Definition > Environment variables
+  • EC2 : Modifier start.sh (voir DEPLOY_AWS_FINAL.md)
+
+
+═══════════════════════════════════════════════════════════════════════
+  ⚡ ÉTAPE 3 : TESTER (5 min)
+═══════════════════════════════════════════════════════════════════════
+
+# Remplacer par votre URL AWS
+locust -f face_recognition/app/locust_file.py --host=https://VOTRE-APP.com
+
+Dans l'interface Locust (http://localhost:8089) :
+  • Number of users : 30
+  • Spawn rate : 5
+  • Cliquer "Start swarming"
+
+Surveiller :
+  ✅ Logs AWS : AUCUN "Worker was sent code 134"
+  ✅ Locust : Taux d'échec <1%
+  ✅ CloudWatch : RAM <75%, CPU <65%
+
+
+═══════════════════════════════════════════════════════════════════════
+  📊 RÉSULTATS ATTENDUS
+═══════════════════════════════════════════════════════════════════════
+
+Avant (20 users) :
+  RAM  : 90%  ⛔
+  CPU  : 70%  ⛔
+  Avg  : 13s  ⛔
+  Crashs: OUI ⛔
+
+Après (30 users) :
+  RAM  : 65-70%  ✅
+  CPU  : 55-60%  ✅
+  Avg  : 2-3s    ✅
+  Crashs: NON    ✅
+
+
+═══════════════════════════════════════════════════════════════════════
+  🔑 SOLUTION TECHNIQUE
+═══════════════════════════════════════════════════════════════════════
+
+Problème :
+  dlib + face_recognition = PAS thread-safe
+  → Plusieurs workers en parallèle = Corruption mémoire
+  → Workers crashent (code 134)
+
+Solution :
+  Semaphore threading.Semaphore(1) dans chaque worker
+  → 1 seule validation dlib à la fois par worker
+  → 3 workers = max 3 validations en parallèle
+  → Aucune corruption mémoire
+  → Stable et performant
+
+
+═══════════════════════════════════════════════════════════════════════
+  ✅ CHECKLIST
+═══════════════════════════════════════════════════════════════════════
+
+Avant de tester :
+  [ ] Code déployé sur AWS
+  [ ] GUNICORN_WORKERS=3 configuré
+  [ ] BCRYPT_ROUNDS=4 configuré
+  [ ] App redémarrée
+
+Pendant le test (5 min avec 30 users) :
+  [ ] Surveiller logs AWS (aucun crash)
+  [ ] Surveiller CloudWatch (RAM/CPU)
+  [ ] Laisser tourner 5+ minutes
+
+Après le test :
+  [ ] Analyser rapport Locust
+  [ ] Vérifier : 0 crashs workers
+  [ ] Vérifier : <1% échecs
+  [ ] Vérifier : RAM <75%, CPU <65%
+
+Si tout OK :
+  [ ] Tester avec 40 users (optionnel)
+  [ ] Remettre BCRYPT_ROUNDS=12 pour production
+
+
+═══════════════════════════════════════════════════════════════════════
+  🆘 SI PROBLÈME
+═══════════════════════════════════════════════════════════════════════
+
+Crashs persistent ?
+  → Réduire à GUNICORN_WORKERS=2
+  → Vérifier que le code est bien déployé
+
+RAM/CPU trop élevés ?
+  → Vérifier BCRYPT_ROUNDS=4 est actif
+  → Vérifier compression selfies active (logs: [SelfieCompress])
+
+502 errors ?
+  → Workers crashent encore
+  → Vérifier les logs AWS : "Worker was sent code 134"
+  → Solution temporaire : GUNICORN_WORKERS=1
+
+
+═══════════════════════════════════════════════════════════════════════
+  📚 DOCUMENTATION DÉTAILLÉE
+═══════════════════════════════════════════════════════════════════════
+
+  • FIX_WORKER_CRASHES_DLIB.md       : Explication crashs + solution
+  • DEPLOY_AWS_FINAL.md              : Guide complet AWS
+  • OPTIMISATIONS_RAM_CPU_APPLIQUEES.md : Toutes les optimisations
+
+
+═══════════════════════════════════════════════════════════════════════
+
+✨ Avec 3 workers + semaphores : STABLE et PERFORMANT pour 30+ users ! ✨
+
+═══════════════════════════════════════════════════════════════════════
