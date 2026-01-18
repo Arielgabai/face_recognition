@@ -145,9 +145,116 @@ class RegisterUser(HttpUser):
                     print(f"[Locust] ✓ Selfie uploadé avec succès pour {username}")
                 else:
                     print(f"[Locust] ✗ Upload selfie échoué pour {username}: {upload_response.status_code}")
+                    self.has_run = True
+                    gevent.sleep(999999)
+                    return
         except Exception as e:
             print(f"[Locust] Erreur lors de l'upload du selfie pour {username}: {e}")
+            self.has_run = True
+            gevent.sleep(999999)
+            return
 
-        # 👉 A PARTIR D’ICI : ce user a fini son scénario, on le "gèle"
+        # Step 6: Simuler le comportement d'un utilisateur qui consulte ses photos
+        # (comme s'il scrollait sur la page du dashboard)
+        
+        # Attendre un peu (comme si l'utilisateur attendait le matching)
+        gevent.sleep(random.uniform(2, 5))
+        
+        headers_auth = {'Authorization': f'Bearer {token}'}
+        
+        # 6.1 : Récupérer le profil utilisateur
+        try:
+            profile_response = self.client.get(
+                "/api/profile",
+                headers=headers_auth,
+                name="/api/profile"
+            )
+            if profile_response.status_code == 200:
+                profile_data = profile_response.json()
+                photos_with_face = profile_data.get('photos_with_face', 0)
+                print(f"[Locust] {username} - Profil chargé : {photos_with_face} photos matchées")
+        except Exception as e:
+            print(f"[Locust] Erreur profile pour {username}: {e}")
+        
+        # Attendre un peu (scroll)
+        gevent.sleep(random.uniform(0.5, 1.5))
+        
+        # 6.2 : Récupérer les photos matchées (onglet "Mes photos")
+        try:
+            my_photos_response = self.client.get(
+                "/api/my-photos",
+                headers=headers_auth,
+                name="/api/my-photos"
+            )
+            if my_photos_response.status_code == 200:
+                my_photos = my_photos_response.json()
+                print(f"[Locust] {username} - {len(my_photos)} photos matchées récupérées")
+                
+                # Charger quelques miniatures (simuler scroll/affichage)
+                images_to_load = min(5, len(my_photos))  # Charger max 5 premières photos
+                for i in range(images_to_load):
+                    if my_photos[i].get('filename'):
+                        try:
+                            self.client.get(
+                                f"/api/image/{my_photos[i]['filename']}",
+                                headers=headers_auth,
+                                name="/api/image/[matched]"
+                            )
+                        except Exception:
+                            pass
+                        # Petit délai entre chaque image (scroll naturel)
+                        gevent.sleep(random.uniform(0.1, 0.3))
+        except Exception as e:
+            print(f"[Locust] Erreur my-photos pour {username}: {e}")
+        
+        # Attendre un peu (changement d'onglet)
+        gevent.sleep(random.uniform(1, 2))
+        
+        # 6.3 : Récupérer toutes les photos de l'événement (onglet "Toutes les photos")
+        try:
+            all_photos_response = self.client.get(
+                "/api/all-photos",
+                headers=headers_auth,
+                name="/api/all-photos"
+            )
+            if all_photos_response.status_code == 200:
+                all_photos = all_photos_response.json()
+                print(f"[Locust] {username} - {len(all_photos)} photos totales récupérées")
+                
+                # Charger quelques miniatures (simuler scroll)
+                images_to_load = min(10, len(all_photos))  # Charger max 10 premières photos
+                for i in range(images_to_load):
+                    if all_photos[i].get('filename'):
+                        try:
+                            self.client.get(
+                                f"/api/image/{all_photos[i]['filename']}",
+                                headers=headers_auth,
+                                name="/api/image/[all]"
+                            )
+                        except Exception:
+                            pass
+                        # Petit délai entre chaque image
+                        gevent.sleep(random.uniform(0.1, 0.3))
+        except Exception as e:
+            print(f"[Locust] Erreur all-photos pour {username}: {e}")
+        
+        # 6.4 : Vérifier le statut du matching (polling comme ferait le frontend)
+        for _ in range(3):  # 3 tentatives de polling
+            gevent.sleep(random.uniform(2, 4))
+            try:
+                status_response = self.client.get(
+                    "/api/rematch-status",
+                    headers=headers_auth,
+                    name="/api/rematch-status"
+                )
+                if status_response.status_code == 200:
+                    status_data = status_response.json()
+                    if status_data.get('status') == 'done':
+                        print(f"[Locust] ✓ Matching terminé pour {username} : {status_data.get('matched', 0)} matches")
+                        break
+            except Exception:
+                pass
+
+        # 👉 User a fini son scénario complet (création + consultation), on le "gèle"
         self.has_run = True
         gevent.sleep(999999)
