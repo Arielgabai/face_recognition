@@ -29,6 +29,7 @@ import secrets
 import hashlib
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 # ========== SEMAPHORES POUR THREAD-SAFETY ==========
 # dlib et face_recognition ne sont PAS thread-safe
@@ -36,6 +37,16 @@ import threading
 _FACE_RECOGNITION_SEMAPHORE = threading.Semaphore(1)  # 1 seule validation à la fois par worker
 _DLIB_OPERATIONS_SEMAPHORE = threading.Semaphore(1)   # 1 seule opération dlib à la fois
 print("[Init] Semaphores de protection dlib/face_recognition initialisés")
+
+# ========== THREAD POOL POUR LE MATCHING ==========
+# ThreadPoolExecutor séparé pour isoler le matching des workers Gunicorn
+# Cela évite que les workers soient bloqués pendant le matching (qui peut prendre 30-60s)
+_MATCHING_THREAD_POOL_SIZE = int(os.getenv("MATCHING_THREAD_POOL_SIZE", "10"))
+_MATCHING_THREAD_POOL = ThreadPoolExecutor(
+    max_workers=_MATCHING_THREAD_POOL_SIZE,
+    thread_name_prefix="MatchingWorker"
+)
+print(f"[Init] ThreadPool matching initialisé avec {_MATCHING_THREAD_POOL_SIZE} workers")
 
 load_dotenv()
 
@@ -428,7 +439,17 @@ def _startup_photo_queue():
 
 # Arrêt propre de la queue
 @app.on_event("shutdown")
-def _shutdown_photo_queue():
+def _shutdown_services():
+    """Arrêt propre des services de l'application"""
+    # Arrêter le thread pool de matching
+    try:
+        print("[Shutdown] Stopping matching thread pool...")
+        _MATCHING_THREAD_POOL.shutdown(wait=True, cancel_futures=False)
+        print("[Shutdown] Matching thread pool stopped")
+    except Exception as e:
+        print(f"[Shutdown] Warning: could not stop matching thread pool: {e}")
+    
+    # Arrêter la photo queue
     try:
         from photo_queue import shutdown_photo_queue
         shutdown_photo_queue()
@@ -2444,9 +2465,12 @@ async def register_invite_with_selfie(
         except Exception as e:
             print(f"[RegisterInvite][bg] error: {e}")
 
-    if background_tasks is not None:
-        background_tasks.add_task(_rematch_event_for_new_user, db_user.id, event.id)
-    else:
+    # Lancer le matching dans le thread pool (évite blocage du worker)
+    try:
+        _MATCHING_THREAD_POOL.submit(_rematch_event_for_new_user, db_user.id, event.id)
+        print(f"[RegisterInvite] Matching scheduled in thread pool for user_id={db_user.id}")
+    except Exception as e:
+        print(f"[RegisterInvite] ERROR submitting to thread pool: {e}, running synchronously")
         _rematch_event_for_new_user(db_user.id, event.id)
 
     return db_user
@@ -2866,22 +2890,25 @@ async def upload_selfie(
     
     print(f"[SelfieUpload] Selfie saved for user_id={current_user.id}, scheduling validation+matching")
     
-    # ✅ VALIDATION + MATCHING EN ARRIÈRE-PLAN
-    if background_tasks is not None:
-        background_tasks.add_task(
+    # ✅ VALIDATION + MATCHING EN THREAD POOL ISOLÉ (évite les timeouts workers)
+    # Utilisation d'un ThreadPoolExecutor séparé au lieu de background_tasks
+    # pour garantir que les workers Gunicorn ne sont jamais bloqués
+    try:
+        future = _MATCHING_THREAD_POOL.submit(
             _validate_and_rematch_selfie_background,
             current_user.id,
-            file_data,
+            compressed_data,  # Utiliser les données compressées
             strict
         )
+        print(f"[SelfieUpload] Matching scheduled in thread pool for user_id={current_user.id}")
         return {
             "message": "Selfie uploadé avec succès. La validation et le matching sont en cours...",
             "status": "processing"
         }
-    else:
-        # Fallback synchrone (si pas de background_tasks)
-        print("[SelfieUpload] WARNING: No background_tasks available, running synchronously")
-        _validate_and_rematch_selfie_background(current_user.id, file_data, strict)
+    except Exception as e:
+        print(f"[SelfieUpload] ERROR: Failed to submit to thread pool: {e}")
+        # Fallback synchrone en cas d'erreur du pool (ne devrait jamais arriver)
+        _validate_and_rematch_selfie_background(current_user.id, compressed_data, strict)
         return {
             "message": "Selfie uploadé et traité avec succès",
             "status": "completed"
@@ -3217,7 +3244,15 @@ async def admin_rematch_event(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
-    background_tasks.add_task(_rematch_event_via_selfies, event_id)
+    
+    # Lancer le rematch dans le thread pool
+    try:
+        _MATCHING_THREAD_POOL.submit(_rematch_event_via_selfies, event_id)
+        print(f"[Admin] Event rematch scheduled in thread pool for event_id={event_id}")
+    except Exception as e:
+        print(f"[Admin] ERROR submitting rematch to thread pool: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la planification du rematch: {e}")
+    
     return {"scheduled": True, "event_id": event_id}
 
 @app.post("/api/admin/events/{event_id}/repair-matches")
@@ -3396,7 +3431,15 @@ async def photographer_rematch_event(
     ).first()
     if not event:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
-    background_tasks.add_task(_rematch_event_via_selfies, event_id)
+    
+    # Lancer le rematch dans le thread pool
+    try:
+        _MATCHING_THREAD_POOL.submit(_rematch_event_via_selfies, event_id)
+        print(f"[Photographer] Event rematch scheduled in thread pool for event_id={event_id}")
+    except Exception as e:
+        print(f"[Photographer] ERROR submitting rematch to thread pool: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la planification du rematch: {e}")
+    
     return {"scheduled": True, "event_id": event_id}
 
 # === SERVIR LES IMAGES ===
