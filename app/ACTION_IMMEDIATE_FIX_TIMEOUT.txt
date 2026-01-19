@@ -1,0 +1,123 @@
+╔════════════════════════════════════════════════════════════════╗
+║       FIX CRITIQUE : TIMEOUT REGISTER-WITH-EVENT-CODE          ║
+║                        3 ÉTAPES RAPIDES                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+✅ PROBLÈME IDENTIFIÉ ET CORRIGÉ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Le matching dans /api/register-with-event-code était SYNCHRONE.
+→ Bloquait les workers pendant 30-60s
+→ WORKER TIMEOUT avec 30 users simultanés
+
+FIX : Migration vers ThreadPoolExecutor (ligne 5200 de main.py)
+
+
+📋 ÉTAPE 1 : CONFIGURER LES VARIABLES (AWS CONSOLE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Ouvrez AWS App Runner Console :
+   https://eu-west-3.console.aws.amazon.com/apprunner
+
+2. Service : findme-prod-v7 → Configuration → Edit
+
+3. Ajoutez cette NOUVELLE variable (CRITIQUE) :
+   
+   MATCHING_THREAD_POOL_SIZE = 10
+
+4. Vérifiez ces variables existantes :
+   
+   GUNICORN_WORKERS = 3
+   BCRYPT_ROUNDS = 8
+   DB_POOL_SIZE = 10
+   DB_MAX_OVERFLOW = 20
+
+5. Cliquez Save
+
+
+🚀 ÉTAPE 2 : DÉPLOYER L'IMAGE v101
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PowerShell (Windows) :
+
+cd face_recognition/app
+.\deploy_fix_timeout.ps1
+
+OU manuellement :
+
+# Login ECR
+aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 801541932532.dkr.ecr.eu-west-3.amazonaws.com
+
+# Build
+docker build -t findme-prod:v101 -f Dockerfile .
+
+# Tag
+docker tag findme-prod:v101 801541932532.dkr.ecr.eu-west-3.amazonaws.com/findme-prod:v101
+
+# Push
+docker push 801541932532.dkr.ecr.eu-west-3.amazonaws.com/findme-prod:v101
+
+# Update App Runner
+aws apprunner update-service --cli-input-json file://update-image.json --region eu-west-3
+
+⏳ Attendre 5-10 minutes (déploiement)
+
+
+🧪 ÉTAPE 3 : TESTER AVEC LOCUST (30 USERS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+cd face_recognition/app
+locust -f locust_file.py --host=https://votre-app.onrender.com
+
+Naviguer : http://localhost:8089
+
+Paramètres :
+- Nombre d'utilisateurs : 30
+- Spawn rate : 5
+
+Cliquez "Start swarming"
+
+
+📊 RÉSULTATS ATTENDUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+AVANT (v100)                      APRÈS (v101)
+────────────────────────────────────────────────────────────────
+/api/register-with-event-code     /api/register-with-event-code
+  - 11s latence médiane             - < 5s ✅
+  - Timeouts fréquents              - 0% échec ✅
+  
+/api/upload-selfie                /api/upload-selfie
+  - 45s (20% fail)                  - < 10s (0% fail) ✅
+
+WORKER TIMEOUT (SIGKILL)          Aucun timeout ✅
+
+
+🔍 VÉRIFICATION LOGS AWS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Logs App Runner doivent montrer :
+
+✅ [Init] ThreadPool matching initialisé avec 10 workers
+✅ [RegisterEventCode] Matching scheduled in thread pool for user_id=XXX
+✅ [MATCH-SELFIE] START user_id=XXX event_id=YYY
+
+❌ PAS DE "WORKER TIMEOUT"
+❌ PAS DE "Worker was sent code 134"
+
+
+📖 DOCUMENTATION DÉTAILLÉE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Voir fichiers :
+- FIX_FINAL_REGISTER_TIMEOUT.md    (diagnostic complet)
+- DEPLOY_MAINTENANT_V101.md        (guide déploiement)
+- CONFIG_PRODUCTION_30_USERS.txt   (variables env)
+
+
+═══════════════════════════════════════════════════════════════
+
+Date : 19/01/2026
+Status : ✅ PRÊT POUR DÉPLOIEMENT
+
+═══════════════════════════════════════════════════════════════

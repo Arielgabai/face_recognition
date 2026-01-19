@@ -1,0 +1,48 @@
+# ========================================
+# CONFIGURATION PRODUCTION - 30 USERS
+# ========================================
+# Variables d'environnement à configurer sur Render/AWS
+
+# === BASE DE DONNÉES ===
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+
+# === PERFORMANCE - BCRYPT ===
+BCRYPT_ROUNDS=8
+# Production : 8-10 (sécurité)
+# Dev/Test : 4 (rapidité)
+
+# === PERFORMANCE - BASE DE DONNÉES ===
+DB_POOL_SIZE=10
+DB_MAX_OVERFLOW=20
+# Total connexions = WORKERS * DB_POOL_SIZE + DB_MAX_OVERFLOW
+
+# === THREADPOOL MATCHING (CRITIQUE) ===
+MATCHING_THREAD_POOL_SIZE=10
+# Threads dédiés au matching facial
+# Recommandé : 10 pour 30 users, 15 pour 50 users
+
+# === GUNICORN ===
+WORKERS=3
+# 3-4 workers pour 2 vCPU
+WORKER_CLASS=uvicorn.workers.UvicornWorker
+TIMEOUT=120
+GRACEFUL_TIMEOUT=60
+
+# === AWS REKOGNITION ===
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION=eu-west-3
+AWS_REKOGNITION_COLLECTION_ID=your_collection_id
+
+# === JWT ===
+SECRET_KEY=your_secret_key_min_32_chars
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=525600
+
+# === FRONTEND ===
+FRONTEND_MODE=html
+
+# === NOTES IMPORTANTES ===
+# 1. MATCHING_THREAD_POOL_SIZE doit être configuré AVANT le déploiement
+# 2. Ce fix corrige le timeout sur /api/register-with-event-code
+# 3. Voir FIX_FINAL_REGISTER_TIMEOUT.md pour détails

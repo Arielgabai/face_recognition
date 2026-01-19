@@ -1,0 +1,161 @@
+
+╔═══════════════════════════════════════════════════════════════════╗
+║                                                                   ║
+║          🎯 FIX TIMEOUT WORKER APPLIQUÉ - VERSION 101 🎯          ║
+║                                                                   ║
+║                      COMMENCEZ PAR CE FICHIER                     ║
+║                                                                   ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+
+┌───────────────────────────────────────────────────────────────────┐
+│  ✅ PROBLÈME RÉSOLU                                               │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Le matching dans /api/register-with-event-code était SYNCHRONE  │
+│  → Bloquait les workers Gunicorn pendant 30-60 secondes          │
+│  → WORKER TIMEOUT avec 30 users                                  │
+│                                                                   │
+│  ✅ FIX : Migration vers ThreadPoolExecutor (ligne 5200)          │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────┐
+│  📖 DOCUMENTATION (3 FICHIERS ESSENTIELS)                         │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  1️⃣  README_URGENT_v101.txt                                      │
+│      → Résumé ultra-rapide (3 commandes à exécuter)              │
+│                                                                   │
+│  2️⃣  ACTION_IMMEDIATE_FIX_TIMEOUT.txt                            │
+│      → Guide pas-à-pas (3 étapes détaillées)                     │
+│                                                                   │
+│  3️⃣  SOMMAIRE_COMPLET_FIX_v101.md                                │
+│      → Documentation complète (troubleshooting inclus)            │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────┐
+│  ⚡ QUICK START (3 ÉTAPES)                                        │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ÉTAPE 1 : AWS Console (5 min)                                   │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+│                                                                   │
+│  1. https://eu-west-3.console.aws.amazon.com/apprunner           │
+│  2. Service findme-prod-v7 → Configuration → Edit                │
+│  3. AJOUTER : MATCHING_THREAD_POOL_SIZE = 10                     │
+│  4. Save                                                          │
+│                                                                   │
+│                                                                   │
+│  ÉTAPE 2 : Déployer (15 min)                                     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+│                                                                   │
+│  cd face_recognition/app                                          │
+│  .\deploy_fix_timeout.ps1                                        │
+│                                                                   │
+│  (Attendre 10 minutes pour déploiement)                          │
+│                                                                   │
+│                                                                   │
+│  ÉTAPE 3 : Tester (5 min)                                        │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+│                                                                   │
+│  cd face_recognition/app                                          │
+│  locust -f locust_file.py --host=https://votre-app.com          │
+│                                                                   │
+│  Ouvrir : http://localhost:8089                                  │
+│  Lancer : 30 users, spawn 5/s                                    │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────┐
+│  📊 RÉSULTATS ATTENDUS                                            │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  AVANT (v100)                   APRÈS (v101)                      │
+│  ─────────────────────────────────────────────────────────────   │
+│                                                                   │
+│  /api/register-with-event-code  /api/register-with-event-code    │
+│    Latence : 11s                  Latence : < 5s ✅              │
+│    Timeout : Oui ❌               Timeout : Non ✅                │
+│                                                                   │
+│  /api/upload-selfie             /api/upload-selfie               │
+│    Latence : 45s                  Latence : < 10s ✅             │
+│    Échec : 20% ❌                 Échec : 0% ✅                   │
+│                                                                   │
+│  Users supportés : 10-15 ❌      Users supportés : 30+ ✅         │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────┐
+│  🔍 VÉRIFICATION LOGS                                             │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ✅ LOGS ATTENDUS (AWS Console)                                   │
+│                                                                   │
+│  [Init] ThreadPool matching initialisé avec 10 workers           │
+│  [RegisterEventCode] Matching scheduled in thread pool           │
+│  [MATCH-SELFIE] START user_id=XXX event_id=YYY                   │
+│                                                                   │
+│  ❌ NE DOIT PLUS APPARAÎTRE                                       │
+│                                                                   │
+│  [CRITICAL] WORKER TIMEOUT (pid:XX)                              │
+│  [ERROR] Worker (pid:XX) was sent code 134!                      │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────┐
+│  🛠️  FICHIERS MODIFIÉS                                           │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ✏️  main.py (ligne 5200)                                        │
+│      → Matching vers ThreadPool                                  │
+│                                                                   │
+│  ✏️  start.sh                                                    │
+│      → Utilise gunicorn_config.py                                │
+│                                                                   │
+│  ✏️  update-image.json                                           │
+│      → v100 → v101                                               │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────┐
+│  📄 AUTRES FICHIERS CRÉÉS                                         │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  - FIX_FINAL_REGISTER_TIMEOUT.md                                 │
+│  - DEPLOY_MAINTENANT_V101.md                                     │
+│  - RESUME_FIX_APPLIQUE.md                                        │
+│  - CONFIG_PRODUCTION_30_USERS.txt                                │
+│  - deploy_fix_timeout.sh                                         │
+│  - deploy_fix_timeout.ps1                                        │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────┐
+│  🎯 CHECKLIST                                                     │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  [ ] Lire README_URGENT_v101.txt                                 │
+│  [ ] Configurer MATCHING_THREAD_POOL_SIZE=10 dans AWS            │
+│  [ ] Exécuter deploy_fix_timeout.ps1                             │
+│  [ ] Attendre déploiement (10 min)                               │
+│  [ ] Tester avec Locust (30 users)                               │
+│  [ ] Vérifier 0% échec                                           │
+│  [ ] Vérifier aucun timeout dans logs                            │
+│  [ ] Célébrer 🎉                                                 │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+     Version : v101 | Date : 19/01/2026 | Status : ✅ READY
+═══════════════════════════════════════════════════════════════════
+

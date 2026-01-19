@@ -5196,8 +5196,13 @@ async def register_with_event_code(
         except Exception:
             pass
 
-    # Ex�cuter imm�diatement (l'appel de selfie suivra) pour pr�-lier si selfie d�j� pr�sent
-    _rematch_event_for_new_user(db_user.id, event.id)
+    # ✅ Lancer le matching dans le thread pool (évite blocage du worker)
+    try:
+        _MATCHING_THREAD_POOL.submit(_rematch_event_for_new_user, db_user.id, event.id)
+        print(f"[RegisterEventCode] Matching scheduled in thread pool for user_id={db_user.id}")
+    except Exception as e:
+        print(f"[RegisterEventCode] ERROR submitting to thread pool: {e}, running synchronously")
+        _rematch_event_for_new_user(db_user.id, event.id)
 
     return db_user
 
