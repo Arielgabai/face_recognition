@@ -984,6 +984,12 @@ class AwsFaceRecognizer:
         t2 = time.time()
         print(f"[MATCH-SELFIE] after maybe_purge_collection: {t2 - t0:.3f}s")
 
+        # Libérer la connexion DB pendant les appels AWS (évite un pool bloqué)
+        try:
+            db.close()
+        except Exception:
+            pass
+
         self.index_user_selfie(event_id, user)
         t3 = time.time()
         print(f"[MATCH-SELFIE] after index_user_selfie: {t3 - t0:.3f}s")
