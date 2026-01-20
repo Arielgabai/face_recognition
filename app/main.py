@@ -2740,7 +2740,7 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                         "finished_at": time.time(),
                     }
                 except Exception:
-                    pass
+                    print(f"[SelfieValidationBg] Failed to update status for user_id={user_id} (validation_failed)")
                 return
             except Exception as e:
                 print(f"[SelfieValidationBg] ❌ Validation error for user_id={user_id}: {e}")
@@ -2753,7 +2753,7 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                         "finished_at": time.time(),
                     }
                 except Exception:
-                    pass
+                    print(f"[SelfieValidationBg] Failed to update status for user_id={user_id} (validation_failed)")
                 return
         
         # 2. SUPPRESSION DES ANCIENNES CORRESPONDANCES (optimisé avec subquery)
@@ -2786,7 +2786,7 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                 "matched": 0,
             }
         except Exception:
-            pass
+            print(f"[SelfieValidationBg] Failed to update status for user_id={user_id} (running)")
         
         events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
         total_matches = 0
@@ -2821,7 +2821,7 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                 "matched": int(total_matches or 0),
             }
         except Exception:
-            pass
+            print(f"[SelfieValidationBg] Failed to update status for user_id={user_id} (done)")
 
     except Exception as e:
         print(f"[SelfieValidationBg] Unexpected error for user_id={user_id}: {e}")
@@ -3194,37 +3194,42 @@ def _rematch_event_via_selfies(event_id: int):
     Pour chaque utilisateur inscrit à l'événement et ayant un selfie (path ou data),
     on appelle face_recognizer.match_user_selfie_with_photos_event(user, event_id, db).
     """
+    session = SessionLocal()
     try:
-        session = next(get_db())
-        try:
-            # Charger tous les users de l'événement (avec ou sans selfie) puis filtrer
-            from sqlalchemy import or_ as _or
-            user_events = session.query(UserEvent).filter(UserEvent.event_id == event_id).all()
-            user_ids = [ue.user_id for ue in user_events]
-            users = []
-            if user_ids:
-                users = session.query(User).filter(
-                    User.id.in_(user_ids),
-                    _or(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
-                ).all()
+        # Charger tous les users de l'événement (avec ou sans selfie) puis filtrer
+        from sqlalchemy import or_ as _or
+        user_events = session.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+        user_ids = [ue.user_id for ue in user_events]
+        users = []
+        if user_ids:
+            users = session.query(User).filter(
+                User.id.in_(user_ids),
+                _or(User.selfie_path.isnot(None), User.selfie_data.isnot(None))
+            ).all()
 
-            total = 0
-            for user in users:
-                try:
-                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                        total += int(face_recognizer.match_user_selfie_with_photos_event(user, event_id, session) or 0)
-                    else:
-                        total += int(face_recognizer.match_user_selfie_with_photos(user, session) or 0)
-                except Exception:
-                    continue
-            print(f"[AdminRematch][bg] event_id={event_id} rematch_total={total}")
-        finally:
+        total = 0
+        for user in users:
             try:
-                session.close()
-            except Exception:
-                pass
+                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                    total += int(face_recognizer.match_user_selfie_with_photos_event(user, event_id, session) or 0)
+                else:
+                    total += int(face_recognizer.match_user_selfie_with_photos(user, session) or 0)
+            except Exception as e:
+                print(f"[AdminRematch][bg] error for user_id={user.id} event_id={event_id}: {e}")
+                continue
+        print(f"[AdminRematch][bg] event_id={event_id} rematch_total={total}")
+        session.commit()
     except Exception as e:
+        try:
+            session.rollback()
+        except Exception:
+            pass
         print(f"[AdminRematch][bg] error: {e}")
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
 
 @app.post("/api/admin/events/{event_id}/rematch")
 async def admin_rematch_event(
@@ -5173,26 +5178,34 @@ async def register_with_event_code(
 
     # Lancer le matching en t�che de fond pour associer directement les photos
     def _rematch_event_for_new_user(user_id: int, event_id: int):
+        session = SessionLocal()
         try:
-            session = next(get_db())
+            user = session.query(User).filter(User.id == user_id).first()
+            if not user:
+                return
             try:
-                user = session.query(User).filter(User.id == user_id).first()
-                if not user:
-                    return
+                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                    face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
+                else:
+                    face_recognizer.match_user_selfie_with_photos(user, session)
+                session.commit()
+            except Exception as e:
                 try:
-                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                        face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
-                    else:
-                        face_recognizer.match_user_selfie_with_photos(user, session)
+                    session.rollback()
                 except Exception:
                     pass
-            finally:
-                try:
-                    session.close()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                print(f"[_rematch_event_for_new_user] error user_id={user_id} event_id={event_id}: {e}")
+        except Exception as e:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            print(f"[_rematch_event_for_new_user] unexpected error user_id={user_id} event_id={event_id}: {e}")
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
 
     # ✅ Lancer le matching dans le thread pool (évite blocage du worker)
     try:

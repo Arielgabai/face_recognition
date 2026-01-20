@@ -78,6 +78,9 @@ class AwsFaceRecognizer:
         # Cache simple en mémoire pour éviter de réindexer à chaque photo
         self._indexed_events: Set[int] = set()
         self._photos_indexed_events: Set[int] = set()
+        # Locks pour thread-safety des caches
+        self._indexed_events_lock = threading.Lock()
+        self._photos_indexed_events_lock = threading.Lock()
         # Cache FaceId par (event_id, user_id) pour accélérer les recherches
         self._user_faceid_cache: Dict[Tuple[int, int], str] = {}
 
@@ -124,9 +127,6 @@ class AwsFaceRecognizer:
                 session.close()
             except Exception:
                 pass
-        # Locks pour thread-safety des caches
-        self._indexed_events_lock = threading.Lock()
-        self._photos_indexed_events_lock = threading.Lock()
         # Seuil Rekognition (0-100) configurable à chaud
         try:
             self.search_threshold: float = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", str(AWS_SEARCH_THRESHOLD)) or AWS_SEARCH_THRESHOLD)
@@ -328,67 +328,17 @@ class AwsFaceRecognizer:
         # Ne pas mémoriser pour autoriser la réindexation quand de nouvelles photos arrivent
 
     def ensure_event_photos_indexed_once(self, event_id: int, db: Session):
-        """Indexe les photos de l'événement seulement si elles ne sont pas déjà dans la collection.
-        
-        Vérifie d'abord si des faces photo:{photo_id} existent dans la collection.
-        Si oui, skip. Sinon, indexe toutes les photos.
-        Cache le résultat en mémoire pour éviter les vérifications répétées.
+        """Indexe les photos de l'événement une seule fois par process.
+
         Thread-safe avec lock pour éviter les race conditions en parallèle.
         """
-        print(f"[ENSURE-PHOTOS] Checking event {event_id}")
-        # Lock thread-safe pour éviter que plusieurs workers indexent en même temps
+        if event_id in self._photos_indexed_events:
+            return
         with self._photos_indexed_events_lock:
             if event_id in self._photos_indexed_events:
-                print(f"[ENSURE-PHOTOS] Event {event_id} already in memory cache, skipping")
                 return
-            # Marquer IMMÉDIATEMENT pour éviter que d'autres threads entrent
+            self.ensure_event_photos_indexed(event_id, db)
             self._photos_indexed_events.add(event_id)
-        
-        # Sortir du lock pour faire le vrai travail
-        self.ensure_collection(event_id)
-        coll_id = self._collection_id(event_id)
-        
-        # Vérifier si des faces photo: existent déjà dans la collection
-        try:
-            aws_metrics.inc('ListFaces')
-            resp = self.client.list_faces(CollectionId=coll_id, MaxResults=100)
-            faces = resp.get('Faces', [])
-            
-            # Si on trouve au moins une face photo:, on considère que l'événement est indexé
-            has_photo_faces = any(
-                (f.get('ExternalImageId') or '').startswith('photo:')
-                for f in faces
-            )
-            
-            if has_photo_faces:
-                print(f"[AWS] Event {event_id} photos already indexed in collection, skipping")
-                return
-        except ClientError as e:
-            print(f"[AWS] Could not check collection for event {event_id}: {e}")
-            # En cas d'erreur, on continue avec l'indexation par sécurité
-        
-        # Pas de faces photo trouvées, indexer toutes les photos
-        print(f"[AWS] Indexing photos for event {event_id} (first time)")
-        photos = db.query(Photo).filter(Photo.event_id == event_id).all()
-        for p in photos:
-            photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
-            if not photo_input:
-                continue
-            img_bytes = self._prepare_image_bytes(photo_input)
-            if not img_bytes:
-                continue
-            self._index_photo_faces_and_get_ids(event_id, p.id, img_bytes)
-            # Libérer mémoire intermédiaire
-            try:
-                del photo_input, img_bytes
-            except Exception:
-                pass
-            try:
-                _gc.collect()
-            except Exception:
-                pass
-        
-        print(f"[AWS] Event {event_id} photos indexed successfully")
 
     def ensure_event_users_indexed(self, event_id: int, db: Session):
         """
@@ -838,10 +788,12 @@ class AwsFaceRecognizer:
         """
         print(f"[MATCH-SELFIE] START user_id={user.id} event_id={event_id}")
         self.ensure_collection(event_id)
-        try:
-            self._maybe_purge_collection(event_id, db)
-        except Exception:
-            pass
+        auto_purge = os.getenv("AWS_REKOGNITION_PURGE_AUTO", "false").lower() in {"1", "true", "yes"}
+        if auto_purge:
+            try:
+                self._maybe_purge_collection(event_id, db)
+            except Exception as e:
+                print(f"[AWS] _maybe_purge_collection failed for event {event_id}: {e}")
         self.index_user_selfie(event_id, user)
 
         # Charger les octets du selfie
@@ -1018,10 +970,12 @@ class AwsFaceRecognizer:
         t1 = time.time()
         print(f"[MATCH-SELFIE] after ensure_collection: {t1 - t0:.3f}s")
 
-        try:
-            self._maybe_purge_collection(event_id, db)
-        except Exception:
-            pass
+        auto_purge = os.getenv("AWS_REKOGNITION_PURGE_AUTO", "false").lower() in {"1", "true", "yes"}
+        if auto_purge:
+            try:
+                self._maybe_purge_collection(event_id, db)
+            except Exception as e:
+                print(f"[AWS] _maybe_purge_collection failed for event {event_id}: {e}")
         t2 = time.time()
         print(f"[MATCH-SELFIE] after maybe_purge_collection: {t2 - t0:.3f}s")
 
