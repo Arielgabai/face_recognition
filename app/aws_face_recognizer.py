@@ -172,19 +172,21 @@ class AwsFaceRecognizer:
             return
 
         # Supprimer l'ancien FaceId si connu (évite un scan complet de la collection)
-        cached_fid = self._user_faceid_cache.get((event_id, user.id))
-        if not cached_fid:
-            cached_fid = self._get_persisted_user_face_id(event_id, user.id)
+        delete_old = os.getenv("AWS_SELFIE_DELETE_OLD", "false").lower() in {"1", "true", "yes"}
+        if delete_old:
+            cached_fid = self._user_faceid_cache.get((event_id, user.id))
+            if not cached_fid:
+                cached_fid = self._get_persisted_user_face_id(event_id, user.id)
+                if cached_fid:
+                    self._user_faceid_cache[(event_id, user.id)] = cached_fid
             if cached_fid:
-                self._user_faceid_cache[(event_id, user.id)] = cached_fid
-        if cached_fid:
-            with _aws_semaphore:
-                try:
-                    aws_metrics.inc('DeleteFaces')
-                    self.client.delete_faces(CollectionId=coll_id, FaceIds=[cached_fid])
-                except ClientError:
-                    # Ne pas bloquer l'indexation si la suppression échoue
-                    pass
+                with _aws_semaphore:
+                    try:
+                        aws_metrics.inc('DeleteFaces')
+                        self.client.delete_faces(CollectionId=coll_id, FaceIds=[cached_fid])
+                    except ClientError:
+                        # Ne pas bloquer l'indexation si la suppression échoue
+                        pass
 
         # Préparer l'image (EXIF, RGB, dimension) et recadrer le meilleur visage
         prepared = self._prepare_image_bytes(image_bytes)

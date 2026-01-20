@@ -49,6 +49,7 @@ _MATCHING_THREAD_POOL = ThreadPoolExecutor(
     thread_name_prefix="MatchingWorker"
 )
 print(f"[Init] ThreadPool matching initialisé avec {_MATCHING_THREAD_POOL_SIZE} workers")
+_MATCHING_SEMAPHORE = threading.BoundedSemaphore(1)
 
 load_dotenv()
 
@@ -2444,37 +2445,6 @@ async def register_invite_with_selfie(
     db_user.selfie_data = compressed_selfie
     db.commit()
     
-    # Lancer le matching en tâche de fond (même stratégie que la modif de selfie)
-    def _rematch_event_for_new_user(user_id: int, event_id: int):
-        try:
-            session = SessionLocal()
-            try:
-                user = session.query(User).filter(User.id == user_id).first()
-                if not user:
-                    return
-                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                    face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
-                else:
-                    face_recognizer.match_user_selfie_with_photos(user, session)
-                session.commit()
-            except Exception:
-                session.rollback()
-                raise
-            finally:
-                session.close()
-        except Exception:
-            # log si tu veux, mais ne laisse jamais une exception remonter casser le process
-            import traceback
-            print("[_rematch_event_for_new_user] ERROR:\n", traceback.format_exc())
-
-    # Lancer le matching dans le thread pool (évite blocage du worker)
-    try:
-        _MATCHING_THREAD_POOL.submit(_rematch_event_for_new_user, db_user.id, event.id)
-        print(f"[RegisterInvite] Matching scheduled in thread pool for user_id={db_user.id}")
-    except Exception as e:
-        print(f"[RegisterInvite] ERROR submitting to thread pool: {e}, running synchronously")
-        _rematch_event_for_new_user(db_user.id, event.id)
-
     return db_user
 
 @app.post("/api/login")
@@ -2790,28 +2760,29 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
         
         events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
         total_matches = 0
-        for ue in events:
-            try:
-                from aws_metrics import aws_metrics as _m
-                with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
-                    # S'assurer que les photos de l'événement sont indexées
-                    try:
-                        if hasattr(face_recognizer, 'ensure_event_photos_indexed_once'):
-                            face_recognizer.ensure_event_photos_indexed_once(ue.event_id, session)
-                        elif hasattr(face_recognizer, 'ensure_event_photos_indexed'):
-                            if ue.event_id not in getattr(face_recognizer, '_photos_indexed_events', set()):
-                                face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
-                    except Exception as _e:
-                        print(f"[SelfieValidationBg] ensure photos indexed failed: {_e}")
-                    
-                    # Matching
-                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                        total_matches += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
-                    else:
-                        total_matches += face_recognizer.match_user_selfie_with_photos(user, session)
-            except Exception as e:
-                print(f"[SelfieValidationBg] Error matching event {ue.event_id}: {e}")
-                continue
+        with _MATCHING_SEMAPHORE:
+            for ue in events:
+                try:
+                    from aws_metrics import aws_metrics as _m
+                    with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
+                        # S'assurer que les photos de l'événement sont indexées
+                        try:
+                            if hasattr(face_recognizer, 'ensure_event_photos_indexed_once'):
+                                face_recognizer.ensure_event_photos_indexed_once(ue.event_id, session)
+                            elif hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                                if ue.event_id not in getattr(face_recognizer, '_photos_indexed_events', set()):
+                                    face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
+                        except Exception as _e:
+                            print(f"[SelfieValidationBg] ensure photos indexed failed: {_e}")
+
+                        # Matching
+                        if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                            total_matches += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
+                        else:
+                            total_matches += face_recognizer.match_user_selfie_with_photos(user, session)
+                except Exception as e:
+                    print(f"[SelfieValidationBg] Error matching event {ue.event_id}: {e}")
+                    continue
         
         print(f"[SelfieValidationBg] ✅ Rematch completed for user_id={user_id}, total_matches={total_matches}")
         try:
@@ -5176,44 +5147,7 @@ async def register_with_event_code(
     db.add(user_event)
     db.commit()
 
-    # Lancer le matching en t�che de fond pour associer directement les photos
-    def _rematch_event_for_new_user(user_id: int, event_id: int):
-        session = SessionLocal()
-        try:
-            user = session.query(User).filter(User.id == user_id).first()
-            if not user:
-                return
-            try:
-                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                    face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
-                else:
-                    face_recognizer.match_user_selfie_with_photos(user, session)
-                session.commit()
-            except Exception as e:
-                try:
-                    session.rollback()
-                except Exception:
-                    pass
-                print(f"[_rematch_event_for_new_user] error user_id={user_id} event_id={event_id}: {e}")
-        except Exception as e:
-            try:
-                session.rollback()
-            except Exception:
-                pass
-            print(f"[_rematch_event_for_new_user] unexpected error user_id={user_id} event_id={event_id}: {e}")
-        finally:
-            try:
-                session.close()
-            except Exception:
-                pass
-
-    # ✅ Lancer le matching dans le thread pool (évite blocage du worker)
-    try:
-        _MATCHING_THREAD_POOL.submit(_rematch_event_for_new_user, db_user.id, event.id)
-        print(f"[RegisterEventCode] Matching scheduled in thread pool for user_id={db_user.id}")
-    except Exception as e:
-        print(f"[RegisterEventCode] ERROR submitting to thread pool: {e}, running synchronously")
-        _rematch_event_for_new_user(db_user.id, event.id)
+    # Le matching sera déclenché uniquement lors de l’upload du selfie
 
     return db_user
 
