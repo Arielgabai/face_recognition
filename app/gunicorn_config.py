@@ -17,7 +17,7 @@ import os
 workers = int(os.getenv("GUNICORN_WORKERS", "3"))
 worker_class = "uvicorn.workers.UvicornWorker"  # Async workers pour FastAPI
 worker_connections = 1000
-threads = 4  # Threads par worker pour I/O parallèle
+threads = int(os.getenv("GUNICORN_THREADS", "2")) # Threads par worker pour I/O parallèle
 
 # Recycler les workers après N requêtes (évite les fuites mémoire)
 max_requests = 1000
