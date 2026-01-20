@@ -30,6 +30,8 @@ import hashlib
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from database import SessionLocal  # là où tu l’as défini
+
 
 # ========== SEMAPHORES POUR THREAD-SAFETY ==========
 # dlib et face_recognition ne sont PAS thread-safe
@@ -2445,25 +2447,25 @@ async def register_invite_with_selfie(
     # Lancer le matching en tâche de fond (même stratégie que la modif de selfie)
     def _rematch_event_for_new_user(user_id: int, event_id: int):
         try:
-            session = next(get_db())
+            session = SessionLocal()
             try:
                 user = session.query(User).filter(User.id == user_id).first()
                 if not user:
                     return
-                try:
-                    if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                        face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
-                    else:
-                        face_recognizer.match_user_selfie_with_photos(user, session)
-                except Exception:
-                    pass
+                if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                    face_recognizer.match_user_selfie_with_photos_event(user, event_id, session)
+                else:
+                    face_recognizer.match_user_selfie_with_photos(user, session)
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
             finally:
-                try:
-                    session.close()
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"[RegisterInvite][bg] error: {e}")
+                session.close()
+        except Exception:
+            # log si tu veux, mais ne laisse jamais une exception remonter casser le process
+            import traceback
+            print("[_rematch_event_for_new_user] ERROR:\n", traceback.format_exc())
 
     # Lancer le matching dans le thread pool (évite blocage du worker)
     try:

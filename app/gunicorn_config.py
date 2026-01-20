@@ -41,7 +41,7 @@ bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 
 # ========== PERFORMANCE ==========
 # Charge l'app avant de forker les workers (économise RAM)
-preload_app = True
+preload_app = False
 
 # ========== HOOKS ==========
 def on_starting(server):

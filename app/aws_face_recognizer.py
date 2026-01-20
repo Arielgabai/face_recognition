@@ -861,27 +861,37 @@ class AwsFaceRecognizer:
         if not matched_photo_ids:
             print(f"⚠️  [SELFIE-MATCH][user->{user.id}] NO MATCHES FOUND! Photos may not be indexed in collection.")
 
+        allowed_ids = set(
+            pid for (pid,) in db.query(Photo.id)
+            .filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys())))
+            .all()
+)
         # Créer des FaceMatch en bulk
         from sqlalchemy import and_ as _and
 
-        allowed_ids = set(pid for (pid,) in db.query(Photo.id).filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys()))).all())
-        print(f"[SELFIE-MATCH][user->{user.id}] allowed_ids={allowed_ids}")
+        # 1) On récupère tous les FaceMatch existants pour ce user + ces photos en UNE requête
+        existing_rows = (
+            db.query(FaceMatch)
+            .filter(
+                FaceMatch.user_id == user.id,
+                FaceMatch.photo_id.in_(allowed_ids)
+            )
+            .all()
+        )
+        existing_by_pid = {fm.photo_id: fm for fm in existing_rows}
+
         count_matches = 0
         for pid in allowed_ids:
             score = int(matched_photo_ids.get(pid) or 0)
-            # Éviter les doublons; mettre à jour si meilleur score
-            try:
-                existing = db.query(FaceMatch).filter(FaceMatch.photo_id == pid, FaceMatch.user_id == user.id).first()
-                if existing:
-                    if score > int(existing.confidence_score or 0):
-                        existing.confidence_score = score
-                else:
-                    db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
-                    count_matches += 1
-            except Exception:
-                # fallback: ajouter si problème de lecture
+            existing = existing_by_pid.get(pid)
+            if existing:
+                # Check si meilleur score
+                if score > int(existing.confidence_score or 0):
+                    existing.confidence_score = score
+            else:
                 db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
                 count_matches += 1
+
 
         # Fallback robuste: si aucun match par collection, utiliser CompareFaces(Selfie vs crops) sur toutes les photos de l'événement
         # DÉSACTIVÉ par défaut: trop coûteux (peut faire 100+ DetectFaces + 200+ CompareFaces = 0,40$+)
