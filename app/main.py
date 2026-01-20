@@ -2714,7 +2714,7 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
     - Si invalide : supprime le selfie et notifie l'échec
     - Si valide : supprime anciennes correspondances et lance le matching
     """
-    session = next(get_db())
+    session = SessionLocal()
     try:
         user = session.query(User).filter(User.id == user_id).first()
         if not user:
@@ -2822,17 +2822,13 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
             }
         except Exception:
             pass
-            
+
     except Exception as e:
         print(f"[SelfieValidationBg] Unexpected error for user_id={user_id}: {e}")
         import traceback
         traceback.print_exc()
         try:
-            REMATCH_STATUS[user_id] = {
-                "status": "error",
-                "error": str(e),
-                "finished_at": time.time(),
-            }
+            session.rollback()
         except Exception:
             pass
     finally:

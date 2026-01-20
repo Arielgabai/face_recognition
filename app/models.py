@@ -28,6 +28,8 @@ class UserEvent(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     event_id = Column(Integer, ForeignKey("events.id"))
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
+    # FaceId Rekognition du selfie pour cet event (évite les scans list_faces)
+    rekognition_face_id = Column(String, nullable=True, index=True)
 
     user = relationship("User", back_populates="user_events")
     event = relationship("Event", back_populates="users")

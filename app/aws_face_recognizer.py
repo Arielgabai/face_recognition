@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import boto3
 from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
+from database import SessionLocal
 
 from models import User, Photo, FaceMatch, Event, UserEvent
 from aws_metrics import aws_metrics
@@ -79,6 +80,50 @@ class AwsFaceRecognizer:
         self._photos_indexed_events: Set[int] = set()
         # Cache FaceId par (event_id, user_id) pour accélérer les recherches
         self._user_faceid_cache: Dict[Tuple[int, int], str] = {}
+
+    def _get_persisted_user_face_id(self, event_id: int, user_id: int) -> Optional[str]:
+        """Lit le FaceId persistant depuis la DB (UserEvent)."""
+        session = SessionLocal()
+        try:
+            ue = (
+                session.query(UserEvent)
+                .filter(UserEvent.event_id == event_id, UserEvent.user_id == user_id)
+                .first()
+            )
+            return (ue.rekognition_face_id or "").strip() if ue else None
+        except Exception:
+            return None
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+    def _set_persisted_user_face_id(self, event_id: int, user_id: int, face_id: str) -> None:
+        """Persiste le FaceId du selfie pour réutilisation future."""
+        if not face_id:
+            return
+        session = SessionLocal()
+        try:
+            ue = (
+                session.query(UserEvent)
+                .filter(UserEvent.event_id == event_id, UserEvent.user_id == user_id)
+                .first()
+            )
+            if not ue:
+                return
+            ue.rekognition_face_id = face_id
+            session.commit()
+        except Exception:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
         # Locks pour thread-safety des caches
         self._indexed_events_lock = threading.Lock()
         self._photos_indexed_events_lock = threading.Lock()
@@ -126,30 +171,20 @@ class AwsFaceRecognizer:
             # Rien à indexer si aucun selfie n'est disponible
             return
 
-        # Supprimer d'abord d'anciennes faces de cet utilisateur pour éviter des résidus de visages obsolètes
-        try:
-            next_token = None
-            while True:
-                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
-                if next_token:
-                    kwargs["NextToken"] = next_token
-                aws_metrics.inc('ListFaces')
-                faces = self.client.list_faces(**kwargs)
-                for f in faces.get('Faces', []):
-                    # Ancien schéma (str(user.id)) et nouveau (user:{id})
-                    ext = f.get('ExternalImageId')
-                    if ext == str(user.id) or ext == f"user:{user.id}":
-                        try:
-                            aws_metrics.inc('DeleteFaces')
-                            self.client.delete_faces(CollectionId=coll_id, FaceIds=[f.get('FaceId')])
-                        except ClientError:
-                            pass
-                next_token = faces.get("NextToken")
-                if not next_token:
-                    break
-        except ClientError:
-            # On ignore les erreurs de suppression pour ne pas bloquer l'indexation
-            pass
+        # Supprimer l'ancien FaceId si connu (évite un scan complet de la collection)
+        cached_fid = self._user_faceid_cache.get((event_id, user.id))
+        if not cached_fid:
+            cached_fid = self._get_persisted_user_face_id(event_id, user.id)
+            if cached_fid:
+                self._user_faceid_cache[(event_id, user.id)] = cached_fid
+        if cached_fid:
+            with _aws_semaphore:
+                try:
+                    aws_metrics.inc('DeleteFaces')
+                    self.client.delete_faces(CollectionId=coll_id, FaceIds=[cached_fid])
+                except ClientError:
+                    # Ne pas bloquer l'indexation si la suppression échoue
+                    pass
 
         # Préparer l'image (EXIF, RGB, dimension) et recadrer le meilleur visage
         prepared = self._prepare_image_bytes(image_bytes)
@@ -175,6 +210,7 @@ class AwsFaceRecognizer:
                         fid = ((rec or {}).get('Face') or {}).get('FaceId')
                         if fid:
                             self._user_faceid_cache[(event_id, user.id)] = fid
+                            self._set_persisted_user_face_id(event_id, user.id, fid)
                             break
                 except Exception:
                     pass
@@ -674,6 +710,11 @@ class AwsFaceRecognizer:
         fid_cached = self._user_faceid_cache.get((event_id, user_id))
         if fid_cached:
             return fid_cached
+        # Persistance DB
+        fid_db = self._get_persisted_user_face_id(event_id, user_id)
+        if fid_db:
+            self._user_faceid_cache[(event_id, user_id)] = fid_db
+            return fid_db
         next_token = None
         target_exts = {str(user_id), f"user:{user_id}"}
         try:
