@@ -133,23 +133,39 @@ class RegisterUser(HttpUser):
                 headers = {
                     'Authorization': f'Bearer {token}'
                 }
-                
-                upload_response = self.client.post(
+
+                # 👉 catch_response=True pour pouvoir marquer success/failure avec un message détaillé
+                with self.client.post(
                     "/api/upload-selfie",
                     files=files,
                     headers=headers,
-                    name="/api/upload-selfie"
-                )
+                    name="/api/upload-selfie",
+                    catch_response=True
+                ) as upload_response:
 
-                if upload_response.status_code == 200:
-                    print(f"[Locust] ✓ Selfie uploadé avec succès pour {username}")
-                else:
-                    print(f"[Locust] ✗ Upload selfie échoué pour {username}: {upload_response.status_code}")
-                    self.has_run = True
-                    gevent.sleep(999999)
-                    return
+                    if upload_response.status_code == 200:
+                        # Facultatif : tu peux aussi regarder upload_response.json() ici
+                        print(f"[Locust] ✓ Selfie uploadé avec succès pour {username}")
+                        upload_response.success()
+                    else:
+                        # On log le body pour comprendre ce qui cloche
+                        try:
+                            body = upload_response.text
+                        except Exception:
+                            body = "<no body>"
+
+                        msg = (f"[Locust] ✗ Upload selfie échoué pour {username}: "
+                               f"status={upload_response.status_code}, body={body}")
+                        print(msg)
+                        upload_response.failure(msg)
+                        self.has_run = True
+                        gevent.sleep(999999)
+                        return
+
         except Exception as e:
+            # Si on a une vraie exception côté client (timeout, connexion, etc.)
             print(f"[Locust] Erreur lors de l'upload du selfie pour {username}: {e}")
+            # Ici aussi, Locust marquera ce task en fail
             self.has_run = True
             gevent.sleep(999999)
             return

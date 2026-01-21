@@ -89,6 +89,25 @@ from urllib.parse import urlencode
 from base64 import urlsafe_b64encode
 
 app = FastAPI(title="FindMe", version="1.0.0")
+import time
+from fastapi import Request
+
+@app.middleware("http")
+async def log_request_timings(request: Request, call_next):
+    start = time.time()
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        duration = time.time() - start
+        path = request.url.path
+
+        # Si tu veux voir TOUT :
+        # print(f"[REQ] {path} took {duration:.2f}s")
+
+        # Si tu veux seulement les lentes (> 5s par ex)
+        if duration > 5:
+            print(f"[SLOW] {path} took {duration:.2f}s")
 
 # Créer les tables au démarrage (non-bloquant)
 @app.on_event("startup")
