@@ -2677,6 +2677,9 @@ async def delete_my_selfie(
 
 # === GESTION DES SELFIES ===
 
+def _is_selfie_matching_disabled() -> bool:
+    return os.getenv("SELFIE_MATCHING_DISABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+
 def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, strict: bool):
     """
     Fonction de validation et matching en arrière-plan (OPTIMISÉE).
@@ -2690,11 +2693,24 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
         if not user:
             print(f"[SelfieValidationBg] User {user_id} not found")
             return
+
+        if _is_selfie_matching_disabled():
+            print(f"[SelfieValidationBg] SELFIE_MATCHING_DISABLED=1 -> skipping FaceMatch cleanup + rematch for user_id={user_id}")
+            try:
+                REMATCH_STATUS[user_id] = {
+                    "status": "disabled",
+                    "info": "Selfie matching disabled via SELFIE_MATCHING_DISABLED",
+                    "finished_at": time.time(),
+                }
+            except Exception:
+                pass
+            return
         
         # 1. VALIDATION (si strict activé)
         strict_env = os.getenv("SELFIE_VALIDATION_STRICT", "true").strip().lower() not in {"false", "0", "no"}
         if strict and strict_env:
             try:
+                print(f"[SelfieValidationBg] Step=validation strict user_id={user_id}, strict={strict}")
                 print(f"[SelfieValidationBg] Validating selfie for user_id={user_id}")
                 validate_selfie_image(file_data)
                 print(f"[SelfieValidationBg] ✅ Validation succeeded for user_id={user_id}")
@@ -2727,9 +2743,9 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                 return
         
         # 2. SUPPRESSION DES ANCIENNES CORRESPONDANCES (optimisé avec subquery)
-        print(f"[SelfieValidationBg] Deleting old face matches for user_id={user_id}")
         user_events = session.query(UserEvent.event_id).filter(UserEvent.user_id == user_id).all()
         event_ids = [ue.event_id for ue in user_events]
+        print(f"[SelfieValidationBg] Step=delete-old-matches user_id={user_id}, event_ids={event_ids}")
         
         if event_ids:
             from sqlalchemy import delete, and_, select
@@ -2761,12 +2777,14 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
         events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
         total_matches = 0
         with _MATCHING_SEMAPHORE:
+            print(f"[SelfieValidationBg] Step=rematch-loop user_id={user_id}, events={[ue.event_id for ue in events]}")
             for ue in events:
                 try:
                     from aws_metrics import aws_metrics as _m
                     with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
                         # S'assurer que les photos de l'événement sont indexées
                         try:
+                            print(f"[SelfieValidationBg] Step=ensure-event-photos-indexed user_id={user_id}, event_id={ue.event_id}")
                             if hasattr(face_recognizer, 'ensure_event_photos_indexed_once'):
                                 face_recognizer.ensure_event_photos_indexed_once(ue.event_id, session)
                             elif hasattr(face_recognizer, 'ensure_event_photos_indexed'):
@@ -2776,6 +2794,7 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                             print(f"[SelfieValidationBg] ensure photos indexed failed: {_e}")
 
                         # Matching
+                        print(f"[SelfieValidationBg] Step=match-user-selfie user_id={user_id}, event_id={ue.event_id}")
                         if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
                             total_matches += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
                         else:
