@@ -2149,6 +2149,9 @@ async def check_user_availability(
     Si event_code fourni : vérifie pour CET événement spécifique
     Si pas d'event_code : vérifie globalement (pour validation temps réel)
     """
+    _t_total = time.time()
+    _t_session = time.time()
+    print(f"[PERF][availability] session ready in {time.time() - _t_session:.3f}s")
     result = {
         "username_taken": False, 
         "email_taken": False,
@@ -2159,7 +2162,9 @@ async def check_user_availability(
     # Trouver l'événement si fourni
     event = None
     if event_code:
+        _t_event = time.time()
         event = find_event_by_code(db, event_code)
+        print(f"[PERF][availability] event lookup took {time.time() - _t_event:.3f}s")
     
     # OPTIMISÉ : Utilisation de EXISTS au lieu de first() pour meilleures performances
     from sqlalchemy import exists, select
@@ -2167,51 +2172,64 @@ async def check_user_availability(
     if username:
         if event:
             # Vérifier pour cet événement spécifique (EXISTS)
+            _t_username = time.time()
             result["username_taken"] = db.query(
                 exists().where(
                     (User.username == username) & (User.event_id == event.id)
                 )
             ).scalar()
+            print(f"[PERF][availability] username lookup took {time.time() - _t_username:.3f}s")
             
             # Vérifier si existe pour d'autres événements (info) - seulement si pas pris
             if not result["username_taken"]:
+                _t_username_other = time.time()
                 result["username_exists_other_events"] = db.query(
                     exists().where(
                         (User.username == username) & (User.event_id != event.id)
                     )
                 ).scalar()
+                print(f"[PERF][availability] username other-events lookup took {time.time() - _t_username_other:.3f}s")
         else:
             # Vérifier globalement (EXISTS)
+            _t_username = time.time()
             result["username_taken"] = db.query(
                 exists().where(User.username == username)
             ).scalar()
+            print(f"[PERF][availability] username lookup took {time.time() - _t_username:.3f}s")
     
     if email:
         if event:
             # Vérifier pour cet événement spécifique (EXISTS)
+            _t_email = time.time()
             result["email_taken"] = db.query(
                 exists().where(
                     (User.email == email) & (User.event_id == event.id)
                 )
             ).scalar()
+            print(f"[PERF][availability] email lookup took {time.time() - _t_email:.3f}s")
             
             # Vérifier si existe pour d'autres événements (info) - seulement si pas pris
             if not result["email_taken"]:
+                _t_email_other = time.time()
                 result["email_exists_other_events"] = db.query(
                     exists().where(
                         (User.email == email) & (User.event_id != event.id)
                     )
                 ).scalar()
+                print(f"[PERF][availability] email other-events lookup took {time.time() - _t_email_other:.3f}s")
         else:
             # Vérifier globalement (EXISTS)
+            _t_email = time.time()
             result["email_taken"] = db.query(
                 exists().where(User.email == email)
             ).scalar()
+            print(f"[PERF][availability] email lookup took {time.time() - _t_email:.3f}s")
             
             # Info : si email existe pour d'autres événements
             if result["email_taken"]:
                 result["email_exists_other_events"] = True
     
+    print(f"[PERF][availability] total took {time.time() - _t_total:.3f}s")
     return result
 
 # Cache pour event_code validation (OPTIMISÉ pour performances)
@@ -2380,13 +2398,21 @@ async def register_invite(
         user_type=UserType.USER,
         event_id=event.id  # NEW: Lier l'utilisateur à son événement principal
     )
+    _t_insert_user = time.time()
     db.add(db_user)
+    print(f"[PERF][register] insert user took {time.time() - _t_insert_user:.3f}s")
+    _t_commit = time.time()
     db.commit()
+    print(f"[PERF][register] db.commit() took {time.time() - _t_commit:.3f}s")
     db.refresh(db_user)
     # Lier l'utilisateur +� l'+�v+�nement
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
+    _t_insert_link = time.time()
     db.add(user_event)
+    print(f"[PERF][register] insert user_event took {time.time() - _t_insert_link:.3f}s")
+    _t_commit_link = time.time()
     db.commit()
+    print(f"[PERF][register] db.commit() took {time.time() - _t_commit_link:.3f}s")
     return db_user
 
 @app.post("/api/register-invite-with-selfie", response_model=UserSchema)
@@ -2475,11 +2501,17 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     
     Si user_id est fourni dans user_credentials, authentifie directement ce compte spécifique.
     """
+    _t_total = time.time()
     try:
         # Si user_id fourni, authentifier ce compte spécifique
         if user_credentials.user_id:
+            _t_lookup = time.time()
             user = db.query(User).filter(User.id == user_credentials.user_id).first()
-            if not user or not verify_password(user_credentials.password, user.hashed_password):
+            print(f"[PERF][login] user lookup took {time.time() - _t_lookup:.3f}s")
+            _t_pwd = time.time()
+            password_ok = user is not None and verify_password(user_credentials.password, user.hashed_password)
+            print(f"[PERF][login] password verify took {time.time() - _t_pwd:.3f}s")
+            if not user or not password_ok:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Identifiant ou mot de passe incorrect",
@@ -2495,10 +2527,12 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
             return {"access_token": access_token, "token_type": "bearer"}
         
         # Chercher TOUS les utilisateurs avec cet identifiant (username OU email)
+        _t_lookup = time.time()
         users = db.query(User).filter(
             (User.username == user_credentials.username) | 
             (func.lower(User.email) == func.lower(user_credentials.username))
         ).all()
+        print(f"[PERF][login] user lookup took {time.time() - _t_lookup:.3f}s")
         
         if not users:
             raise HTTPException(
@@ -2508,7 +2542,9 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
             )
         
         # Vérifier le mot de passe pour chaque compte trouvé
+        _t_pwd = time.time()
         valid_users = [u for u in users if verify_password(user_credentials.password, u.hashed_password)]
+        print(f"[PERF][login] password verify took {time.time() - _t_pwd:.3f}s")
         
         if not valid_users:
             raise HTTPException(
@@ -2564,6 +2600,8 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
             status_code=500,
             detail=f"Erreur interne lors de la connexion: {error_detail}"
         )
+    finally:
+        print(f"[PERF][login] total took {time.time() - _t_total:.3f}s")
 
 @app.get("/api/me", response_model=UserSchema)
 async def get_current_user_info(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -2862,6 +2900,7 @@ async def upload_selfie(
     - Validation + matching en arrière-plan (ne bloque pas)
     - Si validation échoue en background, le selfie est supprimé automatiquement
     """
+    _t_total = time.time()
     if current_user.user_type == UserType.PHOTOGRAPHER:
         raise HTTPException(
             status_code=403, 
@@ -2872,7 +2911,9 @@ async def upload_selfie(
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     
     # Lire les données binaires du fichier
+    _t_read = time.time()
     file_data = await file.read()
+    print(f"[PERF][upload-selfie] read file took {time.time() - _t_read:.3f}s")
     
     # Validation rapide : taille maximale
     if len(file_data) > 10 * 1024 * 1024:  # 10MB max
@@ -2880,10 +2921,12 @@ async def upload_selfie(
     
     # Validation rapide : format d'image valide
     try:
+        _t_parse = time.time()
         from PIL import Image
         import io as _io
         img = Image.open(_io.BytesIO(file_data))
         img.verify()  # Vérification basique du format
+        print(f"[PERF][upload-selfie] parse image took {time.time() - _t_parse:.3f}s")
     except Exception:
         raise HTTPException(status_code=400, detail="Format d'image invalide")
     
@@ -2891,9 +2934,11 @@ async def upload_selfie(
     compressed_data = compress_selfie_for_storage(file_data, max_size_kb=200)
     
     # ✅ SAUVEGARDE IMMÉDIATE (réponse rapide au client)
+    _t_save = time.time()
     current_user.selfie_data = compressed_data
     current_user.selfie_path = None
     db.commit()
+    print(f"[PERF][upload-selfie] save selfie took {time.time() - _t_save:.3f}s")
     
     print(f"[SelfieUpload] Selfie saved for user_id={current_user.id}, scheduling validation+matching")
     
@@ -2908,6 +2953,7 @@ async def upload_selfie(
             }
         except Exception:
             pass
+        print(f"[PERF][upload-selfie] total took {time.time() - _t_total:.3f}s")
         return {
             "message": "Selfie uploadé avec succès. Le matching est désactivé temporairement côté serveur.",
             "status": "disabled"
@@ -2924,6 +2970,7 @@ async def upload_selfie(
             strict
         )
         print(f"[SelfieUpload] Matching scheduled in thread pool for user_id={current_user.id}")
+        print(f"[PERF][upload-selfie] total took {time.time() - _t_total:.3f}s")
         return {
             "message": "Selfie uploadé avec succès. La validation et le matching sont en cours...",
             "status": "processing"
@@ -2932,6 +2979,7 @@ async def upload_selfie(
         print(f"[SelfieUpload] ERROR: Failed to submit to thread pool: {e}")
         # Fallback synchrone en cas d'erreur du pool (ne devrait jamais arriver)
         _validate_and_rematch_selfie_background(current_user.id, compressed_data, strict)
+        print(f"[PERF][upload-selfie] total took {time.time() - _t_total:.3f}s")
         return {
             "message": "Selfie uploadé et traité avec succès",
             "status": "completed"
@@ -5144,20 +5192,25 @@ async def register_with_event_code(
     db: Session = Depends(get_db)
 ):
     """Inscription d'un utilisateur avec un code événement saisi manuellement, avec agrégation des erreurs"""
+    _t_total = time.time()
     errors: list[str] = []
 
     # Vérifier l'event_code d'abord (nécessaire pour vérifier l'unicité par événement)
+    _t_event = time.time()
     event = find_event_by_code(db, event_code)
+    print(f"[PERF][register] event lookup took {time.time() - _t_event:.3f}s")
     if not event:
         errors.append("Code événement invalide")
         # Si pas d'event, impossible de vérifier l'unicité par événement
         raise HTTPException(status_code=400, detail="; ".join(errors))
 
     # Vérifier disponibilité username/email POUR CET ÉVÉNEMENT (agrégé)
+    _t_existing = time.time()
     existing_user = db.query(User).filter(
         ((User.username == user_data.username) | (User.email == user_data.email)) &
         (User.event_id == event.id)
     ).first()
+    print(f"[PERF][register] existing user lookup took {time.time() - _t_existing:.3f}s")
     if existing_user:
         try:
             if existing_user.username == user_data.username:
@@ -5203,6 +5256,7 @@ async def register_with_event_code(
 
     # Le matching sera déclenché uniquement lors de l’upload du selfie
 
+    print(f"[PERF][register] total took {time.time() - _t_total:.3f}s")
     return db_user
 
 @app.post("/api/join-event")
