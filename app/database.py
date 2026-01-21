@@ -31,6 +31,18 @@ engine = create_engine(
     pool_timeout=POOL_TIMEOUT,
     connect_args=connect_args,
 )
+try:
+    pool = engine.pool
+    size = getattr(pool, "size", None)
+    timeout = getattr(pool, "timeout", None)
+    max_overflow = getattr(pool, "_max_overflow", None)
+
+    size_val = size() if callable(size) else size
+    timeout_val = timeout() if callable(timeout) else timeout
+
+    print(f"[DB] SQLAlchemy pool config -> size={size_val}, max_overflow={max_overflow}, timeout={timeout_val}")
+except Exception as e:
+    print(f"[DB] Could not introspect SQLAlchemy pool config: {e}")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

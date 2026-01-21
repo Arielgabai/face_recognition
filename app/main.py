@@ -2687,23 +2687,23 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
     - Si invalide : supprime le selfie et notifie l'échec
     - Si valide : supprime anciennes correspondances et lance le matching
     """
-    session = SessionLocal()
+    if _is_selfie_matching_disabled():
+        print(f"[SelfieValidationBg] SELFIE_MATCHING_DISABLED=1 -> skipping ALL DB + FaceMatch logic for user_id={user_id}")
+        try:
+            REMATCH_STATUS[user_id] = {
+                "status": "disabled",
+                "info": "Selfie matching disabled via SELFIE_MATCHING_DISABLED",
+                "finished_at": time.time(),
+            }
+        except Exception:
+            pass
+        return
+
+    session = next(get_db())
     try:
         user = session.query(User).filter(User.id == user_id).first()
         if not user:
             print(f"[SelfieValidationBg] User {user_id} not found")
-            return
-
-        if _is_selfie_matching_disabled():
-            print(f"[SelfieValidationBg] SELFIE_MATCHING_DISABLED=1 -> skipping FaceMatch cleanup + rematch for user_id={user_id}")
-            try:
-                REMATCH_STATUS[user_id] = {
-                    "status": "disabled",
-                    "info": "Selfie matching disabled via SELFIE_MATCHING_DISABLED",
-                    "finished_at": time.time(),
-                }
-            except Exception:
-                pass
             return
         
         # 1. VALIDATION (si strict activé)
@@ -2878,6 +2878,22 @@ async def upload_selfie(
     
     print(f"[SelfieUpload] Selfie saved for user_id={current_user.id}, scheduling validation+matching")
     
+    # Si le matching est désactivé, on ne soumet PAS de tâche au ThreadPool
+    if _is_selfie_matching_disabled():
+        print(f"[SelfieUpload] SELFIE_MATCHING_DISABLED=1 -> not scheduling background validation/matching for user_id={current_user.id}")
+        try:
+            REMATCH_STATUS[current_user.id] = {
+                "status": "disabled",
+                "info": "Selfie matching disabled via SELFIE_MATCHING_DISABLED",
+                "finished_at": time.time(),
+            }
+        except Exception:
+            pass
+        return {
+            "message": "Selfie uploadé avec succès. Le matching est désactivé temporairement côté serveur.",
+            "status": "disabled"
+        }
+
     # ✅ VALIDATION + MATCHING EN THREAD POOL ISOLÉ (évite les timeouts workers)
     # Utilisation d'un ThreadPoolExecutor séparé au lieu de background_tasks
     # pour garantir que les workers Gunicorn ne sont jamais bloqués
