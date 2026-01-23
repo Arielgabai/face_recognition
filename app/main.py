@@ -124,6 +124,10 @@ def _startup_create_tables():
         # Ajouter la table password_reset_tokens si elle n'existe pas
         from add_password_reset_table import add_password_reset_table
         add_password_reset_table()
+
+        # Ajouter des index de performance si nécessaires
+        from add_perf_indexes import add_perf_indexes
+        add_perf_indexes()
         
     except Exception as e:
         # Ne pas bloquer le démarrage si la DB est indisponible
@@ -3148,7 +3152,9 @@ async def get_my_photos(
 @app.get("/api/all-photos", response_model=List[PhotoSchema])
 async def get_all_photos(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    page: int = 1,
+    limit: int = 50
 ):
     """Version simplifi�e SANS cache pour diagnostiquer les plantages.
     
@@ -3156,8 +3162,14 @@ async def get_all_photos(
     - Si des photos ont show_in_general=True, retourner UNIQUEMENT celles-là
     - Sinon (aucune photo sélectionnée), retourner TOUTES les photos (fallback)
     """
+    _t_total = time.perf_counter()
     if current_user.user_type != UserType.USER:
         raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc�der � cette route")
+
+    # Pagination simple pour réduire la charge (réponse reste une liste)
+    safe_page = max(1, int(page or 1))
+    safe_limit = max(1, min(int(limit or 50), 1000))
+    offset = (safe_page - 1) * safe_limit
     
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
     if not user_event:
@@ -3171,14 +3183,6 @@ async def get_all_photos(
     # OPTIMISATION: Récupérer les matches en une seule requête rapide
     from sqlalchemy.orm import defer
     
-    # Récupérer les IDs des photos matcheés (requête rapide avec index)
-    matched_photo_ids = {
-        photo_id for (photo_id,) in
-        db.query(FaceMatch.photo_id).filter(
-            FaceMatch.user_id == current_user.id
-        ).all()
-    }
-    
     # Construire la requête filtrée sur les photos explicitement autorisées
     query = db.query(Photo).options(
         defer(Photo.photo_data)  # Ne pas charger les données binaires
@@ -3187,12 +3191,29 @@ async def get_all_photos(
         Photo.show_in_general.is_(True)
     )
 
-    # Charger les photos avec limite pour éviter les requêtes trop longues
+    # Charger les photos avec pagination pour éviter les requêtes trop longues
+    _t_query = time.perf_counter()
     photos = query.order_by(
         Photo.uploaded_at.desc(),
         Photo.id.desc()
-    ).limit(1000).all()  # Limite de sécurité pour éviter les requêtes trop longues
+    ).offset(offset).limit(safe_limit).all()
+    print(f"[PERF][all-photos] query photos took {time.perf_counter() - _t_query:.3f}s")
+
+    # Récupérer les IDs des photos matchées pour la page courante
+    _t_matches = time.perf_counter()
+    photo_ids = [p.id for p in photos]
+    matched_photo_ids = set()
+    if photo_ids:
+        matched_photo_ids = {
+            photo_id for (photo_id,) in
+            db.query(FaceMatch.photo_id).filter(
+                FaceMatch.user_id == current_user.id,
+                FaceMatch.photo_id.in_(photo_ids)
+            ).all()
+        }
+    print(f"[PERF][all-photos] query matches took {time.perf_counter() - _t_matches:.3f}s")
     
+    _t_post = time.perf_counter()
     result = []
     for photo in photos:
         result.append({
@@ -3209,6 +3230,12 @@ async def get_all_photos(
             "event_name": event_name,  # Utiliser la valeur préchargée (pas de lazy load)
             "has_face_match": photo.id in matched_photo_ids,
         })
+    print(f"[PERF][all-photos] post-process took {time.perf_counter() - _t_post:.3f}s")
+
+    total = time.perf_counter() - _t_total
+    print(f"[PERF][all-photos] total took {total:.3f}s")
+    if total > 5:
+        print(f"[SLOW] /api/all-photos took {total:.2f}s")
     
     return result
 
@@ -3250,10 +3277,38 @@ async def get_user_profile(
     db: Session = Depends(get_db)
 ):
     """R+�cup+�rer le profil complet de l'utilisateur"""
+    _t_total = time.perf_counter()
     with aws_metrics.action_context(f"profile:user:{current_user.id}"):
-        photos_with_face = face_recognizer.get_user_photos_with_face(current_user.id, db)
-        all_photos = face_recognizer.get_all_photos_for_user(current_user.id, db)
-        
+        _t_user = time.perf_counter()
+        user_id = current_user.id
+        print(f"[PERF][profile] get user took {time.perf_counter() - _t_user:.3f}s")
+
+        # Event lookup (for perf visibility, no payload change)
+        _t_event = time.perf_counter()
+        event = None
+        event_id = getattr(current_user, "event_id", None)
+        if event_id:
+            event = db.query(Event).filter(Event.id == event_id).first()
+        else:
+            user_event = db.query(UserEvent).filter_by(user_id=user_id).first()
+            if user_event:
+                event = db.query(Event).filter_by(id=user_event.event_id).first()
+        _ = event  # reserved for future use
+        print(f"[PERF][profile] fetch event took {time.perf_counter() - _t_event:.3f}s")
+
+        _t_matched = time.perf_counter()
+        photos_with_face = face_recognizer.get_user_photos_with_face(user_id, db)
+        print(f"[PERF][profile] fetch matched photos took {time.perf_counter() - _t_matched:.3f}s")
+
+        _t_all = time.perf_counter()
+        all_photos = face_recognizer.get_all_photos_for_user(user_id, db)
+        print(f"[PERF][profile] fetch all photos took {time.perf_counter() - _t_all:.3f}s")
+
+        total = time.perf_counter() - _t_total
+        print(f"[PERF][profile] total took {total:.3f}s")
+        if total > 5:
+            print(f"[SLOW] /api/profile took {total:.2f}s")
+
         return UserProfile(
             user=current_user,
             total_photos=len(all_photos),

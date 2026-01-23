@@ -53,6 +53,9 @@ class User(Base):
     __table_args__ = (
         Index('users_email_event_unique', 'email', func.coalesce(event_id, -1), unique=True),
         Index('users_username_event_unique', 'username', func.coalesce(event_id, -1), unique=True),
+        # Index composites pour accélérer les checks par événement
+        Index('idx_users_event_username', 'event_id', 'username'),
+        Index('idx_users_event_email', 'event_id', 'email'),
     )
     
     # Relations - spécifier explicitement les clés étrangères
@@ -88,6 +91,12 @@ class Photo(Base):
     
     # Visibilité dans l'onglet "Général"
     show_in_general = Column(Boolean, nullable=True, default=None)
+
+    # Index pour accélérer les filtres courants
+    __table_args__ = (
+        Index('idx_photos_user', 'user_id'),
+        Index('idx_photos_event', 'event_id'),
+    )
     
     # Relations
     owner = relationship("User", back_populates="photos", foreign_keys=[user_id])
