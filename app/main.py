@@ -3276,33 +3276,53 @@ async def get_user_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+�cup+�rer le profil complet de l'utilisateur"""
+    """Récupérer le profil complet de l'utilisateur (version optimisée, sans chargement massif de photos)"""
     _t_total = time.perf_counter()
-    with aws_metrics.action_context(f"profile:user:{current_user.id}"):
-        _t_user = time.perf_counter()
-        user_id = current_user.id
-        print(f"[PERF][profile] get user took {time.perf_counter() - _t_user:.3f}s")
+    user_id = current_user.id
 
-        # Event lookup (for perf visibility, no payload change)
+    with aws_metrics.action_context(f"profile:user:{user_id}"):
+        # 1) Lookup event (rapide)
         _t_event = time.perf_counter()
         event = None
         event_id = getattr(current_user, "event_id", None)
         if event_id:
-            event = db.query(Event).filter(Event.id == event_id).first()
+            event = (
+                db.query(Event)
+                .filter(Event.id == event_id)
+                .first()
+            )
         else:
-            user_event = db.query(UserEvent).filter_by(user_id=user_id).first()
+            user_event = (
+                db.query(UserEvent)
+                .filter(UserEvent.user_id == user_id)
+                .first()
+            )
             if user_event:
-                event = db.query(Event).filter_by(id=user_event.event_id).first()
-        _ = event  # reserved for future use
+                event = (
+                    db.query(Event)
+                    .filter(Event.id == user_event.event_id)
+                    .first()
+                )
+        _ = event  # réservé pour usage futur
         print(f"[PERF][profile] fetch event took {time.perf_counter() - _t_event:.3f}s")
 
-        _t_matched = time.perf_counter()
-        photos_with_face = face_recognizer.get_user_photos_with_face(user_id, db)
-        print(f"[PERF][profile] fetch matched photos took {time.perf_counter() - _t_matched:.3f}s")
+        # 2) Compter les photos sans les charger en mémoire
+        _t_counts = time.perf_counter()
+        from sqlalchemy import func
 
-        _t_all = time.perf_counter()
-        all_photos = face_recognizer.get_all_photos_for_user(user_id, db)
-        print(f"[PERF][profile] fetch all photos took {time.perf_counter() - _t_all:.3f}s")
+        total_photos = (
+            db.query(func.count(Photo.id))
+            .filter(Photo.user_id == user_id)
+            .scalar()
+        ) or 0
+
+        photos_with_face = (
+            db.query(func.count(FaceMatch.photo_id))
+            .filter(FaceMatch.user_id == user_id)
+            .scalar()
+        ) or 0
+
+        print(f"[PERF][profile] counts took {time.perf_counter() - _t_counts:.3f}s")
 
         total = time.perf_counter() - _t_total
         print(f"[PERF][profile] total took {total:.3f}s")
@@ -3311,8 +3331,8 @@ async def get_user_profile(
 
         return UserProfile(
             user=current_user,
-            total_photos=len(all_photos),
-            photos_with_face=len(photos_with_face)
+            total_photos=total_photos,
+            photos_with_face=photos_with_face
         )
 
 # === REMATCH / REINDEXATION D'UN ÉVÉNEMENT ===
