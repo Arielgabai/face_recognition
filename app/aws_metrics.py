@@ -115,6 +115,9 @@ class AwsMetrics:
                 ev = parts[2] if len(parts) > 2 else '?'
                 uid = parts[4] if len(parts) > 4 else '?'
                 return f"Mise à jour du selfie (user {uid}, événement {ev})"
+            if action.startswith('profile:user:'):
+                uid = action.split(':', 2)[2] if ':' in action else '?'
+                return f"Profil utilisateur (user {uid})"
         except Exception:
             pass
         return action

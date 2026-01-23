@@ -3250,14 +3250,15 @@ async def get_user_profile(
     db: Session = Depends(get_db)
 ):
     """R+�cup+�rer le profil complet de l'utilisateur"""
-    photos_with_face = face_recognizer.get_user_photos_with_face(current_user.id, db)
-    all_photos = face_recognizer.get_all_photos_for_user(current_user.id, db)
-    
-    return UserProfile(
-        user=current_user,
-        total_photos=len(all_photos),
-        photos_with_face=len(photos_with_face)
-    )
+    with aws_metrics.action_context(f"profile:user:{current_user.id}"):
+        photos_with_face = face_recognizer.get_user_photos_with_face(current_user.id, db)
+        all_photos = face_recognizer.get_all_photos_for_user(current_user.id, db)
+        
+        return UserProfile(
+            user=current_user,
+            total_photos=len(all_photos),
+            photos_with_face=len(photos_with_face)
+        )
 
 # === REMATCH / REINDEXATION D'UN ÉVÉNEMENT ===
 
