@@ -3849,7 +3849,9 @@
                                     const res = await apiFetch('/api/rematch-status');
                                     if (res.ok) {
                                         const st = await res.json();
-                                        if (st && st.status === 'done') return st;
+                                        if (st && ['done', 'disabled', 'validation_failed', 'error', 'unknown', 'idle'].includes(st.status)) {
+                                            return st;
+                                        }
                                     }
                                 } catch {}
                                 await sleep(3000);
@@ -3870,10 +3872,25 @@
                         btnText.style.color = '#22c55e';
                         
                         setTimeout(() => {
-                            const msg = (st && st.matched > 0)
-                                ? 'Selfie et photos mis à jour avec succès !'
-                                : 'Selfie mis à jour. Aucune nouvelle photo trouvée.';
-                            showAlert(msg, (st && st.matched > 0) ? 'success' : 'info');
+                            let msg = 'Selfie mis à jour. Aucune nouvelle photo trouvée.';
+                            let level = 'info';
+                            if (st && st.status === 'done' && st.matched > 0) {
+                                msg = 'Selfie et photos mis à jour avec succès !';
+                                level = 'success';
+                            } else if (st && st.status === 'disabled') {
+                                msg = 'Matching désactivé côté serveur. Aucune photo ne peut être associée.';
+                                level = 'info';
+                            } else if (st && st.status === 'validation_failed') {
+                                msg = 'Selfie invalide. Veuillez réessayer avec une autre photo.';
+                                level = 'error';
+                            } else if (st && st.status === 'error') {
+                                msg = 'Erreur pendant le matching. Veuillez réessayer.';
+                                level = 'error';
+                            } else if (st && st.status === 'timeout') {
+                                msg = 'Le matching prend trop de temps. Veuillez réessayer plus tard.';
+                                level = 'info';
+                            }
+                            showAlert(msg, level);
                             closeSelfieModal();
                         }, 600);
                     } catch (error) {

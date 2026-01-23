@@ -2765,6 +2765,14 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
         user = session.query(User).filter(User.id == user_id).first()
         if not user:
             print(f"[SelfieValidationBg] User {user_id} not found")
+            try:
+                REMATCH_STATUS[user_id] = {
+                    "status": "error",
+                    "error": "user_not_found",
+                    "finished_at": time.time(),
+                }
+            except Exception:
+                pass
             return
         
         # 1. VALIDATION (si strict activé)
@@ -2882,6 +2890,14 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
             session.rollback()
         except Exception:
             pass
+        try:
+            REMATCH_STATUS[user_id] = {
+                "status": "error",
+                "error": str(e),
+                "finished_at": time.time(),
+            }
+        except Exception:
+            pass
     finally:
         try:
             session.close()
@@ -2990,12 +3006,26 @@ async def upload_selfie(
         }
 
 @app.get("/api/rematch-status")
-def get_rematch_status(current_user: User = Depends(get_current_user)):
+def get_rematch_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Retourne l'état du rematching de selfie pour l'utilisateur courant."""
     try:
         st = REMATCH_STATUS.get(current_user.id)
         if not st:
-            return {"status": "idle"}
+            # Fallback robuste (multi-workers): déduire via DB si possible
+            if not (current_user.selfie_data or current_user.selfie_path):
+                return {"status": "idle"}
+            from sqlalchemy import func
+            matched = (
+                db.query(func.count(FaceMatch.photo_id))
+                .filter(FaceMatch.user_id == current_user.id)
+                .scalar()
+            ) or 0
+            if matched > 0:
+                return {"status": "done", "matched": int(matched), "source": "db"}
+            return {"status": "unknown", "matched": int(matched), "source": "db"}
         return st
     except Exception:
         return {"status": "idle"}
