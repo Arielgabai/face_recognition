@@ -121,6 +121,10 @@ def _startup_create_tables():
         from add_show_in_general_column import add_show_in_general_column
         add_show_in_general_column()
         
+        # Ajouter la colonne is_indexed si elle n'existe pas
+        from add_photo_indexed_column import add_photo_indexed_column
+        add_photo_indexed_column()
+
         # Ajouter la table password_reset_tokens si elle n'existe pas
         from add_password_reset_table import add_password_reset_table
         add_password_reset_table()

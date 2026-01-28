@@ -321,7 +321,11 @@ class AwsFaceRecognizer:
         Toujours ré-exécuter pour couvrir les nouvelles photos; le nettoyage par photo rend l'opération sûre.
         """
         self.ensure_collection(event_id)
-        photos = db.query(Photo).filter(Photo.event_id == event_id).all()
+        from sqlalchemy import or_
+        photos = db.query(Photo).filter(
+            Photo.event_id == event_id,
+            or_(Photo.is_indexed.is_(False), Photo.is_indexed.is_(None))
+        ).all()
         for p in photos:
             photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
             if not photo_input:
@@ -330,6 +334,15 @@ class AwsFaceRecognizer:
             if not img_bytes:
                 continue
             self._index_photo_faces_and_get_ids(event_id, p.id, img_bytes)
+            try:
+                p.is_indexed = True
+                db.add(p)
+                db.commit()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             # Libérer mémoire intermédiaire
             try:
                 del photo_input, img_bytes
@@ -1168,6 +1181,15 @@ class AwsFaceRecognizer:
                 pass
             self.ensure_event_users_indexed(event_id, db)
             face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+            try:
+                photo.is_indexed = True
+                db.add(photo)
+                db.commit()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             # Pour chaque FaceId indexé, rechercher des selfies correspondants (ExternalImageId user:{user_id})
             user_best: Dict[int, int] = {}
             for fid in face_ids:
@@ -1260,6 +1282,15 @@ class AwsFaceRecognizer:
         # IMPORTANT: indexer aussi les selfies des users de l'événement avant de matcher
         self.ensure_event_users_indexed(event_id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+        try:
+            photo.is_indexed = True
+            db.add(photo)
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
         # Seuil commun aligné sur la logique selfie->photos
         try:
             import os as _os

@@ -91,6 +91,8 @@ class Photo(Base):
     
     # Visibilité dans l'onglet "Général"
     show_in_general = Column(Boolean, nullable=True, default=None)
+    # Indique si la photo a été indexée côté Rekognition
+    is_indexed = Column(Boolean, nullable=True, default=False)
 
     # Index pour accélérer les filtres courants
     __table_args__ = (
