@@ -2858,11 +2858,20 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                         # S'assurer que les photos de l'événement sont indexées
                         try:
                             print(f"[SelfieValidationBg] Step=ensure-event-photos-indexed user_id={user_id}, event_id={ue.event_id}")
-                            if hasattr(face_recognizer, 'ensure_event_photos_indexed_once'):
-                                face_recognizer.ensure_event_photos_indexed_once(ue.event_id, session)
-                            elif hasattr(face_recognizer, 'ensure_event_photos_indexed'):
-                                if ue.event_id not in getattr(face_recognizer, '_photos_indexed_events', set()):
-                                    face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
+                            from sqlalchemy import func, or_ as _or
+                            missing_count = (
+                                session.query(func.count(Photo.id))
+                                .filter(
+                                    Photo.event_id == ue.event_id,
+                                    _or(Photo.is_indexed.is_(False), Photo.is_indexed.is_(None))
+                                )
+                                .scalar()
+                            ) or 0
+                            if missing_count > 0 and hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                                print(f"[SelfieValidationBg] indexing missing photos event_id={ue.event_id} missing={missing_count}")
+                                face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
+                            else:
+                                print(f"[SelfieValidationBg] skip reindex event_id={ue.event_id} missing={missing_count}")
                         except Exception as _e:
                             print(f"[SelfieValidationBg] ensure photos indexed failed: {_e}")
 
