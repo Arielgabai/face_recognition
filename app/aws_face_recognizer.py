@@ -152,6 +152,7 @@ class AwsFaceRecognizer:
 
     def index_user_selfie(self, event_id: int, user: User):
         coll_id = self._collection_id(event_id)
+        print(f"[AWS][SelfieIndex] start user_id={getattr(user, 'id', None)} event_id={event_id} collection={coll_id}")
 
         # Charger les octets du selfie depuis le chemin ou la base de données
         image_bytes: Optional[bytes] = None
@@ -169,6 +170,7 @@ class AwsFaceRecognizer:
 
         if not image_bytes:
             # Rien à indexer si aucun selfie n'est disponible
+            print(f"[AWS][SelfieIndex] no image bytes user_id={getattr(user, 'id', None)}")
             return
 
         # Supprimer l'ancien FaceId si connu (évite un scan complet de la collection)
@@ -191,8 +193,12 @@ class AwsFaceRecognizer:
         # Préparer l'image (EXIF, RGB, dimension) et recadrer le meilleur visage
         prepared = self._prepare_image_bytes(image_bytes)
         if not prepared:
+            print(f"[AWS][SelfieIndex] prepare_image_bytes failed user_id={getattr(user, 'id', None)}")
             return
         best_crop = self._best_face_crop_or_image(prepared)
+        if not best_crop:
+            print(f"[AWS][SelfieIndex] best_crop missing user_id={getattr(user, 'id', None)}")
+            return
 
         # Indexer le selfie de l'utilisateur dans la collection de l'événement
         with _aws_semaphore:
@@ -206,6 +212,12 @@ class AwsFaceRecognizer:
                     QualityFilter="AUTO",
                     MaxFaces=1,
                 )
+                try:
+                    face_count = len(resp.get('FaceRecords') or [])
+                    unindexed = len(resp.get('UnindexedFaces') or [])
+                    print(f"[AWS][SelfieIndex] index_faces ok user_id={user.id} faces={face_count} unindexed={unindexed}")
+                except Exception:
+                    pass
                 # Mémoriser le FaceId pour accélérer les prochaines recherches
                 try:
                     for rec in (resp.get('FaceRecords') or []):
@@ -216,9 +228,9 @@ class AwsFaceRecognizer:
                             break
                 except Exception:
                     pass
-            except ClientError:
-                # Si l'indexation échoue, on laisse la fonction silencieuse pour ne pas interrompre le flux
-                pass
+            except ClientError as e:
+                # Si l'indexation échoue, log pour debug
+                print(f"[AWS][SelfieIndex] index_faces error user_id={user.id}: {e}")
 
     def _delete_photo_faces(self, event_id: int, photo_id: int):
         coll_id = self._collection_id(event_id)

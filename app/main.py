@@ -2865,9 +2865,13 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                         # Matching
                         print(f"[SelfieValidationBg] Step=match-user-selfie user_id={user_id}, event_id={ue.event_id}")
                         if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
-                            total_matches += face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
+                            matched = face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
+                            print(f"[SelfieValidationBg] match result user_id={user_id} event_id={ue.event_id} matched={matched}")
+                            total_matches += int(matched or 0)
                         else:
-                            total_matches += face_recognizer.match_user_selfie_with_photos(user, session)
+                            matched = face_recognizer.match_user_selfie_with_photos(user, session)
+                            print(f"[SelfieValidationBg] match result (legacy) user_id={user_id} event_id={ue.event_id} matched={matched}")
+                            total_matches += int(matched or 0)
                 except Exception as e:
                     print(f"[SelfieValidationBg] Error matching event {ue.event_id}: {e}")
                     continue
@@ -2921,6 +2925,7 @@ async def upload_selfie(
     - Si validation échoue en background, le selfie est supprimé automatiquement
     """
     _t_total = time.time()
+    print(f"[SelfieUpload] start user_id={current_user.id} strict={strict}")
     if current_user.user_type == UserType.PHOTOGRAPHER:
         raise HTTPException(
             status_code=403, 

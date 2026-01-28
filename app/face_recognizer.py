@@ -567,11 +567,15 @@ class FaceRecognizer:
         photos = db.query(Photo).filter(Photo.event_id == user_event.event_id).all()
         match_count = 0
         for photo in photos:
-            if not photo.photo_data:
-                continue
             try:
-                image_data = io.BytesIO(photo.photo_data)
-                image = face_recognition.load_image_file(image_data)
+                image = None
+                if photo.photo_data:
+                    image_data = io.BytesIO(photo.photo_data)
+                    image = face_recognition.load_image_file(image_data)
+                elif getattr(photo, "file_path", None) and os.path.exists(photo.file_path):
+                    image = face_recognition.load_image_file(photo.file_path)
+                if image is None:
+                    continue
                 face_locations = face_recognition.face_locations(image)
                 face_encodings = face_recognition.face_encodings(image, face_locations)
                 for face_encoding in face_encodings:
@@ -608,11 +612,15 @@ class FaceRecognizer:
         photos = db.query(Photo).filter(Photo.event_id == event_id).all()
         match_count = 0
         for photo in photos:
-            if not photo.photo_data:
-                continue
             try:
-                image_data = io.BytesIO(photo.photo_data)
-                image = face_recognition.load_image_file(image_data)
+                image = None
+                if photo.photo_data:
+                    image_data = io.BytesIO(photo.photo_data)
+                    image = face_recognition.load_image_file(image_data)
+                elif getattr(photo, "file_path", None) and os.path.exists(photo.file_path):
+                    image = face_recognition.load_image_file(photo.file_path)
+                if image is None:
+                    continue
                 face_locations = face_recognition.face_locations(image)
                 face_encodings = face_recognition.face_encodings(image, face_locations)
                 for face_encoding in face_encodings:
