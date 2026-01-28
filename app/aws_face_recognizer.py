@@ -807,12 +807,12 @@ class AwsFaceRecognizer:
         return results
 
     """def match_user_selfie_with_photos_event(self, user: User, event_id: int, db: Session) -> int:
-        """Matching inversé: recherche des faces de photos à partir du selfie (1 seul appel image).
+        Matching inversé: recherche des faces de photos à partir du selfie (1 seul appel image).
 
         1) Indexer/mettre à jour le selfie (ExternalImageId=user:{id})
         2) SearchFacesByImage(selfie) sur la collection de l'événement
         3) Filtrer les matches "photo:{photo_id}" et créer FaceMatch en bulk
-        """
+        
         print(f"[MATCH-SELFIE] START user_id={user.id} event_id={event_id}")
         self.ensure_collection(event_id)
         auto_purge = os.getenv("AWS_REKOGNITION_PURGE_AUTO", "false").lower() in {"1", "true", "yes"}
