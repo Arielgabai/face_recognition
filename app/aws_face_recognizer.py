@@ -1006,12 +1006,6 @@ class AwsFaceRecognizer:
         t2 = time.time()
         print(f"[MATCH-SELFIE] after maybe_purge_collection: {t2 - t0:.3f}s")
 
-        # Libérer la connexion DB pendant les appels AWS (évite un pool bloqué)
-        try:
-            db.close()
-        except Exception:
-            pass
-
         self.index_user_selfie(event_id, user)
         t3 = time.time()
         print(f"[MATCH-SELFIE] after index_user_selfie: {t3 - t0:.3f}s")
@@ -1075,48 +1069,64 @@ class AwsFaceRecognizer:
         if not matched_photo_ids:
             print(f"⚠️  [SELFIE-MATCH][user->{user.id}] NO MATCHES FOUND! Photos may not be indexed in collection.")
 
-        allowed_ids = set(
-            pid for (pid,) in db.query(Photo.id)
-            .filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys())))
-            .all()
-        )
-        # juste avant le traitement FaceMatch / DB :
+        db_reopened = False
+        try:
+            # Réouvrir une session propre après les appels AWS
+            try:
+                db.close()
+            except Exception:
+                pass
+            db = SessionLocal()
+            db_reopened = True
 
-        t4 = time.time()
-        print(f"[MATCH-SELFIE] before DB FaceMatch loop: {t4 - t0:.3f}s")
-
-        # <-- insère ici la version optimisée du bloc FaceMatch (avec bulk select)
-        from sqlalchemy import and_ as _and
-
-        # 1) On récupère tous les FaceMatch existants pour ce user + ces photos en UNE requête
-        existing_rows = (
-            db.query(FaceMatch)
-            .filter(
-                FaceMatch.user_id == user.id,
-                FaceMatch.photo_id.in_(allowed_ids)
+            allowed_ids = set(
+                pid for (pid,) in db.query(Photo.id)
+                .filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys())))
+                .all()
             )
-            .all()
-        )
-        existing_by_pid = {fm.photo_id: fm for fm in existing_rows}
+            # juste avant le traitement FaceMatch / DB :
 
-        count_matches = 0
-        for pid in allowed_ids:
-            score = int(matched_photo_ids.get(pid) or 0)
-            existing = existing_by_pid.get(pid)
-            if existing:
-                # Check si meilleur score
-                if score > int(existing.confidence_score or 0):
-                    existing.confidence_score = score
-            else:
-                db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
-                count_matches += 1
+            t4 = time.time()
+            print(f"[MATCH-SELFIE] before DB FaceMatch loop: {t4 - t0:.3f}s")
 
-        t5 = time.time()
-        print(f"[MATCH-SELFIE] before db.commit(): {t5 - t0:.3f}s")
-        db.commit()
-        t6 = time.time()
-        print(f"[MATCH-SELFIE] DONE user_id={user.id} event_id={event_id} in {t6 - t0:.3f}s")
-        return count_matches
+            # <-- insère ici la version optimisée du bloc FaceMatch (avec bulk select)
+            from sqlalchemy import and_ as _and
+
+            # 1) On récupère tous les FaceMatch existants pour ce user + ces photos en UNE requête
+            existing_rows = (
+                db.query(FaceMatch)
+                .filter(
+                    FaceMatch.user_id == user.id,
+                    FaceMatch.photo_id.in_(allowed_ids)
+                )
+                .all()
+            )
+            existing_by_pid = {fm.photo_id: fm for fm in existing_rows}
+
+            count_matches = 0
+            for pid in allowed_ids:
+                score = int(matched_photo_ids.get(pid) or 0)
+                existing = existing_by_pid.get(pid)
+                if existing:
+                    # Check si meilleur score
+                    if score > int(existing.confidence_score or 0):
+                        existing.confidence_score = score
+                else:
+                    db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
+                    count_matches += 1
+
+            t5 = time.time()
+            print(f"[MATCH-SELFIE] before db.commit(): {t5 - t0:.3f}s")
+            db.commit()
+            t6 = time.time()
+            print(f"[MATCH-SELFIE] DONE user_id={user.id} event_id={event_id} in {t6 - t0:.3f}s")
+            return count_matches
+        finally:
+            if db_reopened:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     # Stubs / compat pour l'API
     def get_all_user_encodings(self, db: Session):
