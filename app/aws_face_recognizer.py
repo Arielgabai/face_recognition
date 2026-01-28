@@ -806,7 +806,7 @@ class AwsFaceRecognizer:
         results: List[Dict] = [{"user_id": uid, "confidence_score": int(round(sim))} for uid, sim in user_best.items()]
         return results
 
-    def match_user_selfie_with_photos_event(self, user: User, event_id: int, db: Session) -> int:
+    """def match_user_selfie_with_photos_event(self, user: User, event_id: int, db: Session) -> int:
         """Matching inversé: recherche des faces de photos à partir du selfie (1 seul appel image).
 
         1) Indexer/mettre à jour le selfie (ExternalImageId=user:{id})
@@ -985,7 +985,7 @@ class AwsFaceRecognizer:
             print(f"[MatchFallback][CompareFaces] error: {_e}")
 
         db.commit()
-        return count_matches
+        return count_matches"""
 
     import time
 
