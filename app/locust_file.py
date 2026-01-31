@@ -1,8 +1,11 @@
 from locust import HttpUser, task, between
 from uuid import uuid4
 import os
+import time
 import random
 from pathlib import Path
+import json
+from urllib.parse import urlparse
 import gevent  # 👈 ajouté pour pouvoir endormir le user très longtemps
 
 # Charger les photos au démarrage du module
@@ -23,6 +26,43 @@ def load_selfie_photos():
 
 # Charger les photos au démarrage
 load_selfie_photos()
+
+# Charger la séquence HAR (ordre exact des appels /api/photo et event-expiration)
+HAR_FILE = Path(__file__).parent / "session-utilisateur.har"
+HAR_PHOTO_SEQUENCE = []
+
+def load_har_photo_sequence():
+    if not HAR_FILE.exists():
+        print(f"[Locust] HAR introuvable: {HAR_FILE}")
+        return []
+    try:
+        with open(HAR_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        entries = data.get("log", {}).get("entries", [])
+        seq = []
+        seen_all_photos = False
+        for e in entries:
+            req = e.get("request", {})
+            url = req.get("url", "") or ""
+            if "/api/" not in url:
+                continue
+            path = urlparse(url).path
+            if path == "/api/all-photos":
+                seen_all_photos = True
+                continue
+            if not seen_all_photos:
+                continue
+            if path.startswith("/api/photo/"):
+                seq.append("photo")
+            elif path == "/api/user/event-expiration":
+                seq.append("event-expiration")
+        print(f"[Locust] HAR photo sequence loaded: {len(seq)} steps")
+        return seq
+    except Exception as e:
+        print(f"[Locust] Erreur lecture HAR: {e}")
+        return []
+
+HAR_PHOTO_SEQUENCE = load_har_photo_sequence()
 
 class RegisterUser(HttpUser):
     # wait_time ne sert plus vraiment, mais on le laisse
@@ -75,7 +115,35 @@ class RegisterUser(HttpUser):
             name="/api/check-user-availability"
         )
 
-        # Step 3: register user
+        # Step 3: validate selfie (pre-check, comme le front)
+        try:
+            with open(selected_photo, 'rb') as photo_file:
+                files = {
+                    'file': (selected_photo.name, photo_file, 'image/jpeg')
+                }
+                self.client.post(
+                    "/api/validate-selfie",
+                    files=files,
+                    name="/api/validate-selfie"
+                )
+        except Exception as e:
+            print(f"[Locust] Erreur validate-selfie pour {username}: {e}")
+
+        # Step 4: re-check event code (second call in HAR)
+        self.client.post(
+            "/api/check-event-code",
+            json={"event_code": "M01"},
+            name="/api/check-event-code"
+        )
+
+        # Step 5: re-check availability (second call in HAR)
+        self.client.post(
+            "/api/check-user-availability",
+            json={"username": username, "email": email, "event_code": "M01"},
+            name="/api/check-user-availability"
+        )
+
+        # Step 6: register user
         response = self.client.post(
             "/api/register-with-event-code",
             json={
@@ -97,7 +165,7 @@ class RegisterUser(HttpUser):
             gevent.sleep(999999)
             return
 
-        # Step 4: login
+        # Step 7: login
         login_response = self.client.post(
             "/api/login",
             json={"username": username, "password": password},
@@ -124,7 +192,7 @@ class RegisterUser(HttpUser):
             gevent.sleep(999999)
             return
 
-        # Step 5: upload selfie avec la photo sélectionnée
+        # Step 8: upload selfie avec la photo sélectionnée
         try:
             with open(selected_photo, 'rb') as photo_file:
                 files = {
@@ -170,32 +238,12 @@ class RegisterUser(HttpUser):
             gevent.sleep(999999)
             return
 
-        # Step 6: Simuler le comportement d'un utilisateur qui consulte ses photos
+        # Step 9: Simuler le comportement d'un utilisateur qui consulte ses photos
         # (comme s'il scrollait sur la page du dashboard)
-        
-        # Attendre un peu (comme si l'utilisateur attendait le matching)
-        gevent.sleep(random.uniform(2, 5))
         
         headers_auth = {'Authorization': f'Bearer {token}'}
         
-        # 6.1 : Récupérer le profil utilisateur
-        try:
-            profile_response = self.client.get(
-                "/api/profile",
-                headers=headers_auth,
-                name="/api/profile"
-            )
-            if profile_response.status_code == 200:
-                profile_data = profile_response.json()
-                photos_with_face = profile_data.get('photos_with_face', 0)
-                print(f"[Locust] {username} - Profil chargé : {photos_with_face} photos matchées")
-        except Exception as e:
-            print(f"[Locust] Erreur profile pour {username}: {e}")
-        
-        # Attendre un peu (scroll)
-        gevent.sleep(random.uniform(0.5, 1.5))
-        
-        # 6.2 : Récupérer les photos matchées (onglet "Mes photos")
+        # 9.1 : Récupérer les photos matchées (Mes photos)
         try:
             my_photos_response = self.client.get(
                 "/api/my-photos",
@@ -205,28 +253,52 @@ class RegisterUser(HttpUser):
             if my_photos_response.status_code == 200:
                 my_photos = my_photos_response.json()
                 print(f"[Locust] {username} - {len(my_photos)} photos matchées récupérées")
-                
-                # Charger quelques miniatures (simuler scroll/affichage)
-                images_to_load = min(5, len(my_photos))  # Charger max 5 premières photos
-                for i in range(images_to_load):
-                    if my_photos[i].get('filename'):
-                        try:
-                            self.client.get(
-                                f"/api/image/{my_photos[i]['filename']}",
-                                headers=headers_auth,
-                                name="/api/image/[matched]"
-                            )
-                        except Exception:
-                            pass
-                        # Petit délai entre chaque image (scroll naturel)
-                        gevent.sleep(random.uniform(0.1, 0.3))
         except Exception as e:
             print(f"[Locust] Erreur my-photos pour {username}: {e}")
-        
-        # Attendre un peu (changement d'onglet)
-        gevent.sleep(random.uniform(1, 2))
-        
-        # 6.3 : Récupérer toutes les photos de l'événement (onglet "Toutes les photos")
+
+        # 9.2 : Deuxième chargement Mes photos (comme dans le HAR)
+        gevent.sleep(2.0)
+        try:
+            self.client.get(
+                "/api/my-photos",
+                headers=headers_auth,
+                name="/api/my-photos"
+            )
+        except Exception as e:
+            print(f"[Locust] Erreur my-photos (2) pour {username}: {e}")
+
+        # 9.3 : provider + me
+        try:
+            self.client.get(
+                "/api/admin/provider",
+                headers=headers_auth,
+                name="/api/admin/provider"
+            )
+        except Exception as e:
+            print(f"[Locust] Erreur admin/provider pour {username}: {e}")
+
+        try:
+            self.client.get(
+                "/api/me",
+                headers=headers_auth,
+                name="/api/me"
+            )
+        except Exception as e:
+            print(f"[Locust] Erreur /api/me pour {username}: {e}")
+
+        # 9.4 : Mes photos avec cache busting
+        try:
+            cb = int(time.time() * 1000)
+            self.client.get(
+                f"/api/my-photos?cb={cb}",
+                headers=headers_auth,
+                name="/api/my-photos?cb"
+            )
+        except Exception as e:
+            print(f"[Locust] Erreur my-photos cb pour {username}: {e}")
+
+        # 9.5 : Toutes les photos
+        all_photos = []
         try:
             all_photos_response = self.client.get(
                 "/api/all-photos",
@@ -236,41 +308,56 @@ class RegisterUser(HttpUser):
             if all_photos_response.status_code == 200:
                 all_photos = all_photos_response.json()
                 print(f"[Locust] {username} - {len(all_photos)} photos totales récupérées")
-                
-                # Charger quelques miniatures (simuler scroll)
-                images_to_load = min(10, len(all_photos))  # Charger max 10 premières photos
-                for i in range(images_to_load):
-                    if all_photos[i].get('filename'):
-                        try:
-                            self.client.get(
-                                f"/api/image/{all_photos[i]['filename']}",
-                                headers=headers_auth,
-                                name="/api/image/[all]"
-                            )
-                        except Exception:
-                            pass
-                        # Petit délai entre chaque image
-                        gevent.sleep(random.uniform(0.1, 0.3))
         except Exception as e:
             print(f"[Locust] Erreur all-photos pour {username}: {e}")
-        
-        # 6.4 : Vérifier le statut du matching (polling comme ferait le frontend)
-        for _ in range(3):  # 3 tentatives de polling
-            gevent.sleep(random.uniform(2, 4))
-            try:
-                status_response = self.client.get(
-                    "/api/rematch-status",
-                    headers=headers_auth,
-                    name="/api/rematch-status"
-                )
-                if status_response.status_code == 200:
-                    status_data = status_response.json()
-                    if status_data.get('status') == 'done':
-                        print(f"[Locust] ✓ Matching terminé pour {username} : {status_data.get('matched', 0)} matches")
-                        break
-            except Exception:
-                pass
 
+        # 9.6 : Rejouer exactement l'ordre HAR pour /api/photo + event-expiration
+        try:
+            photo_pool_ids = []
+            if isinstance(my_photos, list):
+                for p in my_photos:
+                    pid = p.get('id')
+                    if pid:
+                        photo_pool_ids.append(pid)
+            if isinstance(all_photos, list):
+                for p in all_photos:
+                    pid = p.get('id')
+                    if pid and pid not in photo_pool_ids:
+                        photo_pool_ids.append(pid)
+
+            if not HAR_PHOTO_SEQUENCE:
+                print("[Locust] HAR photo sequence vide, skip replay")
+            else:
+                idx = 0
+                for step in HAR_PHOTO_SEQUENCE:
+                    if step == "event-expiration":
+                        try:
+                            self.client.get(
+                                "/api/user/event-expiration",
+                                headers=headers_auth,
+                                name="/api/user/event-expiration"
+                            )
+                        except Exception as e:
+                            print(f"[Locust] Erreur event-expiration pour {username}: {e}")
+                        gevent.sleep(random.uniform(0.01, 0.05))
+                        continue
+
+                    if not photo_pool_ids:
+                        break
+                    pid = photo_pool_ids[idx % len(photo_pool_ids)]
+                    idx += 1
+                    try:
+                        self.client.get(
+                            f"/api/photo/{pid}",
+                            headers=headers_auth,
+                            name="/api/photo/[har]"
+                        )
+                    except Exception:
+                        pass
+                    gevent.sleep(random.uniform(0.01, 0.05))
+        except Exception as e:
+            print(f"[Locust] Erreur replay HAR photos pour {username}: {e}")
+        
         # 👉 User a fini son scénario complet (création + consultation), on le "gèle"
         self.has_run = True
         gevent.sleep(999999)
