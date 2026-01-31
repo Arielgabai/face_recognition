@@ -140,34 +140,32 @@ class AwsFaceRecognizer:
         coll_id = self._collection_id(event_id)
         print(f"[ENSURE-COLL] enter event_id={event_id}, coll_id={coll_id}")
 
-        # On essaie d'acquérir le sémaphore avec un timeout pour éviter de bloquer à l'infini
         acquired = False
         try:
-            # Ajuste le timeout si besoin (5s ici pour debug)
+            # On limite quand même la concurrence, mais sans bloquer à l'infini
             acquired = _aws_semaphore.acquire(timeout=5.0)
             if not acquired:
                 print(f"[ENSURE-COLL] WARNING: could not acquire _aws_semaphore within 5s for coll_id={coll_id}, proceeding without semaphore")
 
             try:
-                print(f"[ENSURE-COLL] calling DescribeCollection for coll_id={coll_id}")
-                aws_metrics.inc("DescribeCollection")
-                self.client.describe_collection(CollectionId=coll_id)
-                print(f"[ENSURE-COLL] DescribeCollection OK for coll_id={coll_id}")
+                # Stratégie simple : on tente CreateCollection,
+                # si elle existe déjà, on ignore l'erreur.
+                print(f"[ENSURE-COLL] calling CreateCollection for coll_id={coll_id}")
+                aws_metrics.inc("CreateCollection")
+                self.client.create_collection(CollectionId=coll_id)
+                print(f"[ENSURE-COLL] CreateCollection OK for coll_id={coll_id}")
             except ClientError as e:
                 code = e.response.get("Error", {}).get("Code")
-                print(f"[ENSURE-COLL] ClientError on DescribeCollection coll_id={coll_id}: code={code}")
-                if code == "ResourceNotFoundException":
-                    print(f"[ENSURE-COLL] Collection not found, creating coll_id={coll_id}")
-                    aws_metrics.inc("CreateCollection")
-                    self.client.create_collection(CollectionId=coll_id)
-                    print(f"[ENSURE-COLL] CreateCollection OK for coll_id={coll_id}")
+                print(f"[ENSURE-COLL] ClientError on CreateCollection coll_id={coll_id}: code={code}")
+                if code in {"ResourceAlreadyExistsException", "ResourceInUseException"}:
+                    # La collection existe déjà → c'est ce qu'on voulait
+                    print(f"[ENSURE-COLL] Collection already exists for coll_id={coll_id}, that's fine")
                 else:
                     print(f"[ENSURE-COLL] ERROR (re-raise) for coll_id={coll_id}: {e}")
                     raise
 
             print(f"[ENSURE-COLL] exit OK event_id={event_id}, coll_id={coll_id}")
         finally:
-            # On ne release que si on a bien acquis
             if acquired:
                 _aws_semaphore.release()
                 print(f"[ENSURE-COLL] released _aws_semaphore for coll_id={coll_id}")
