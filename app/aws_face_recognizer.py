@@ -806,186 +806,7 @@ class AwsFaceRecognizer:
         results: List[Dict] = [{"user_id": uid, "confidence_score": int(round(sim))} for uid, sim in user_best.items()]
         return results
 
-    """def match_user_selfie_with_photos_event(self, user: User, event_id: int, db: Session) -> int:
-        Matching inversé: recherche des faces de photos à partir du selfie (1 seul appel image).
-
-        1) Indexer/mettre à jour le selfie (ExternalImageId=user:{id})
-        2) SearchFacesByImage(selfie) sur la collection de l'événement
-        3) Filtrer les matches "photo:{photo_id}" et créer FaceMatch en bulk
-        
-        print(f"[MATCH-SELFIE] START user_id={user.id} event_id={event_id}")
-        self.ensure_collection(event_id)
-        auto_purge = os.getenv("AWS_REKOGNITION_PURGE_AUTO", "false").lower() in {"1", "true", "yes"}
-        if auto_purge:
-            try:
-                self._maybe_purge_collection(event_id, db)
-            except Exception as e:
-                print(f"[AWS] _maybe_purge_collection failed for event {event_id}: {e}")
-        self.index_user_selfie(event_id, user)
-
-        # Charger les octets du selfie
-        image_bytes: Optional[bytes] = None
-        if getattr(user, "selfie_path", None) and os.path.exists(user.selfie_path):
-            try:
-                with open(user.selfie_path, "rb") as f:
-                    image_bytes = f.read()
-            except Exception:
-                image_bytes = None
-        elif getattr(user, "selfie_data", None):
-            try:
-                image_bytes = bytes(user.selfie_data)
-            except Exception:
-                image_bytes = None
-        if not image_bytes:
-            return 0
-
-        # Ne pas supprimer les anciens FaceMatch; on ne fait qu'ajouter les nouveaux afin de préserver l'historique
-
-        # Chercher les faces photo qui matchent le selfie
-        # Préférence: utiliser SearchFaces avec le FaceId du selfie déjà indexé (plus robuste)
-        resp = None
-        user_fid = self._find_user_face_id(event_id, user.id)
-        if user_fid:
-            resp = self._search_faces_retry(self._collection_id(event_id), user_fid, max_faces=AWS_SELFIE_SEARCH_MAXFACES)
-        if not resp:
-            try:
-                resp = self.client.search_faces_by_image(
-                    CollectionId=self._collection_id(event_id),
-                    Image={"Bytes": image_bytes},
-                    MaxFaces=AWS_SELFIE_SEARCH_MAXFACES,
-                    FaceMatchThreshold=self.search_threshold,
-                    QualityFilter=AWS_SEARCH_QUALITY_FILTER,
-                )
-            except ClientError as e:
-                print(f"❌ Erreur AWS SearchFacesByImage (selfie->photo): {e}")
-                return 0
-
-        # Extraire les photo_id à partir des ExternalImageId "photo:{photo_id}"
-        matched_photo_ids: Dict[int, int] = {}
-        for fm in resp.get("FaceMatches", [])[:AWS_SELFIE_SEARCH_MAXFACES]:
-            face = fm.get("Face") or {}
-            ext = (face.get("ExternalImageId") or "").strip()
-            if not ext or not ext.startswith("photo:"):
-                continue
-            try:
-                pid = int(ext.split(":", 1)[1])
-            except Exception:
-                continue
-            similarity = int(float(fm.get("Similarity", 0.0)))
-            prev = matched_photo_ids.get(pid)
-            if prev is None or similarity > prev:
-                matched_photo_ids[pid] = similarity
-
-        print(f"[SELFIE-MATCH][user->{user.id}] matched_photo_ids={matched_photo_ids}, threshold={self.search_threshold}")
-        
-        if not matched_photo_ids:
-            print(f"⚠️  [SELFIE-MATCH][user->{user.id}] NO MATCHES FOUND! Photos may not be indexed in collection.")
-
-        allowed_ids = set(
-            pid for (pid,) in db.query(Photo.id)
-            .filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys())))
-            .all()
-        )
-        # Créer des FaceMatch en bulk
-        from sqlalchemy import and_ as _and
-
-        # 1) On récupère tous les FaceMatch existants pour ce user + ces photos en UNE requête
-        existing_rows = (
-            db.query(FaceMatch)
-            .filter(
-                FaceMatch.user_id == user.id,
-                FaceMatch.photo_id.in_(allowed_ids)
-            )
-            .all()
-        )
-        existing_by_pid = {fm.photo_id: fm for fm in existing_rows}
-
-        count_matches = 0
-        for pid in allowed_ids:
-            score = int(matched_photo_ids.get(pid) or 0)
-            existing = existing_by_pid.get(pid)
-            if existing:
-                # Check si meilleur score
-                if score > int(existing.confidence_score or 0):
-                    existing.confidence_score = score
-            else:
-                db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
-                count_matches += 1
-
-
-        # Fallback robuste: si aucun match par collection, utiliser CompareFaces(Selfie vs crops) sur toutes les photos de l'événement
-        # DÉSACTIVÉ par défaut: trop coûteux (peut faire 100+ DetectFaces + 200+ CompareFaces = 0,40$+)
-        # Peut être activé via variable d'environnement ENABLE_COMPARE_FACES_FALLBACK=1
-        # Si count_matches == 0, c'est probablement qu'il n'y a vraiment aucun match
-        enable_fallback = os.environ.get("ENABLE_COMPARE_FACES_FALLBACK", "0") == "1"
-        try:
-            if enable_fallback and count_matches == 0:
-                print(f"⚠️  [FALLBACK-COMPAREFACES] Starting expensive fallback for user {user.id} event {event_id}")
-                # Préparer selfie crop
-                selfie_bytes: Optional[bytes] = None
-                if getattr(user, "selfie_data", None):
-                    try:
-                        selfie_bytes = bytes(user.selfie_data)
-                    except Exception:
-                        selfie_bytes = None
-                if selfie_bytes is None and getattr(user, "selfie_path", None) and os.path.exists(user.selfie_path):
-                    try:
-                        with open(user.selfie_path, "rb") as f:
-                            selfie_bytes = f.read()
-                    except Exception:
-                        selfie_bytes = None
-                if selfie_bytes:
-                    selfie_prepared = self._prepare_image_bytes(selfie_bytes)
-                    selfie_crop = self._best_face_crop_or_image(selfie_prepared) if selfie_prepared else None
-                else:
-                    selfie_crop = None
-
-                if selfie_crop:
-                    photos = db.query(Photo).filter(Photo.event_id == event_id).all()
-                    for p in photos:
-                        try:
-                            photo_input = p.file_path if (getattr(p, 'file_path', None) and os.path.exists(p.file_path)) else p.photo_data
-                            if not photo_input:
-                                continue
-                            image_bytes = self._prepare_image_bytes(photo_input)
-                            if not image_bytes:
-                                continue
-                            boxes = self._detect_faces_boxes(image_bytes)
-                            if not boxes:
-                                continue
-                            crops = self._crop_face_regions(image_bytes, boxes)
-                            best_sim = 0
-                            for cr in crops:
-                                try:
-                                    cmp = self.client.compare_faces(SourceImage={"Bytes": selfie_crop}, TargetImage={"Bytes": cr}, SimilarityThreshold=0)
-                                    for m in (cmp.get('FaceMatches') or []):
-                                        try:
-                                            s = int(round(float(m.get('Similarity', 0.0))))
-                                        except Exception:
-                                            s = 0
-                                        if s > best_sim:
-                                            best_sim = s
-                                except ClientError:
-                                    continue
-                            if best_sim >= int(self.search_threshold):
-                                try:
-                                    existing = db.query(FaceMatch).filter(FaceMatch.photo_id == p.id, FaceMatch.user_id == user.id).first()
-                                    if existing:
-                                        if best_sim > int(existing.confidence_score or 0):
-                                            existing.confidence_score = best_sim
-                                    else:
-                                        db.add(FaceMatch(photo_id=p.id, user_id=user.id, confidence_score=best_sim))
-                                        count_matches += 1
-                                except Exception:
-                                    db.add(FaceMatch(photo_id=p.id, user_id=user.id, confidence_score=best_sim))
-                                    count_matches += 1
-                        except Exception:
-                            continue
-        except Exception as _e:
-            print(f"[MatchFallback][CompareFaces] error: {_e}")
-
-        db.commit()
-        return count_matches"""
+    
 
     import time
 
@@ -1027,7 +848,15 @@ class AwsFaceRecognizer:
         if not image_bytes:
             return 0
 
-        # Ne pas supprimer les anciens FaceMatch; on ne fait qu'ajouter les nouveaux afin de préserver l'historique
+        # DEBUG : chatgpt
+        print(f"[MATCH-SELFIE] selfie_path={getattr(user, 'selfie_path', None)} exists={os.path.exists(getattr(user, 'selfie_path', '') or '')}")
+        print(f"[MATCH-SELFIE] has_selfie_data={bool(getattr(user, 'selfie_data', None))}")
+        if image_bytes:
+            print(f"[MATCH-SELFIE] image_bytes_len={len(image_bytes)}")
+        else:
+            print("[MATCH-SELFIE] image_bytes is empty => RETURN 0")
+
+                # Ne pas supprimer les anciens FaceMatch; on ne fait qu'ajouter les nouveaux afin de préserver l'historique
 
         # Chercher les faces photo qui matchent le selfie
         # Préférence: utiliser SearchFaces avec le FaceId du selfie déjà indexé (plus robuste)
@@ -1068,6 +897,9 @@ class AwsFaceRecognizer:
         
         if not matched_photo_ids:
             print(f"⚠️  [SELFIE-MATCH][user->{user.id}] NO MATCHES FOUND! Photos may not be indexed in collection.")
+        # DEBUG : chatgpt
+        print("[SELFIE-MATCH] raw FaceMatches ExternalImageIds=",
+        [ (fm.get("Face", {}) or {}).get("ExternalImageId") for fm in resp.get("FaceMatches", []) ])
 
         db_reopened = False
         try:
@@ -1084,6 +916,10 @@ class AwsFaceRecognizer:
                 .filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys())))
                 .all()
             )
+            # DEBUG : chatgpt
+            print(f"[SELFIE-MATCH] matched_photo_ids keys={list(matched_photo_ids.keys())}")
+            print(f"[SELFIE-MATCH] allowed_ids after DB filter={allowed_ids}")
+
             # juste avant le traitement FaceMatch / DB :
 
             t4 = time.time()
