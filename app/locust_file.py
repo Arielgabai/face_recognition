@@ -267,15 +267,7 @@ class RegisterUser(HttpUser):
         except Exception as e:
             print(f"[Locust] Erreur my-photos (2) pour {username}: {e}")
 
-        # 9.3 : provider + me
-        try:
-            self.client.get(
-                "/api/admin/provider",
-                headers=headers_auth,
-                name="/api/admin/provider"
-            )
-        except Exception as e:
-            print(f"[Locust] Erreur admin/provider pour {username}: {e}")
+        # 9.3 : me
 
         try:
             self.client.get(
