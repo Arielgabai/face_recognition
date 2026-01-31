@@ -3329,13 +3329,26 @@
                     showAlert('Selfie mis à jour avec succès !', 'success');
                     // Fermer le modal
                     closeProfileSelfieModal();
-                    // Attendre un peu pour que le serveur traite la mise à jour
-                    setTimeout(() => {
+                    try {
+                        showGlobalLoading('Mise à jour des photos...');
+                        // Attendre la fin du rematching côté serveur
+                        const st = await waitRematchDone();
                         // Recharger le selfie dans le profil avec cache-busting
                         loadProfileSelfie();
                         // Recharger les photos pour mettre à jour les correspondances
-                        loadMyPhotos();
-                    }, 500);
+                        try { toggleMyPhotosLoading(true); } catch {}
+                        await reloadMyPhotosUntilStable({ timeoutMs: 60000, intervalMs: 2000 });
+                        if (st && st.status === 'validation_failed') {
+                            showAlert('Selfie invalide. Veuillez réessayer avec une autre photo.', 'error');
+                        } else if (st && st.status === 'error') {
+                            showAlert('Erreur pendant le matching. Veuillez réessayer.', 'error');
+                        }
+                    } catch (error) {
+                        showAlert('La mise à jour des photos a pris trop de temps. Veuillez réessayer.', 'error');
+                    } finally {
+                        try { toggleMyPhotosLoading(false); } catch {}
+                        hideGlobalLoading();
+                    }
                 } else {
                     const errorBox = document.getElementById('profileSelfieModalError');
                     const message = data.detail || data.message || 'Erreur lors de la mise à jour du selfie';
@@ -3841,31 +3854,10 @@
                     try {
                         // Afficher le spinner global pendant on attend le rematching serveur
                         showGlobalLoading('Mise à jour des photos...');
-                        // Poller l'état côté serveur jusqu'à statut "done"
-                        const waitRematchDone = async (timeoutMs = 240000) => {
-                            const start = Date.now();
-                            while (Date.now() - start < timeoutMs) {
-                                try {
-                                    const res = await apiFetch('/api/rematch-status');
-                                    if (res.ok) {
-                                        const st = await res.json();
-                                        if (st && ['done', 'disabled', 'validation_failed', 'error', 'unknown', 'idle'].includes(st.status)) {
-                                            return st;
-                                        }
-                                    }
-                                } catch {}
-                                await sleep(3000);
-                            }
-                            return { status: 'timeout' };
-                        };
                         const st = await waitRematchDone();
                         // Une fois terminé côté serveur, recharger mes photos puis attendre images DOM
                         try { toggleMyPhotosLoading(true); } catch {}
-                        const myResp = await apiFetch('/api/my-photos');
-                        const photos = myResp.ok ? await myResp.json() : [];
-                        updatePhotoDisplay(photos);
-                        await waitForAllImagesIn('#myPhotosList', 30000);
-                        try { window.__myPhotosPrimed = true; window.__myPhotosHash = idsHash(photos); } catch {}
+                        await reloadMyPhotosUntilStable({ timeoutMs: 60000, intervalMs: 2000 });
                         
                         // Succès final après chargement complet
                         btnText.textContent = 'Terminé !';
@@ -3910,6 +3902,7 @@
                         updateBtn.disabled = false;
                     } finally {
                         try { toggleMyPhotosLoading(false); } catch {}
+                        hideGlobalLoading();
                     }
                 } else {
                     const errorData = await response.json().catch(() => ({}));
@@ -4217,6 +4210,23 @@
                 }
                 setTimeout(cleanup, timeoutMs);
             });
+        }
+
+        async function waitRematchDone(timeoutMs = 240000) {
+            const start = Date.now();
+            while (Date.now() - start < timeoutMs) {
+                try {
+                    const res = await apiFetch('/api/rematch-status');
+                    if (res.ok) {
+                        const st = await res.json();
+                        if (st && ['done', 'disabled', 'validation_failed', 'error', 'unknown', 'idle'].includes(st.status)) {
+                            return st;
+                        }
+                    }
+                } catch {}
+                await sleep(3000);
+            }
+            return { status: 'timeout' };
         }
 
         // Nouveaux helpers pour garantir que les photos sont réellement rechargées
