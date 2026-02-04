@@ -1,4 +1,26 @@
+# =============================================================================
+# CHARGEMENT DE LA CONFIGURATION SSM (DOIT ÊTRE EN PREMIER)
+# =============================================================================
+# Ce bloc doit s'exécuter AVANT tout autre import qui lit os.environ
+# (database.py, settings.py, aws_face_recognizer.py, etc.)
+# =============================================================================
+
+# 1. Patch face_recognition (ne dépend pas de la config)
 import face_recognition_patch
+
+# 2. Charger les paramètres SSM AVANT les autres imports
+#    Cela injecte les valeurs SSM dans os.environ
+from ssm_loader import load_ssm_parameters
+load_ssm_parameters()
+
+# 3. Charger le fichier .env local (les valeurs SSM ont priorité car déjà dans os.environ)
+from dotenv import load_dotenv
+load_dotenv()
+
+# =============================================================================
+# IMPORTS STANDARDS (après chargement de la config)
+# =============================================================================
+
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Body, BackgroundTasks
 import logging
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +42,6 @@ import qrcode
 from io import BytesIO
 from fastapi import Request
 import jwt
-from dotenv import load_dotenv
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -51,7 +72,7 @@ _MATCHING_THREAD_POOL = ThreadPoolExecutor(
 print(f"[Init] ThreadPool matching initialisé avec {_MATCHING_THREAD_POOL_SIZE} workers")
 _MATCHING_SEMAPHORE = threading.BoundedSemaphore(1)
 
-load_dotenv()
+# NOTE: load_dotenv() est appelé en haut du fichier, après le chargement SSM
 
 FRONTEND_MODE = os.getenv("FRONTEND_MODE", "html").lower()
 REACT_BUILD_PATH = os.path.join("frontend", "build", "index.html")
@@ -6266,7 +6287,19 @@ async def reload_models_endpoint(current_user: User = Depends(get_current_user))
             "ready_for_stats": False
         }
 
-# === MONITORING DE LA QUEUE DE TRAITEMENT ===
+# === MONITORING DE LA CONFIGURATION ET DES QUEUES ===
+
+@app.get("/api/admin/config/ssm-status")
+async def get_ssm_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Retourne le statut du chargement SSM Parameter Store."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+    
+    from ssm_loader import get_ssm_status
+    return get_ssm_status()
+
 
 @app.get("/api/admin/queue/stats")
 async def get_queue_stats(
@@ -6276,6 +6309,7 @@ async def get_queue_stats(
     """Récupère les statistiques des queues de traitement des photos.
     
     Inclut:
+    - ssm: Statut du chargement SSM Parameter Store
     - sqs_worker: Stats du nouveau worker S3+SQS (prod-ready)
     - legacy_queue: Stats de l'ancienne queue en mémoire (fallback)
     - cache: Stats du cache de réponses
@@ -6286,9 +6320,11 @@ async def get_queue_stats(
     
     from settings import settings
     from models import PhotoProcessingStatus
+    from ssm_loader import get_ssm_status
     
     result = {
         "workflow": "s3_sqs" if settings.is_sqs_configured else "in_memory_queue",
+        "ssm": get_ssm_status(),
     }
     
     # Stats du worker SQS (nouveau workflow)
