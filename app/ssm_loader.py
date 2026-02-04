@@ -21,7 +21,7 @@ Usage dans main.py:
 
 Variables d'environnement requises:
     APP_CONFIG_PREFIX: Préfixe SSM (ex: /findme/prod)
-    AWS_REGION: Région AWS (défaut: eu-west-1)
+    AWS_REGION: Région AWS (défaut: eu-west-3)
 
 Structure SSM attendue:
     /findme/prod/DATABASE_URL -> postgresql://...
@@ -74,8 +74,8 @@ def load_ssm_parameters() -> bool:
     # Normaliser le préfixe (sans slash final)
     prefix = prefix.rstrip("/")
     
-    # Région AWS
-    region = os.environ.get("AWS_REGION", "eu-west-1")
+    # Région AWS (Paris par défaut pour SSM)
+    region = os.environ.get("AWS_REGION", "eu-west-3")
     
     print(f"[SSM] Chargement des paramètres depuis {prefix} (région: {region})")
     
@@ -175,5 +175,5 @@ def get_ssm_status() -> dict:
     return {
         "loaded": _ssm_loaded,
         "prefix": os.environ.get("APP_CONFIG_PREFIX"),
-        "region": os.environ.get("AWS_REGION", "eu-west-1"),
+        "region": os.environ.get("AWS_REGION", "eu-west-3"),
     }

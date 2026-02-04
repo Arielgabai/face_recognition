@@ -18,7 +18,8 @@ from PIL import Image as _Image, ImageOps as _ImageOps
 import gc as _gc
 
 
-AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")  # Ireland (Rekognition supported, close to FR)
+# Région spécifique pour Rekognition (eu-west-1 = Irlande, Rekognition non disponible à Paris)
+REKOGNITION_REGION = os.environ.get("REKOGNITION_REGION", "eu-west-1")
 COLL_PREFIX = os.environ.get("AWS_REKOGNITION_COLLECTION_PREFIX", "event_")
 
 # Recherche
@@ -63,8 +64,8 @@ class AwsFaceRecognizer:
     """
 
     def __init__(self):
-        self.client = boto3.client("rekognition", region_name=AWS_REGION)
-        print(f"[FaceRecognition][AWS] Using region: {AWS_REGION}")
+        self.client = boto3.client("rekognition", region_name=REKOGNITION_REGION)
+        print(f"[FaceRecognition][AWS] Using Rekognition region: {REKOGNITION_REGION}")
         
         # IMPORTANT: Initialiser search_threshold dans __init__ pour éviter AttributeError
         # Ce seuil est utilisé par _search_faces_retry et d'autres méthodes

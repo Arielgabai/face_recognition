@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     """
     
     # ========== AWS General ==========
-    AWS_REGION: str = "eu-west-1"
+    # Région par défaut pour S3, SQS, SSM (Paris)
+    AWS_REGION: str = "eu-west-3"
+    # Région spécifique pour Rekognition (Irlande - Rekognition non disponible à Paris)
+    REKOGNITION_REGION: str = "eu-west-1"
     
     # ========== S3 Storage ==========
     # Bucket pour stocker les photos brutes uploadées
