@@ -1,6 +1,21 @@
 """
-Système de queue asynchrone pour le traitement des photos.
-Permet de découpler l'upload des photos du traitement de reconnaissance faciale.
+[LEGACY] Système de queue EN MÉMOIRE pour le traitement des photos.
+
+ATTENTION: Ce module est maintenant un FALLBACK.
+Le nouveau workflow prod-ready utilise S3 + SQS (voir photo_worker_sqs.py).
+
+Ce module est conservé pour:
+- Compatibilité avec les environnements sans configuration AWS S3/SQS
+- Développement local sans infrastructure AWS
+
+PROBLÈMES CONNUS (résolus avec S3+SQS):
+- Jobs perdus lors des redémarrages de workers Gunicorn (max_requests)
+- Jobs perdus lors des redémarrages d'instances App Runner
+- Fichiers temporaires persistants pouvant causer des FileNotFoundError
+
+Pour activer le nouveau workflow, configurez:
+- PHOTO_BUCKET_NAME: bucket S3 pour les photos
+- PHOTO_SQS_QUEUE_URL: URL de la file SQS
 """
 import os
 import time

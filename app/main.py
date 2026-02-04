@@ -128,6 +128,10 @@ def _startup_create_tables():
         # Ajouter la table password_reset_tokens si elle n'existe pas
         from add_password_reset_table import add_password_reset_table
         add_password_reset_table()
+        
+        # Ajouter les colonnes S3+SQS pour le nouveau workflow prod-ready
+        from add_photo_sqs_columns import add_photo_sqs_columns
+        add_photo_sqs_columns()
 
         # Ajouter des index de performance si nécessaires
         from add_perf_indexes import add_perf_indexes
@@ -460,12 +464,25 @@ print(f"[FaceRecognition] Provider actif: {type(face_recognizer).__name__}")
 # Démarrage de la photo queue au démarrage de l'application
 @app.on_event("startup")
 def _startup_photo_queue():
+    # Démarrer le worker SQS si configuré (nouveau workflow prod-ready)
+    try:
+        from settings import settings
+        if settings.is_sqs_configured:
+            from photo_worker_sqs import start_photo_worker
+            start_photo_worker()
+            print(f"[Startup] SQS Photo worker started (queue={settings.PHOTO_SQS_QUEUE_URL})")
+        else:
+            print("[Startup] SQS not configured, using legacy in-memory queue")
+    except Exception as e:
+        print(f"[Startup] Warning: could not start SQS photo worker: {e}")
+    
+    # Démarrer aussi la queue legacy (pour fallback si S3+SQS non configurés)
     try:
         from photo_queue import get_photo_queue
         queue = get_photo_queue()
-        print(f"[Startup] Photo queue initialized with {queue._queue.qsize()} pending jobs")
+        print(f"[Startup] Legacy photo queue initialized with {queue._queue.qsize()} pending jobs")
     except Exception as e:
-        print(f"[Startup] Warning: could not initialize photo queue: {e}")
+        print(f"[Startup] Warning: could not initialize legacy photo queue: {e}")
 
 # Arrêt propre de la queue
 @app.on_event("shutdown")
@@ -479,13 +496,21 @@ def _shutdown_services():
     except Exception as e:
         print(f"[Shutdown] Warning: could not stop matching thread pool: {e}")
     
-    # Arrêter la photo queue
+    # Arrêter le worker SQS
+    try:
+        from photo_worker_sqs import stop_photo_worker
+        stop_photo_worker()
+        print("[Shutdown] SQS Photo worker stopped")
+    except Exception as e:
+        print(f"[Shutdown] Warning: could not stop SQS photo worker: {e}")
+    
+    # Arrêter la photo queue legacy
     try:
         from photo_queue import shutdown_photo_queue
         shutdown_photo_queue()
-        print("[Shutdown] Photo queue stopped")
+        print("[Shutdown] Legacy photo queue stopped")
     except Exception as e:
-        print(f"[Shutdown] Warning: could not stop photo queue: {e}")
+        print(f"[Shutdown] Warning: could not stop legacy photo queue: {e}")
 
 # Auto-start des listeners GDrive au démarrage de l'application
 @app.on_event("startup")
@@ -4722,15 +4747,23 @@ async def upload_photos_to_event(
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = None,
 ):
-    """Upload de photos pour un événement spécifique (version optimisée avec queue asynchrone).
+    """Upload de photos pour un événement spécifique.
+
+    NOUVEAU WORKFLOW PROD-READY (S3 + SQS):
+    1. Créer une entrée Photo en DB avec status=PENDING
+    2. Upload de l'image vers S3 (pas de fichier temp local persistant)
+    3. Envoyer un message SQS avec {photo_id, event_id, s3_key}
+    4. Retourner 200 seulement si DB + S3 + SQS sont OK
 
     Autorisations:
     - Photographe propriétaire de l'événement
     - Admin: upload au nom du photographe de l'événement
     
-    Cette version sauvegarde rapidement les fichiers et les met en queue pour traitement asynchrone.
-    Retourne immédiatement avec les job_ids pour permettre le suivi.
+    Ce workflow est robuste aux redémarrages d'instances App Runner et de workers Gunicorn.
     """
+    from settings import settings
+    from models import PhotoProcessingStatus
+    
     if current_user.user_type not in (UserType.PHOTOGRAPHER, UserType.ADMIN):
         raise HTTPException(status_code=403, detail="Accès réservé")
 
@@ -4745,82 +4778,200 @@ async def upload_photos_to_event(
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
     
-    # Importer la queue
-    from photo_queue import get_photo_queue, PhotoJob
-    photo_queue = get_photo_queue()
+    # Vérifier si le workflow S3+SQS est configuré
+    use_sqs_workflow = settings.is_sqs_configured
     
-    enqueued_jobs = []
-    failed_uploads = []
-    
-    # Préparation de la collection (rapide, une seule fois)
-    try:
-        if hasattr(face_recognizer, 'prepare_event_for_batch'):
-            face_recognizer.prepare_event_for_batch(event_id, db)
-    except Exception as e:
-        print(f"[UploadEvent] Warning: prepare_event_for_batch failed: {e}")
-    
-    # Sauvegarder rapidement tous les fichiers et les mettre en queue
-    for file in files:
-        if not file.content_type.startswith("image/"):
-            continue
+    if use_sqs_workflow:
+        # ========== NOUVEAU WORKFLOW S3 + SQS ==========
+        from s3_service import get_s3_service, get_sqs_service
+        s3_service = get_s3_service()
+        sqs_service = get_sqs_service()
         
-        try:
-            # Sauvegarder temporairement le fichier (méthode stable)
-            temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
-            with open(temp_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+        enqueued_jobs = []
+        failed_uploads = []
+        
+        for file in files:
+            if not file.content_type.startswith("image/"):
+                continue
             
-            # Créer un job et l'enqueuer
-            job_id = str(uuid.uuid4())
-            job = PhotoJob(
-                job_id=job_id,
-                            event_id=event_id,
-                photographer_id=effective_photographer_id,
-                temp_path=temp_path,
-                filename=file.filename,
-                original_filename=file.filename,
-                            watcher_id=watcher_id,
-            )
+            photo = None
+            s3_key = None
             
-            if photo_queue.enqueue(job):
+            try:
+                # 1. Lire les bytes de l'image (pas de fichier temp persistant)
+                image_bytes = await file.read()
+                
+                if not image_bytes:
+                    failed_uploads.append({
+                        "filename": file.filename,
+                        "error": "Empty file"
+                    })
+                    continue
+                
+                # 2. Créer l'entrée Photo en DB avec status=PENDING
+                unique_filename = f"{uuid.uuid4()}.jpg"
+                photo = Photo(
+                    filename=unique_filename,
+                    original_filename=file.filename,
+                    content_type=file.content_type or "image/jpeg",
+                    photo_type="uploaded",
+                    photographer_id=effective_photographer_id,
+                    event_id=event_id,
+                    processing_status=PhotoProcessingStatus.PENDING.value,
+                )
+                db.add(photo)
+                db.commit()
+                db.refresh(photo)
+                
+                print(f"[UploadEvent] Created photo_id={photo.id} event_id={event_id} filename={file.filename}")
+                
+                # 3. Upload vers S3
+                extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
+                s3_key = s3_service.upload_photo(
+                    image_bytes=image_bytes,
+                    event_id=event_id,
+                    photo_id=photo.id,
+                    content_type=file.content_type or "image/jpeg",
+                    extension=extension
+                )
+                
+                # 4. Mettre à jour la photo avec la clé S3
+                photo.s3_key = s3_key
+                db.commit()
+                
+                # 5. Envoyer le message SQS
+                message_id = sqs_service.send_photo_job(
+                    photo_id=photo.id,
+                    event_id=event_id,
+                    s3_key=s3_key
+                )
+                
                 enqueued_jobs.append({
-                    "job_id": job_id,
+                    "photo_id": photo.id,
                     "filename": file.filename,
+                    "s3_key": s3_key,
+                    "message_id": message_id,
                     "status": "queued"
                 })
-            else:
-                # Queue pleine, nettoyer le fichier temp
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
+                
+                print(f"[UploadEvent] Enqueued photo_id={photo.id} s3_key={s3_key} message_id={message_id}")
+                
+            except Exception as e:
+                print(f"[UploadEvent] Error processing file {file.filename}: {e}")
+                import traceback
+                traceback.print_exc()
+                
                 failed_uploads.append({
                     "filename": file.filename,
-                    "error": "Queue is full, try again later"
+                    "error": str(e)
                 })
                 
+                # Rollback: marquer la photo comme FAILED si elle a été créée
+                if photo and photo.id:
+                    try:
+                        photo.processing_status = PhotoProcessingStatus.FAILED.value
+                        photo.error_message = f"Upload failed: {str(e)}"
+                        db.commit()
+                    except Exception:
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+        
+        response = {
+            "message": f"{len(enqueued_jobs)} photos en queue pour traitement (S3+SQS)",
+            "workflow": "s3_sqs",
+            "enqueued": len(enqueued_jobs),
+            "failed": len(failed_uploads),
+            "jobs": enqueued_jobs,
+        }
+        
+        if failed_uploads:
+            response["failed_uploads"] = failed_uploads
+        
+        return response
+    
+    else:
+        # ========== FALLBACK: ANCIEN WORKFLOW QUEUE EN MÉMOIRE ==========
+        # Utilisé si PHOTO_BUCKET_NAME ou PHOTO_SQS_QUEUE_URL ne sont pas configurés
+        print("[UploadEvent] Using legacy in-memory queue (S3+SQS not configured)")
+        
+        from photo_queue import get_photo_queue, PhotoJob
+        photo_queue = get_photo_queue()
+        
+        enqueued_jobs = []
+        failed_uploads = []
+        
+        # Préparation de la collection (rapide, une seule fois)
+        try:
+            if hasattr(face_recognizer, 'prepare_event_for_batch'):
+                face_recognizer.prepare_event_for_batch(event_id, db)
         except Exception as e:
-            print(f"[UploadEvent] Error saving file {file.filename}: {e}")
-            failed_uploads.append({
-                "filename": file.filename,
-                "error": str(e)
-            })
-            # Nettoyer si le fichier a été créé
-            if 'temp_path' in locals() and os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except:
-                    pass
-    
-    response = {
-        "message": f"{len(enqueued_jobs)} photos en queue pour traitement",
-        "enqueued": len(enqueued_jobs),
-        "failed": len(failed_uploads),
-        "jobs": enqueued_jobs,
-    }
-    
-    if failed_uploads:
-        response["failed_uploads"] = failed_uploads
-    
-    return response
+            print(f"[UploadEvent] Warning: prepare_event_for_batch failed: {e}")
+        
+        # Sauvegarder rapidement tous les fichiers et les mettre en queue
+        for file in files:
+            if not file.content_type.startswith("image/"):
+                continue
+            
+            try:
+                # Sauvegarder temporairement le fichier (méthode stable)
+                temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+                with open(temp_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+                
+                # Créer un job et l'enqueuer
+                job_id = str(uuid.uuid4())
+                job = PhotoJob(
+                    job_id=job_id,
+                    event_id=event_id,
+                    photographer_id=effective_photographer_id,
+                    temp_path=temp_path,
+                    filename=file.filename,
+                    original_filename=file.filename,
+                    watcher_id=watcher_id,
+                )
+                
+                if photo_queue.enqueue(job):
+                    enqueued_jobs.append({
+                        "job_id": job_id,
+                        "filename": file.filename,
+                        "status": "queued"
+                    })
+                else:
+                    # Queue pleine, nettoyer le fichier temp
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    failed_uploads.append({
+                        "filename": file.filename,
+                        "error": "Queue is full, try again later"
+                    })
+                    
+            except Exception as e:
+                print(f"[UploadEvent] Error saving file {file.filename}: {e}")
+                failed_uploads.append({
+                    "filename": file.filename,
+                    "error": str(e)
+                })
+                # Nettoyer si le fichier a été créé
+                if 'temp_path' in locals() and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+        
+        response = {
+            "message": f"{len(enqueued_jobs)} photos en queue pour traitement (legacy)",
+            "workflow": "in_memory_queue",
+            "enqueued": len(enqueued_jobs),
+            "failed": len(failed_uploads),
+            "jobs": enqueued_jobs,
+        }
+        
+        if failed_uploads:
+            response["failed_uploads"] = failed_uploads
+        
+        return response
 
 @app.post("/api/photographer/events/{event_id}/upload-photos-async")
 async def upload_photos_to_event_async(
@@ -6122,22 +6273,66 @@ async def get_queue_stats(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Récupère les statistiques de la queue de traitement des photos."""
+    """Récupère les statistiques des queues de traitement des photos.
+    
+    Inclut:
+    - sqs_worker: Stats du nouveau worker S3+SQS (prod-ready)
+    - legacy_queue: Stats de l'ancienne queue en mémoire (fallback)
+    - cache: Stats du cache de réponses
+    - photos_pending: Nombre de photos en attente de traitement (DB)
+    """
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
     
-    from photo_queue import get_photo_queue
-    queue = get_photo_queue()
-    stats = queue.get_stats()
+    from settings import settings
+    from models import PhotoProcessingStatus
     
-    # Ajouter les stats du cache
-    from response_cache import get_cache_stats
-    cache_stats = get_cache_stats()
-    
-    return {
-        "queue": stats,
-        "cache": cache_stats,
+    result = {
+        "workflow": "s3_sqs" if settings.is_sqs_configured else "in_memory_queue",
     }
+    
+    # Stats du worker SQS (nouveau workflow)
+    try:
+        from photo_worker_sqs import get_worker_stats
+        result["sqs_worker"] = get_worker_stats()
+    except Exception as e:
+        result["sqs_worker"] = {"error": str(e)}
+    
+    # Stats de la queue legacy
+    try:
+        from photo_queue import get_photo_queue
+        queue = get_photo_queue()
+        result["legacy_queue"] = queue.get_stats()
+    except Exception as e:
+        result["legacy_queue"] = {"error": str(e)}
+    
+    # Stats du cache
+    try:
+        from response_cache import get_cache_stats
+        result["cache"] = get_cache_stats()
+    except Exception as e:
+        result["cache"] = {"error": str(e)}
+    
+    # Compteur de photos par statut
+    try:
+        pending_count = db.query(Photo).filter(
+            Photo.processing_status == PhotoProcessingStatus.PENDING.value
+        ).count()
+        processing_count = db.query(Photo).filter(
+            Photo.processing_status == PhotoProcessingStatus.PROCESSING.value
+        ).count()
+        failed_count = db.query(Photo).filter(
+            Photo.processing_status == PhotoProcessingStatus.FAILED.value
+        ).count()
+        result["photos_by_status"] = {
+            "pending": pending_count,
+            "processing": processing_count,
+            "failed": failed_count,
+        }
+    except Exception as e:
+        result["photos_by_status"] = {"error": str(e)}
+    
+    return result
 
 @app.get("/api/admin/queue/jobs/{job_id}")
 async def get_job_status(

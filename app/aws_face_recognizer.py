@@ -1,6 +1,7 @@
 import os
 import time
 import threading
+import traceback
 from typing import List, Dict, Optional, Set, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -64,6 +65,18 @@ class AwsFaceRecognizer:
     def __init__(self):
         self.client = boto3.client("rekognition", region_name=AWS_REGION)
         print(f"[FaceRecognition][AWS] Using region: {AWS_REGION}")
+        
+        # IMPORTANT: Initialiser search_threshold dans __init__ pour éviter AttributeError
+        # Ce seuil est utilisé par _search_faces_retry et d'autres méthodes
+        try:
+            self.search_threshold: float = float(
+                os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", str(AWS_SEARCH_THRESHOLD)) 
+                or AWS_SEARCH_THRESHOLD
+            )
+        except Exception:
+            self.search_threshold = AWS_SEARCH_THRESHOLD
+        print(f"[FaceRecognition][AWS] Search threshold: {self.search_threshold}")
+        
         # Debug credentials
         try:
             session = boto3.Session()
@@ -75,6 +88,7 @@ class AwsFaceRecognizer:
                 print(f"[FaceRecognition][AWS] ⚠️  No credentials found!")
         except Exception as e:
             print(f"[FaceRecognition][AWS] ⚠️  Error checking credentials: {e}")
+        
         # Cache simple en mémoire pour éviter de réindexer à chaque photo
         self._indexed_events: Set[int] = set()
         self._photos_indexed_events: Set[int] = set()
@@ -127,11 +141,6 @@ class AwsFaceRecognizer:
                 session.close()
             except Exception:
                 pass
-        # Seuil Rekognition (0-100) configurable à chaud
-        try:
-            self.search_threshold: float = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", str(AWS_SEARCH_THRESHOLD)) or AWS_SEARCH_THRESHOLD)
-        except Exception:
-            self.search_threshold = AWS_SEARCH_THRESHOLD
 
     def _collection_id(self, event_id: int) -> str:
         return f"{COLL_PREFIX}{event_id}"
@@ -645,7 +654,15 @@ class AwsFaceRecognizer:
     def _search_faces_retry(self, collection_id: str, face_id: str, max_faces: Optional[int] = None, face_match_threshold: Optional[float] = None):
         last_exc = None
         mf = int(max_faces or AWS_SEARCH_MAXFACES)
-        th = float(face_match_threshold) if (face_match_threshold is not None) else float(self.search_threshold)
+        # Gestion robuste du seuil : utiliser la valeur passée, sinon self.search_threshold, sinon défaut
+        if face_match_threshold is not None:
+            th = float(face_match_threshold)
+        elif hasattr(self, 'search_threshold') and self.search_threshold is not None:
+            th = float(self.search_threshold)
+        else:
+            # Fallback ultime si search_threshold n'existe pas (ne devrait pas arriver)
+            print("[WARNING] _search_faces_retry: self.search_threshold not found, using default")
+            th = float(AWS_SEARCH_THRESHOLD)
         for attempt in range(AWS_MAX_RETRIES + 1):
             try:
                 aws_metrics.inc('SearchFaces')
@@ -1334,6 +1351,218 @@ class AwsFaceRecognizer:
         db.commit()
         return photo
 
+    def process_photo_from_bytes(
+        self,
+        photo_id: int,
+        image_bytes: bytes,
+        event_id: int,
+        db: Session,
+        original_filename: Optional[str] = None,
+    ) -> Photo:
+        """
+        Traite une photo à partir de bytes (récupérés depuis S3) au lieu d'un chemin fichier.
+        
+        Cette méthode est utilisée par le worker SQS pour traiter les photos uploadées.
+        La photo doit déjà exister en DB (créée lors de l'upload) avec status=PENDING.
+        
+        Args:
+            photo_id: ID de la photo existante en DB
+            image_bytes: Bytes de l'image (récupérés depuis S3)
+            event_id: ID de l'événement
+            db: Session SQLAlchemy
+            original_filename: Nom original du fichier (optionnel, pour les logs)
+        
+        Returns:
+            Photo: L'objet Photo mis à jour
+        
+        Raises:
+            ValueError: Si la photo n'existe pas en DB
+        """
+        from models import PhotoProcessingStatus
+        
+        print(f"[PROCESS-PHOTO-BYTES] START photo_id={photo_id} event_id={event_id} size={len(image_bytes)} bytes")
+        
+        # Récupérer la photo existante
+        photo = db.query(Photo).filter(Photo.id == photo_id).first()
+        if not photo:
+            raise ValueError(f"Photo {photo_id} not found in database")
+        
+        # Optimiser l'image
+        optimization_result = PhotoOptimizer.optimize_image(
+            image_data=image_bytes,
+            photo_type='uploaded'
+        )
+        
+        # Mettre à jour les données de la photo
+        photo.photo_data = optimization_result['compressed_data']
+        photo.content_type = optimization_result['content_type']
+        photo.original_size = optimization_result['original_size']
+        photo.compressed_size = optimization_result['compressed_size']
+        photo.compression_ratio = optimization_result['compression_ratio']
+        photo.quality_level = optimization_result['quality_level']
+        photo.retention_days = optimization_result['retention_days']
+        photo.expires_at = optimization_result['expires_at']
+        
+        db.add(photo)
+        db.commit()
+        db.refresh(photo)
+        
+        # Indexer les faces de la photo et rechercher des correspondances côté utilisateurs
+        # Utiliser les octets originaux (préparés) pour une meilleure empreinte faciale
+        prepared_bytes = self._prepare_image_bytes(image_bytes)
+        self.ensure_collection(event_id)
+        
+        try:
+            self._maybe_purge_collection(event_id, db)
+        except Exception:
+            pass
+        
+        # Indexer les selfies des users de l'événement avant de matcher
+        self.ensure_event_users_indexed(event_id, db)
+        face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, prepared_bytes)
+        
+        try:
+            photo.is_indexed = True
+            db.add(photo)
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        
+        # Seuil commun aligné sur la logique selfie->photos
+        try:
+            env_thr = int(os.environ.get('AWS_MATCH_MIN_SIMILARITY', '70') or '70')
+        except Exception:
+            env_thr = 70
+        try:
+            cfg_thr = int(round(float(getattr(self, 'search_threshold', 0) or 0)))
+        except Exception:
+            cfg_thr = 0
+        threshold = max(env_thr, cfg_thr)
+        
+        user_best: Dict[int, int] = {}
+        _debug = os.environ.get('AWS_MATCH_DEBUG', '0') == '1'
+        
+        # Recherche collection classique
+        if not face_ids:
+            resp = self._search_faces_by_image_retry(
+                self._collection_id(event_id), 
+                prepared_bytes, 
+                face_match_threshold=int(threshold)
+            )
+            if resp:
+                for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                    ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
+                    if not (ext.startswith("user:") or ext.isdigit()):
+                        continue
+                    try:
+                        uid = int(ext.split(":", 1)[1]) if ext.startswith("user:") else int(ext)
+                    except Exception:
+                        continue
+                    sim = int(float(fm.get("Similarity", 0.0)))
+                    if sim < int(threshold):
+                        continue
+                    prev = user_best.get(uid)
+                    if prev is None or sim > prev:
+                        user_best[uid] = sim
+        
+        if face_ids:
+            coll_id = self._collection_id(event_id)
+            with ThreadPoolExecutor(max_workers=MAX_PARALLEL_PER_REQUEST) as ex:
+                futures = {ex.submit(self._search_faces_retry, coll_id, fid, 0): fid for fid in face_ids}
+                for fut in as_completed(futures):
+                    resp = fut.result()
+                    if not resp:
+                        continue
+                    for fm in resp.get("FaceMatches", [])[:AWS_SEARCH_MAXFACES]:
+                        ext = (fm.get("Face") or {}).get("ExternalImageId") or ""
+                        if not (ext.startswith("user:") or ext.isdigit()):
+                            continue
+                        try:
+                            uid = int(ext.split(":", 1)[1]) if ext.startswith("user:") else int(ext)
+                        except Exception:
+                            continue
+                        sim = int(float(fm.get("Similarity", 0.0)))
+                        if sim < int(threshold):
+                            continue
+                        prev = user_best.get(uid)
+                        if prev is None or sim > prev:
+                            user_best[uid] = sim
+        
+        if _debug and user_best:
+            print(f"[AWS-MATCH][photo->{photo.id}] candidates (top): {sorted(user_best.items(), key=lambda x: -x[1])[:5]} threshold={threshold}")
+        
+        allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
+        kept_user_ids: Dict[int, int] = {}
+        print(f"[AWS-MATCH][photo->{photo.id}] user_best={user_best}, threshold={threshold}, allowed={allowed_user_ids}")
+        
+        for uid, score in user_best.items():
+            if uid in allowed_user_ids:
+                if int(score) < int(threshold):
+                    print(f"[AWS-MATCH][photo->{photo.id}] SKIP user {uid}, score {score} < threshold {threshold}")
+                    continue
+                kept_user_ids[uid] = int(score)
+                try:
+                    existing = db.query(FaceMatch).filter(
+                        FaceMatch.photo_id == photo.id, 
+                        FaceMatch.user_id == uid
+                    ).first()
+                    if existing:
+                        if int(score) > int(existing.confidence_score or 0):
+                            existing.confidence_score = int(score)
+                    else:
+                        db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+                except Exception:
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+                    try:
+                        db.add(FaceMatch(photo_id=photo.id, user_id=uid, confidence_score=int(score)))
+                        db.commit()
+                    except Exception:
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+        
+        if _debug:
+            print(f"[AWS-MATCH][photo->{photo.id}] kept_user_ids={kept_user_ids}")
+        
+        # Nettoyage: supprimer les FaceMatch non retenus pour cette photo
+        try:
+            from sqlalchemy import not_ as _not
+            if kept_user_ids:
+                db.query(FaceMatch).filter(
+                    FaceMatch.photo_id == photo.id,
+                    _not(FaceMatch.user_id.in_(list(kept_user_ids.keys())))
+                ).delete(synchronize_session=False)
+            else:
+                db.query(FaceMatch).filter(FaceMatch.photo_id == photo.id).delete(synchronize_session=False)
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        
+        # Réinitialiser la date d'expiration de toutes les photos de l'événement
+        try:
+            from datetime import datetime, timedelta
+            new_expiration = datetime.utcnow() + timedelta(days=30)
+            db.query(Photo).filter(
+                Photo.event_id == event_id,
+                Photo.expires_at.isnot(None)
+            ).update({
+                Photo.expires_at: new_expiration
+            }, synchronize_session=False)
+        except Exception:
+            pass
+        
+        db.commit()
+        print(f"[PROCESS-PHOTO-BYTES] DONE photo_id={photo.id} event_id={event_id} matches={len(kept_user_ids)}")
+        return photo
 
     def get_collection_snapshot(self, event_id: int) -> Dict:
         """Retourne un instantané de la collection Rekognition pour un événement.

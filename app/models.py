@@ -1,13 +1,22 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table, LargeBinary, Float, Index
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table, LargeBinary, Float, Index, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
 import enum
 
+
 class UserType(str, enum.Enum):
     USER = "user"
     PHOTOGRAPHER = "photographer"
     ADMIN = "admin"
+
+
+class PhotoProcessingStatus(str, enum.Enum):
+    """Statut de traitement d'une photo dans le workflow asynchrone S3+SQS."""
+    PENDING = "PENDING"       # Photo créée en DB, en attente de traitement
+    PROCESSING = "PROCESSING" # Traitement en cours par le worker
+    DONE = "DONE"             # Traitement terminé avec succès
+    FAILED = "FAILED"         # Traitement échoué
 
 class Event(Base):
     __tablename__ = "events"
@@ -80,6 +89,16 @@ class Photo(Base):
     photographer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     event_id = Column(Integer, ForeignKey("events.id"), nullable=True)
+    
+    # ========== Nouveaux champs pour workflow S3+SQS asynchrone ==========
+    # Clé S3 de l'image brute uploadée (format: raw/event_{event_id}/{photo_id}.jpg)
+    s3_key = Column(String, nullable=True, index=True)
+    # Statut de traitement: PENDING, PROCESSING, DONE, FAILED
+    processing_status = Column(String, nullable=True, default=PhotoProcessingStatus.PENDING.value, index=True)
+    # Message d'erreur en cas d'échec du traitement
+    error_message = Column(Text, nullable=True)
+    # Timestamp de mise à jour du statut
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     
     # Colonnes d'optimisation des photos
     original_size = Column(Integer, nullable=True)
