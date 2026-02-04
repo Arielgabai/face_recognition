@@ -9,10 +9,18 @@ from database import get_db
 from models import User
 import os
 
-# Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# Import des settings centralisés
+from settings import settings
+
+# Configuration JWT depuis settings (configurable via variables d'environnement)
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+REFRESH_TOKEN_EXPIRE_MINUTES = settings.REFRESH_TOKEN_EXPIRE_MINUTES
+TOKEN_REFRESH_MARGIN_MINUTES = settings.TOKEN_REFRESH_MARGIN_MINUTES
+
+# Log de la configuration au démarrage (utile pour debug)
+print(f"[Auth] Token expiration configured: ACCESS={ACCESS_TOKEN_EXPIRE_MINUTES}min, REFRESH={REFRESH_TOKEN_EXPIRE_MINUTES}min, MARGIN={TOKEN_REFRESH_MARGIN_MINUTES}min")
 
 # Configuration du hachage des mots de passe
 # OPTIMISÉ : Réduction des rounds bcrypt pour améliorer les performances

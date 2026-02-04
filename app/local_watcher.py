@@ -532,49 +532,259 @@ def _write_debug_report(report_dir: str, report: Dict[str, Any]) -> None:
         return
 
 
+class AuthenticationError(Exception):
+    """Exception levée quand l'authentification échoue définitivement après retry."""
+    pass
+
+
 class UploadClient:
+    """
+    Client HTTP robuste pour l'upload de photos avec gestion avancée de l'authentification.
+    
+    Fonctionnalités:
+    - Stockage du token + date d'expiration
+    - Renouvellement anticipé du token avant expiration
+    - Retry automatique sur 401 (une seule fois)
+    - Logs détaillés pour debug
+    """
+    
+    # Marge avant expiration pour déclencher un refresh anticipé (en secondes)
+    DEFAULT_REFRESH_MARGIN_SECONDS = 300  # 5 minutes
+    
     def __init__(self, base_url: str, username: Optional[str], password: Optional[str], token: Optional[str]) -> None:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         self._username = username
         self._password = password
         self._token = token
+        self._expires_at: Optional[float] = None  # Timestamp Unix de l'expiration
+        self._refresh_margin_seconds = self.DEFAULT_REFRESH_MARGIN_SECONDS
+        self._login_in_progress = False  # Évite les boucles de re-login
+        
         if token:
             self.session.headers.update({"Authorization": f"Bearer {token}"})
-
-    def login_if_needed(self) -> None:
-        if "Authorization" in self.session.headers:
-            return
+            print(f"[auth] Token initial fourni (expiration inconnue)")
+    
+    def _is_token_expiring_soon(self) -> bool:
+        """Vérifie si le token expire dans les prochaines minutes."""
+        if self._expires_at is None:
+            return False
+        now = time.time()
+        time_until_expiry = self._expires_at - now
+        is_expiring = time_until_expiry <= self._refresh_margin_seconds
+        if is_expiring:
+            print(f"[auth] ⚠ Token expire dans {time_until_expiry:.0f}s (< {self._refresh_margin_seconds}s), refresh nécessaire")
+        return is_expiring
+    
+    def _clear_auth(self) -> None:
+        """Efface le token actuel."""
+        self._token = None
+        self._expires_at = None
+        self.session.headers.pop("Authorization", None)
+    
+    def login(self) -> bool:
+        """
+        Effectue le login et stocke le token + expiration.
+        
+        Returns:
+            True si le login a réussi, False sinon
+        """
+        if self._login_in_progress:
+            print(f"[auth] ⚠ Login déjà en cours, abandon pour éviter boucle infinie")
+            return False
+            
         if not (self._username and self._password):
-            raise RuntimeError("No token or credentials provided for authentication")
-        # POST /api/login expects JSON { username, password }
-        url = f"{self.base_url}/api/login"
-        resp = self.session.post(url, json={"username": self._username, "password": self._password}, timeout=30)
-        if not resp.ok:
-            raise RuntimeError(f"Login failed: {resp.status_code} {resp.text}")
-        data = resp.json()
-        tok = data.get("access_token")
-        if not tok:
-            raise RuntimeError("Login ok but access_token missing in response")
-        self.session.headers.update({"Authorization": f"Bearer {tok}"})
-
-    def upload_file_to_event(self, event_id: int, file_path: str, watcher_id: Optional[int] = None) -> None:
+            print(f"[auth] ✗ Impossible de se connecter: pas de credentials configurés")
+            return False
+        
+        self._login_in_progress = True
+        self._clear_auth()
+        
+        try:
+            url = f"{self.base_url}/api/login"
+            print(f"[auth] → Tentative de login pour '{self._username}' vers {url}")
+            
+            resp = self.session.post(
+                url, 
+                json={"username": self._username, "password": self._password}, 
+                timeout=30
+            )
+            
+            if not resp.ok:
+                print(f"[auth] ✗ Login échoué: HTTP {resp.status_code} - {resp.text[:200]}")
+                return False
+            
+            data = resp.json()
+            
+            # Gérer le cas multi-comptes (le serveur demande de choisir)
+            if data.get("multiple_accounts"):
+                print(f"[auth] ⚠ Plusieurs comptes trouvés, login automatique impossible")
+                return False
+            
+            tok = data.get("access_token")
+            if not tok:
+                print(f"[auth] ✗ Login OK mais access_token absent dans la réponse")
+                return False
+            
+            self._token = tok
+            self.session.headers.update({"Authorization": f"Bearer {tok}"})
+            
+            # Stocker l'expiration si fournie
+            expires_at_str = data.get("expires_at")
+            expires_in = data.get("expires_in")
+            
+            if expires_at_str:
+                try:
+                    # Format ISO: "2026-02-04T18:00:00Z"
+                    from datetime import datetime
+                    exp_dt = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+                    self._expires_at = exp_dt.timestamp()
+                    print(f"[auth] ✓ Login réussi, token expire à {expires_at_str}")
+                except Exception as e:
+                    print(f"[auth] ⚠ Impossible de parser expires_at: {e}")
+                    self._expires_at = None
+            elif expires_in:
+                self._expires_at = time.time() + int(expires_in)
+                print(f"[auth] ✓ Login réussi, token expire dans {expires_in}s")
+            else:
+                print(f"[auth] ✓ Login réussi (expiration non fournie par le serveur)")
+                self._expires_at = None
+            
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            print(f"[auth] ✗ Erreur réseau lors du login: {e}")
+            return False
+        except Exception as e:
+            print(f"[auth] ✗ Erreur inattendue lors du login: {e}")
+            return False
+        finally:
+            self._login_in_progress = False
+    
+    def login_if_needed(self) -> None:
+        """Assure qu'on a un token valide, se connecte si nécessaire."""
+        # Si pas de token ou token expirant bientôt, login
+        has_token = "Authorization" in self.session.headers
+        
+        if not has_token or self._is_token_expiring_soon():
+            action = "refresh anticipé" if has_token else "login initial"
+            print(f"[auth] {action} nécessaire...")
+            if not self.login():
+                raise AuthenticationError(f"Impossible de se connecter ({action})")
+    
+    def _do_request_with_retry(
+        self, 
+        method: str, 
+        url: str, 
+        retry_on_401: bool = True,
+        **kwargs
+    ) -> requests.Response:
+        """
+        Effectue une requête HTTP avec gestion des 401.
+        
+        Args:
+            method: GET, POST, PUT, DELETE, etc.
+            url: URL complète
+            retry_on_401: Si True, tente un re-login et retry sur 401
+            **kwargs: Arguments passés à requests
+            
+        Returns:
+            Response object
+            
+        Raises:
+            AuthenticationError: Si 401 et retry échoue
+        """
+        # S'assurer qu'on a un token valide avant la requête
         self.login_if_needed()
+        
+        # Première tentative
+        resp = self.session.request(method, url, **kwargs)
+        
+        # Si 401 et retry autorisé
+        if resp.status_code == 401 and retry_on_401:
+            print(f"[auth] ⚠ HTTP 401 reçu sur {method} {url}, tentative de re-login...")
+            self._clear_auth()
+            
+            if self.login():
+                print(f"[auth] Re-login réussi, retry de la requête...")
+                # Retry avec le nouveau token (mais sans re-retry sur 401)
+                resp = self.session.request(method, url, **kwargs)
+                
+                if resp.status_code == 401:
+                    print(f"[auth] ✗ Encore 401 après re-login, abandon")
+                    raise AuthenticationError(
+                        f"Authentification échouée après re-login: {method} {url} -> 401"
+                    )
+            else:
+                print(f"[auth] ✗ Re-login échoué, abandon")
+                raise AuthenticationError(
+                    f"Re-login échoué après 401 sur {method} {url}"
+                )
+        
+        return resp
+
+    def upload_file_to_event(self, event_id: int, file_path: str, watcher_id: Optional[int] = None) -> bool:
+        """
+        Upload un fichier vers l'API.
+        
+        Args:
+            event_id: ID de l'événement
+            file_path: Chemin du fichier à uploader
+            watcher_id: ID optionnel du watcher
+            
+        Returns:
+            True si l'upload a réussi (HTTP 200 + réponse cohérente)
+            
+        Raises:
+            AuthenticationError: Si authentification impossible
+            RuntimeError: Si l'upload échoue pour une autre raison
+        """
         url = f"{self.base_url}/api/photographer/events/{event_id}/upload-photos"
+        filename = os.path.basename(file_path)
+        
+        # Lire le fichier en mémoire pour pouvoir retry si nécessaire
         with open(file_path, "rb") as f:
-            guessed, _ = mimetypes.guess_type(file_path)
-            content_type = guessed if (guessed and guessed.startswith("image/")) else "image/jpeg"
-            files = [("files", (os.path.basename(file_path), f, content_type))]
-            data = {"watcher_id": watcher_id} if watcher_id is not None else None
-            print(f"[upload] -> {os.path.basename(file_path)} ct={content_type} watcher_id={watcher_id}")
-            resp = self.session.post(url, files=files, data=data, timeout=300)
+            file_content = f.read()
+        
+        guessed, _ = mimetypes.guess_type(file_path)
+        content_type = guessed if (guessed and guessed.startswith("image/")) else "image/jpeg"
+        
+        def make_request():
+            """Fonction interne pour créer la requête (nécessaire pour retry)."""
+            files = [("files", (filename, file_content, content_type))]
+            form_data = {"watcher_id": str(watcher_id)} if watcher_id is not None else None
+            return self._do_request_with_retry(
+                "POST", url, 
+                files=files, 
+                data=form_data, 
+                timeout=300
+            )
+        
+        print(f"[upload] → {filename} (event={event_id}, ct={content_type}, watcher_id={watcher_id})")
+        
+        resp = make_request()
+        
         if not resp.ok:
-            raise RuntimeError(f"Upload failed {os.path.basename(file_path)}: {resp.status_code} {resp.text}")
+            error_msg = f"Upload failed {filename}: HTTP {resp.status_code} - {resp.text[:500]}"
+            print(f"[upload] ✗ {error_msg}")
+            raise RuntimeError(error_msg)
+        
+        # Vérifier que la réponse est cohérente
         try:
             data = resp.json()
-            print(f"[upload] <- ok: {data}")
+            # Vérifier les indicateurs de succès possibles
+            is_success = (
+                data.get("success", False) or 
+                data.get("processed", 0) > 0 or
+                data.get("photos_created", 0) > 0 or
+                "error" not in str(data).lower()
+            )
+            print(f"[upload] ← OK: {data}")
+            return is_success
         except Exception:
-            print(f"[upload] <- ok: status={resp.status_code}")
+            # Si pas de JSON, considérer OK si status 200
+            print(f"[upload] ← OK: status={resp.status_code} (pas de JSON)")
+            return resp.status_code == 200
 
 
 class Manifest:
@@ -722,8 +932,27 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
     if not ENABLE_PHOTO_SELECTION:
         # Selection algorithm disabled: upload all photos without filtering
         print(f"[accept:no-filter] {abspath} | selection algorithm disabled (ENABLE_PHOTO_SELECTION=0)")
-        client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
+        
+        # IMPORTANT: Ne marquer/déplacer QUE si l'upload réussit
+        try:
+            upload_success = client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
+        except AuthenticationError as e:
+            # Erreur d'auth -> propager pour arrêter le script proprement
+            print(f"[error:auth] {abspath} | Authentification échouée: {e}")
+            raise
+        except Exception as e:
+            # Autre erreur d'upload -> ne pas déplacer le fichier, il sera réessayé
+            print(f"[error:upload] {abspath} | Upload échoué: {e} - fichier conservé pour retry")
+            return
+        
+        if not upload_success:
+            print(f"[warn] {abspath} | Upload retourné sans succès - fichier conservé pour retry")
+            return
+        
+        # Upload réussi -> marquer dans le manifest
         manifest.add(file_hash, abspath)
+        
+        # Déplacer seulement après succès confirmé
         if move_uploaded_dir:
             try:
                 os.makedirs(move_uploaded_dir, exist_ok=True)
@@ -827,8 +1056,26 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
         f"{', faces=' + str(num_faces) + ', face_score=' + format(face_score, '.2f') if face_present else ', faces=0'} | "
         f"tech_score={float(tech.get('score') or 0.0):.2f} dhash={features.get('dhash')}"
     )
-    client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
+    
+    # IMPORTANT: Ne marquer/déplacer QUE si l'upload réussit
+    try:
+        upload_success = client.upload_file_to_event(event_id, abspath, watcher_id=watcher_id)
+    except AuthenticationError as e:
+        # Erreur d'auth -> propager pour arrêter le script proprement
+        print(f"[error:auth] {abspath} | Authentification échouée: {e}")
+        raise
+    except Exception as e:
+        # Autre erreur d'upload -> ne pas déplacer le fichier, il sera réessayé
+        print(f"[error:upload] {abspath} | Upload échoué: {e} - fichier conservé pour retry")
+        return
+    
+    if not upload_success:
+        print(f"[warn] {abspath} | Upload retourné sans succès - fichier conservé pour retry")
+        return
+    
+    # Upload réussi -> marquer dans le manifest
     manifest.add_with_features(file_hash, abspath, features)
+    
     if WATCHER_DEBUG and (debug_dir or True):
         _write_debug_report(debug_dir or os.path.join(base_dir, ".watcher_reports"), {
             "path": abspath,
@@ -844,6 +1091,8 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
                 "details": face.get("faces") if WATCHER_DEBUG else None,
             },
         })
+    
+    # Déplacer seulement après succès confirmé
     if move_uploaded_dir:
         try:
             os.makedirs(move_uploaded_dir, exist_ok=True)
@@ -862,6 +1111,11 @@ def process_path(client: UploadClient, event_id: int, path: str, manifest: Manif
 
 
 class CreatedHandler(FileSystemEventHandler):
+    """
+    Handler pour les événements de création/modification de fichiers.
+    Propage AuthenticationError pour permettre l'arrêt propre du script.
+    """
+    
     def __init__(self, client: UploadClient, event_id: int, manifest: Manifest, move_uploaded_dir: Optional[str], watcher_id: Optional[int]) -> None:
         super().__init__()
         self.client = client
@@ -869,20 +1123,29 @@ class CreatedHandler(FileSystemEventHandler):
         self.manifest = manifest
         self.move_uploaded_dir = move_uploaded_dir
         self.watcher_id = watcher_id
+        self._auth_error: Optional[AuthenticationError] = None  # Stocke l'erreur pour propagation
 
     def on_created(self, event):  # type: ignore[no-untyped-def]
         if getattr(event, "is_directory", False):
             return
         try:
             process_path(self.client, self.event_id, event.src_path, self.manifest, self.move_uploaded_dir, self.watcher_id)
-        except Exception:
-            pass
+        except AuthenticationError as e:
+            # Stocker l'erreur pour propagation (watchdog ne propage pas les exceptions)
+            print(f"[fatal:auth] Erreur d'authentification détectée, arrêt nécessaire")
+            self._auth_error = e
+        except Exception as e:
+            if WATCHER_LOG_ERRORS or WATCHER_DEBUG:
+                print(f"[warn] on_created failed: {e}")
 
     def on_modified(self, event):  # type: ignore[no-untyped-def]
         if getattr(event, "is_directory", False):
             return
         try:
             process_path(self.client, self.event_id, event.src_path, self.manifest, self.move_uploaded_dir, self.watcher_id)
+        except AuthenticationError as e:
+            print(f"[fatal:auth] Erreur d'authentification détectée, arrêt nécessaire")
+            self._auth_error = e
         except Exception as e:
             if WATCHER_LOG_ERRORS or WATCHER_DEBUG:
                 print(f"[warn] on_modified failed: {e}")
@@ -895,22 +1158,46 @@ class CreatedHandler(FileSystemEventHandler):
             dest = getattr(event, "dest_path", None)
             if dest:
                 process_path(self.client, self.event_id, dest, self.manifest, self.move_uploaded_dir, self.watcher_id)
+        except AuthenticationError as e:
+            print(f"[fatal:auth] Erreur d'authentification détectée, arrêt nécessaire")
+            self._auth_error = e
         except Exception as e:
             if WATCHER_LOG_ERRORS or WATCHER_DEBUG:
                 print(f"[warn] on_moved failed: {e}")
+    
+    def has_auth_error(self) -> bool:
+        """Vérifie si une erreur d'authentification s'est produite."""
+        return self._auth_error is not None
+    
+    def get_auth_error(self) -> Optional[AuthenticationError]:
+        """Retourne l'erreur d'authentification stockée."""
+        return self._auth_error
 
 
 def scan_existing_once(watch_dir: str, client: UploadClient, event_id: int, manifest: Manifest, move_uploaded_dir: Optional[str], watcher_id: Optional[int]) -> None:
+    """
+    Scanne le répertoire et traite les fichiers existants.
+    
+    Raises:
+        AuthenticationError: Si l'authentification échoue (propagée pour arrêt propre)
+    """
     try:
         for name in os.listdir(watch_dir):
             p = os.path.join(watch_dir, name)
             if os.path.isfile(p) and is_image_file(p):
                 try:
                     process_path(client, event_id, p, manifest, move_uploaded_dir, watcher_id)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except AuthenticationError:
+                    # Propager l'erreur d'auth pour arrêt propre
+                    raise
+                except Exception as e:
+                    if WATCHER_LOG_ERRORS or WATCHER_DEBUG:
+                        print(f"[warn] scan failed for {p}: {e}")
+    except AuthenticationError:
+        raise
+    except Exception as e:
+        if WATCHER_LOG_ERRORS or WATCHER_DEBUG:
+            print(f"[warn] scan_existing_once failed: {e}")
 
 
 def main() -> None:
@@ -958,29 +1245,51 @@ def main() -> None:
 
         active: dict[int, dict] = {}
         observers: dict[int, Observer] = {}
+        handlers: dict[int, CreatedHandler] = {}  # Garder une référence aux handlers
         manifests: dict[int, Manifest] = {}
+        
+        def check_handlers_for_auth_errors() -> Optional[AuthenticationError]:
+            """Vérifie si un handler a rencontré une erreur d'auth."""
+            for wid, handler in handlers.items():
+                if handler.has_auth_error():
+                    return handler.get_auth_error()
+            return None
+        
+        def cleanup_observers():
+            """Arrête proprement tous les observers."""
+            for obs in observers.values():
+                try:
+                    obs.stop()
+                    obs.join(timeout=2)
+                except Exception:
+                    pass
+        
         try:
             while True:
+                # Vérifier si un handler a eu une erreur d'auth
+                auth_err = check_handlers_for_auth_errors()
+                if auth_err:
+                    print(f"\n[agent] ✗ ERREUR D'AUTHENTIFICATION DÉTECTÉE")
+                    print(f"[agent] ✗ {auth_err}")
+                    print(f"[agent] ✗ Arrêt du script. Les fichiers non uploadés restent en place.")
+                    cleanup_observers()
+                    raise SystemExit(1)
+                
                 # Fetch watchers for this machine (with 401 re-login)
                 ws = []
                 try:
-                    resp = client.session.get(f"{base_url}/api/admin/local-watchers", params={"machine_label": machine_label}, timeout=30)
-                    if resp.status_code == 401:
-                        # token expired or missing → re-login then retry once
-                        try:
-                            # drop old header and login again
-                            try:
-                                client.session.headers.pop("Authorization", None)
-                            except Exception:
-                                pass
-                            client.login_if_needed()
-                            resp = client.session.get(f"{base_url}/api/admin/local-watchers", params={"machine_label": machine_label}, timeout=30)
-                        except Exception:
-                            pass
+                    resp = client._do_request_with_retry("GET", f"{base_url}/api/admin/local-watchers", params={"machine_label": machine_label}, timeout=30)
                     if resp.ok:
                         ws = resp.json()
-                except Exception:
+                except AuthenticationError as e:
+                    print(f"\n[agent] ✗ ERREUR D'AUTHENTIFICATION: {e}")
+                    print(f"[agent] ✗ Arrêt du script. Les fichiers non uploadés restent en place.")
+                    cleanup_observers()
+                    raise SystemExit(1)
+                except Exception as e:
+                    print(f"[agent] ⚠ Erreur lors de la récupération des watchers: {e}")
                     ws = []
+                
                 ids = set()
                 # Always log fetch count for visibility
                 try:
@@ -1011,6 +1320,7 @@ def main() -> None:
                         if wid in observers:
                             try:
                                 observers[wid].stop(); observers[wid].join(); del observers[wid]
+                                handlers.pop(wid, None)
                             except Exception:
                                 pass
                         continue
@@ -1019,6 +1329,7 @@ def main() -> None:
                         if wid in observers:
                             try:
                                 observers[wid].stop(); observers[wid].join(); del observers[wid]
+                                handlers.pop(wid, None)
                                 print(f"[agent] stopped watcher {wid}")
                             except Exception:
                                 pass
@@ -1027,10 +1338,18 @@ def main() -> None:
                     if wid not in observers:
                         man = Manifest(os.path.join(wdir, ".uploaded_manifest.json"))
                         manifests[wid] = man
-                        # initial scan
-                        scan_existing_once(wdir, client, ev_id, man, move_dir, wid)
+                        # initial scan (peut lever AuthenticationError)
+                        try:
+                            scan_existing_once(wdir, client, ev_id, man, move_dir, wid)
+                        except AuthenticationError as e:
+                            print(f"\n[agent] ✗ ERREUR D'AUTHENTIFICATION pendant scan: {e}")
+                            print(f"[agent] ✗ Arrêt du script. Les fichiers non uploadés restent en place.")
+                            cleanup_observers()
+                            raise SystemExit(1)
+                        
                         if WATCHDOG_AVAILABLE:
                             handler = CreatedHandler(client, ev_id, man, move_dir, wid)
+                            handlers[wid] = handler
                             obs = Observer(); obs.schedule(handler, wdir, recursive=False); obs.start()
                             observers[wid] = obs
                             print(f"[agent] ✓ STARTED watcher #{wid} watching: {wdir}")
@@ -1041,22 +1360,27 @@ def main() -> None:
                     if not WATCHDOG_AVAILABLE:
                         man = manifests.get(wid) or Manifest(os.path.join(wdir, ".uploaded_manifest.json"))
                         manifests[wid] = man
-                        scan_existing_once(wdir, client, ev_id, man, move_dir, wid)
+                        try:
+                            scan_existing_once(wdir, client, ev_id, man, move_dir, wid)
+                        except AuthenticationError as e:
+                            print(f"\n[agent] ✗ ERREUR D'AUTHENTIFICATION pendant scan: {e}")
+                            print(f"[agent] ✗ Arrêt du script. Les fichiers non uploadés restent en place.")
+                            raise SystemExit(1)
                 # stop removed watchers
                 for wid, obs in list(observers.items()):
                     if wid not in ids:
                         try:
                             obs.stop(); obs.join(); del observers[wid]
+                            handlers.pop(wid, None)
                             print(f"[agent] removed watcher {wid}")
                         except Exception:
                             pass
                 time.sleep(3)
         except KeyboardInterrupt:
-            for obs in observers.values():
-                try:
-                    obs.stop(); obs.join()
-                except Exception:
-                    pass
+            print(f"\n[agent] Interruption utilisateur (Ctrl+C)")
+            cleanup_observers()
+        except SystemExit:
+            raise
         return
 
     # Single watcher mode (legacy)
@@ -1077,24 +1401,47 @@ def main() -> None:
     print(f"{'='*60}\n")
 
     manifest = Manifest(os.path.join(watch_dir, ".uploaded_manifest.json"))
-    scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir, watcher_id)
+    
+    # Scan initial (peut lever AuthenticationError)
+    try:
+        scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir, watcher_id)
+    except AuthenticationError as e:
+        print(f"\n[start] ✗ ERREUR D'AUTHENTIFICATION: {e}")
+        print(f"[start] ✗ Arrêt du script. Les fichiers non uploadés restent en place.")
+        raise SystemExit(1)
+    
     if WATCHDOG_AVAILABLE:
         handler = CreatedHandler(client, event_id, manifest, move_uploaded_dir, watcher_id)
         observer = Observer(); observer.schedule(handler, watch_dir, recursive=False); observer.start()
         print(f"[start] ✓ Watcher active. Monitoring for new photos... (Press Ctrl+C to quit)")
         try:
             while True:
+                # Vérifier périodiquement si le handler a eu une erreur d'auth
+                if handler.has_auth_error():
+                    print(f"\n[start] ✗ ERREUR D'AUTHENTIFICATION DÉTECTÉE")
+                    print(f"[start] ✗ {handler.get_auth_error()}")
+                    print(f"[start] ✗ Arrêt du script. Les fichiers non uploadés restent en place.")
+                    observer.stop()
+                    observer.join(timeout=2)
+                    raise SystemExit(1)
                 time.sleep(1)
         except KeyboardInterrupt:
-            observer.stop(); observer.join()
+            print(f"\n[start] Interruption utilisateur (Ctrl+C)")
+            observer.stop()
+            observer.join(timeout=2)
     else:
         print("[info] watchdog not installed; falling back to periodic scan.")
         try:
             while True:
-                scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir, watcher_id)
+                try:
+                    scan_existing_once(watch_dir, client, event_id, manifest, move_uploaded_dir, watcher_id)
+                except AuthenticationError as e:
+                    print(f"\n[start] ✗ ERREUR D'AUTHENTIFICATION: {e}")
+                    print(f"[start] ✗ Arrêt du script. Les fichiers non uploadés restent en place.")
+                    raise SystemExit(1)
                 time.sleep(2)
         except KeyboardInterrupt:
-            pass
+            print(f"\n[start] Interruption utilisateur (Ctrl+C)")
 
 
 if __name__ == "__main__":

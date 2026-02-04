@@ -88,6 +88,18 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     
+    # ========== Authentication / JWT ==========
+    # Clé secrète pour signer les JWT (OBLIGATOIRE en prod)
+    SECRET_KEY: str = "your-secret-key-change-in-production"
+    # Algorithme de signature JWT
+    JWT_ALGORITHM: str = "HS256"
+    # Durée de vie du token d'accès en minutes (défaut: 480 = 8 heures pour soirées)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+    # Durée de vie du refresh token en minutes (défaut: 1440 = 24 heures)
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 1440
+    # Marge avant expiration pour renouvellement anticipé (en minutes)
+    TOKEN_REFRESH_MARGIN_MINUTES: int = 5
+    
     # ========== Photo Processing ==========
     # Seuil minimum de similarité pour créer un FaceMatch
     AWS_MATCH_MIN_SIMILARITY: int = 70

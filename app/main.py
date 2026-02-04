@@ -99,7 +99,7 @@ class ShowInGeneralRequest(BaseModel):
 class BulkShowInGeneralRequest(BaseModel):
     photo_ids: List[int]
     show_in_general: bool
-from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM
+from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from recognizer_factory import get_face_recognizer
 from photo_optimizer import PhotoOptimizer
 from aws_metrics import aws_metrics
@@ -2411,10 +2411,21 @@ async def register(
     db.commit()
     db.refresh(new_user)
     
-    # Cr+�er un token d'acc+�s
-    access_token = create_access_token(data={"sub": new_user.username, "user_id": new_user.id})
+    # Créer un token d'accès (durée configurable via ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": new_user.username, "user_id": new_user.id},
+        expires_delta=access_token_expires
+    )
     
-    return {"access_token": access_token, "token_type": "bearer"}
+    # Calculer l'expiration pour le client
+    expires_at = datetime.utcnow() + access_token_expires
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": int(access_token_expires.total_seconds()),
+        "expires_at": expires_at.isoformat() + "Z"
+    }
 
 @app.post("/api/register-invite", response_model=UserSchema)
 async def register_invite(
@@ -2572,13 +2583,20 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             
-            # Créer le token pour ce compte spécifique
-            access_token_expires = timedelta(minutes=30)
+            # Créer le token pour ce compte spécifique (durée configurable via ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
             access_token = create_access_token(
                 data={"sub": user.username, "user_id": user.id}, expires_delta=access_token_expires
             )
             
-            return {"access_token": access_token, "token_type": "bearer"}
+            # Calculer l'expiration pour le client (anticiper le renouvellement)
+            expires_at = datetime.utcnow() + access_token_expires
+            return {
+                "access_token": access_token,
+                "token_type": "bearer",
+                "expires_in": int(access_token_expires.total_seconds()),
+                "expires_at": expires_at.isoformat() + "Z"
+            }
         
         # Chercher TOUS les utilisateurs avec cet identifiant (username OU email)
         _t_lookup = time.time()
@@ -2610,11 +2628,18 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
         # Si un seul compte valide, connecter directement
         if len(valid_users) == 1:
             user = valid_users[0]
-            access_token_expires = timedelta(minutes=30)
+            access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
             access_token = create_access_token(
                 data={"sub": user.username, "user_id": user.id}, expires_delta=access_token_expires
             )
-            return {"access_token": access_token, "token_type": "bearer"}
+            # Calculer l'expiration pour le client
+            expires_at = datetime.utcnow() + access_token_expires
+            return {
+                "access_token": access_token,
+                "token_type": "bearer",
+                "expires_in": int(access_token_expires.total_seconds()),
+                "expires_at": expires_at.isoformat() + "Z"
+            }
         
         # Si plusieurs comptes (événements différents), retourner la liste pour sélection
         events_list = []
