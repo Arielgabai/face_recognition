@@ -1812,7 +1812,14 @@ def validate_selfie_image(image_bytes: bytes) -> None:
 
             # Détections multi-techniques (HOG prioritaire, Haar en fallback uniquement si HOG ne trouve rien)
             # OPTIMISÉ : Réduction de l'upsampling pour performances (0 au lieu de 1)
-            import face_recognition as _fr
+            try:
+                import face_recognition as _fr
+            except SystemExit:
+                # face_recognition appelle quit() si les modèles ne sont pas trouvés
+                raise HTTPException(
+                    status_code=503,
+                    detail="Service de reconnaissance faciale temporairement indisponible (modèles non chargés)"
+                )
             faces = []  # (top, right, bottom, left)
 
             try:
@@ -2767,7 +2774,10 @@ async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = F
         from PIL import Image, ImageOps as _ImageOps
         import io as _io
         import numpy as _np
-        import face_recognition as _fr
+        try:
+            import face_recognition as _fr
+        except SystemExit:
+            raise HTTPException(status_code=503, detail="Service de reconnaissance faciale indisponible")
         import cv2 as _cv2
 
         pil_img = Image.open(_io.BytesIO(file_bytes))
@@ -2795,7 +2805,10 @@ async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = F
             from PIL import Image, ImageOps as _ImageOps
             import io as _io
             import numpy as _np
-            import face_recognition as _fr
+            try:
+                import face_recognition as _fr
+            except SystemExit:
+                raise HTTPException(status_code=503, detail="Service de reconnaissance faciale indisponible")
             import cv2 as _cv2
             pil_img = Image.open(_io.BytesIO(file_bytes))
             pil_img = _ImageOps.exif_transpose(pil_img)
@@ -3854,6 +3867,9 @@ async def get_photo_faces(
         from PIL import Image, ImageOps
         import numpy as _np
         import face_recognition as _fr
+    except SystemExit:
+        # face_recognition appelle quit() si les modèles ne sont pas trouvés
+        raise HTTPException(status_code=503, detail="Service de reconnaissance faciale indisponible (modèles non chargés)")
     except Exception:
         # Dépendances manquantes
         raise HTTPException(status_code=500, detail="Dépendances de reconnaissance non disponibles")

@@ -7,9 +7,29 @@ Ce fichier doit être importé avant face_recognition
 import sys
 import importlib
 
+def _ensure_pkg_resources():
+    """S'assure que pkg_resources est disponible (requis par face_recognition_models)."""
+    try:
+        import pkg_resources
+        return True
+    except ImportError:
+        # pkg_resources fait partie de setuptools
+        try:
+            import setuptools
+            import pkg_resources
+            return True
+        except ImportError:
+            print("❌ pkg_resources non disponible - installez setuptools")
+            return False
+
 def apply_face_recognition_patch():
     """Applique le patch pour face_recognition_models"""
     try:
+        # S'assurer que pkg_resources est disponible
+        if not _ensure_pkg_resources():
+            print("⚠️ Patch face_recognition_models ignoré (pkg_resources manquant)")
+            return False
+        
         # Importer face_recognition_models
         import face_recognition_models
         
