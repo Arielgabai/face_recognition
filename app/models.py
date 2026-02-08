@@ -18,6 +18,15 @@ class PhotoProcessingStatus(str, enum.Enum):
     DONE = "DONE"             # Traitement terminé avec succès
     FAILED = "FAILED"         # Traitement échoué
 
+
+class DeleteJobStatus(str, enum.Enum):
+    """Statut d'un job de suppression de photos."""
+    PENDING = "PENDING"       # Job créé, en attente de traitement
+    IN_PROGRESS = "IN_PROGRESS"  # Suppression en cours
+    DONE = "DONE"             # Toutes les photos supprimées avec succès
+    PARTIAL = "PARTIAL"       # Terminé avec des erreurs partielles
+    FAILED = "FAILED"         # Échec complet du job
+
 class Event(Base):
     __tablename__ = "events"
     id = Column(Integer, primary_key=True, index=True)
@@ -224,3 +233,54 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     user = relationship("User")
+
+
+class DeleteJob(Base):
+    """
+    Job de suppression de photos asynchrone.
+    
+    Permet de traiter la suppression de multiples photos en arrière-plan
+    pour éviter les timeouts HTTP sur les suppressions massives.
+    
+    Workflow:
+    1. Endpoint crée un DeleteJob avec status=PENDING et photo_ids en JSON
+    2. Message SQS envoyé avec job_id
+    3. Worker traite les photos par lots (face_matches, rekognition, DB, S3)
+    4. Status mis à jour: IN_PROGRESS -> DONE/PARTIAL/FAILED
+    """
+    __tablename__ = "delete_jobs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    # UUID unique pour identifier le job (exposé dans l'API)
+    job_id = Column(String, unique=True, index=True, nullable=False)
+    # ID du photographe qui a demandé la suppression
+    photographer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # Liste des IDs de photos à supprimer (JSON array)
+    photo_ids_json = Column(Text, nullable=False)
+    # Nombre total de photos à supprimer
+    total_photos = Column(Integer, nullable=False, default=0)
+    # Nombre de photos traitées (succès + erreurs)
+    processed_count = Column(Integer, nullable=False, default=0)
+    # Nombre de photos supprimées avec succès
+    success_count = Column(Integer, nullable=False, default=0)
+    # Nombre d'erreurs
+    error_count = Column(Integer, nullable=False, default=0)
+    # Détails des erreurs (JSON array)
+    errors_json = Column(Text, nullable=True)
+    # Statut du job
+    status = Column(String, nullable=False, default=DeleteJobStatus.PENDING.value, index=True)
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    # Durée totale en secondes (pour monitoring)
+    duration_seconds = Column(Float, nullable=True)
+    
+    # Index pour les requêtes de monitoring
+    __table_args__ = (
+        Index('idx_delete_jobs_photographer', 'photographer_id'),
+        Index('idx_delete_jobs_status', 'status'),
+        Index('idx_delete_jobs_created', 'created_at'),
+    )
+    
+    photographer = relationship("User")

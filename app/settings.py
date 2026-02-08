@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Préfixe pour les photos brutes (format: {prefix}/event_{event_id}/{photo_id}.jpg)
     PHOTO_S3_RAW_PREFIX: str = "raw"
     
-    # ========== SQS Queue ==========
+    # ========== SQS Queue (Photo Processing) ==========
     # URL de la file SQS pour le traitement des photos
     PHOTO_SQS_QUEUE_URL: str = ""
     # Timeout de visibilité SQS en secondes (doit être > temps de traitement moyen)
@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     # Nombre max de messages reçus par batch
     PHOTO_SQS_MAX_MESSAGES: int = 1
     
+    # ========== SQS Queue (Delete Jobs) ==========
+    # URL de la file SQS pour les jobs de suppression (si vide, utilise PHOTO_SQS_QUEUE_URL)
+    DELETE_SQS_QUEUE_URL: str = ""
+    # Timeout de visibilité pour les suppressions (plus long car peut traiter beaucoup de photos)
+    DELETE_SQS_VISIBILITY_TIMEOUT: int = 600  # 10 minutes
+    # Taille des lots pour la suppression (nombre de photos par itération)
+    DELETE_BATCH_SIZE: int = 50
+    
     # ========== Photo Worker ==========
     # Active/désactive le worker de traitement des photos
     PHOTO_WORKER_ENABLED: bool = True
@@ -57,6 +65,10 @@ class Settings(BaseSettings):
     PHOTO_WORKER_COUNT: int = 1
     # Délai entre les polls SQS en secondes (si aucun message)
     PHOTO_WORKER_POLL_INTERVAL: float = 1.0
+    
+    # ========== Delete Worker ==========
+    # Active/désactive le worker de suppression des photos
+    DELETE_WORKER_ENABLED: bool = True
     
     # ========== AWS Rekognition ==========
     AWS_REKOGNITION_COLLECTION_PREFIX: str = "event_"
@@ -126,6 +138,16 @@ class Settings(BaseSettings):
     def is_s3_configured(self) -> bool:
         """Vérifie si S3 est configuré pour le stockage des photos."""
         return bool(self.PHOTO_BUCKET_NAME)
+    
+    @property
+    def delete_sqs_queue_url(self) -> str:
+        """Retourne l'URL de la queue de suppression (ou la queue photo par défaut)."""
+        return self.DELETE_SQS_QUEUE_URL or self.PHOTO_SQS_QUEUE_URL
+    
+    @property
+    def is_delete_sqs_configured(self) -> bool:
+        """Vérifie si SQS est configuré pour les suppressions asynchrones."""
+        return bool(self.delete_sqs_queue_url)
 
 
 @lru_cache()

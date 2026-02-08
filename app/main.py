@@ -87,6 +87,7 @@ def serve_react_frontend():
 from database import get_db, create_tables
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher, LocalIngestionLog
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog, PasswordResetToken
+from models import DeleteJob, DeleteJobStatus
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
@@ -153,6 +154,10 @@ def _startup_create_tables():
         # Ajouter les colonnes S3+SQS pour le nouveau workflow prod-ready
         from add_photo_sqs_columns import add_photo_sqs_columns
         add_photo_sqs_columns()
+        
+        # Créer la table delete_jobs pour les suppressions asynchrones
+        from add_delete_jobs_table import run_migration as add_delete_jobs_table
+        add_delete_jobs_table()
 
         # Ajouter des index de performance si nécessaires
         from add_perf_indexes import add_perf_indexes
@@ -497,6 +502,18 @@ def _startup_photo_queue():
     except Exception as e:
         print(f"[Startup] Warning: could not start SQS photo worker: {e}")
     
+    # Démarrer le worker de suppression SQS si configuré
+    try:
+        from settings import settings
+        if settings.is_delete_sqs_configured:
+            from delete_worker_sqs import start_delete_worker
+            start_delete_worker()
+            print(f"[Startup] SQS Delete worker started (queue={settings.delete_sqs_queue_url})")
+        else:
+            print("[Startup] Delete SQS not configured, bulk deletions will be synchronous (limited)")
+    except Exception as e:
+        print(f"[Startup] Warning: could not start SQS delete worker: {e}")
+    
     # Démarrer aussi la queue legacy (pour fallback si S3+SQS non configurés)
     try:
         from photo_queue import get_photo_queue
@@ -524,6 +541,14 @@ def _shutdown_services():
         print("[Shutdown] SQS Photo worker stopped")
     except Exception as e:
         print(f"[Shutdown] Warning: could not stop SQS photo worker: {e}")
+    
+    # Arrêter le worker de suppression SQS
+    try:
+        from delete_worker_sqs import stop_delete_worker
+        stop_delete_worker()
+        print("[Shutdown] SQS Delete worker stopped")
+    except Exception as e:
+        print(f"[Shutdown] Warning: could not stop SQS delete worker: {e}")
     
     # Arrêter la photo queue legacy
     try:
@@ -4025,11 +4050,25 @@ async def delete_photo(
 
 @app.delete("/api/photos")
 async def delete_multiple_photos(
-    photo_ids: str,  # Recevoir comme string s+�par+�e par des virgules
+    photo_ids: str,  # Recevoir comme string séparée par des virgules
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Supprimer plusieurs photos (photographes seulement)"""
+    """
+    Supprimer plusieurs photos (photographes seulement).
+    
+    Mode asynchrone (si SQS configuré):
+    - Crée un job de suppression en DB
+    - Envoie le job dans SQS pour traitement en arrière-plan
+    - Retourne immédiatement avec job_id et status 202 Accepted
+    
+    Mode synchrone (fallback):
+    - Supprime les photos directement (limité à 50 pour éviter timeout)
+    - Retourne 200 avec le nombre de photos supprimées
+    """
+    import json
+    import uuid
+    
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent supprimer des photos")
     
@@ -4046,14 +4085,65 @@ async def delete_multiple_photos(
     if not photo_id_list:
         raise HTTPException(status_code=400, detail="Aucune photo sélectionnée")
     
-    # R+�cup+�rer les photos du photographe
-    photos = db.query(Photo).filter(
-        Photo.id.in_(photo_id_list),
-        Photo.photographer_id == current_user.id
-    ).all()
+    # Vérifier que les photos appartiennent au photographe
+    valid_photo_ids = [
+        p.id for p in db.query(Photo.id).filter(
+            Photo.id.in_(photo_id_list),
+            Photo.photographer_id == current_user.id
+        ).all()
+    ]
     
-    if not photos:
+    if not valid_photo_ids:
         raise HTTPException(status_code=404, detail="Aucune photo trouvée")
+    
+    # ========== Mode asynchrone (SQS) ==========
+    from settings import settings
+    if settings.is_delete_sqs_configured:
+        try:
+            # Créer le job de suppression
+            job_id = str(uuid.uuid4())
+            delete_job = DeleteJob(
+                job_id=job_id,
+                photographer_id=current_user.id,
+                photo_ids_json=json.dumps(valid_photo_ids),
+                total_photos=len(valid_photo_ids),
+                status=DeleteJobStatus.PENDING.value,
+            )
+            db.add(delete_job)
+            db.commit()
+            
+            # Envoyer dans SQS
+            from s3_service import get_sqs_service
+            sqs = get_sqs_service()
+            sqs.send_delete_job(job_id, current_user.id)
+            
+            logger.info(f"[DELETE-JOB] Created job_id={job_id} with {len(valid_photo_ids)} photos for photographer_id={current_user.id}")
+            
+            # Retourner immédiatement avec 202 Accepted
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "status": "accepted",
+                    "job_id": job_id,
+                    "total_photos": len(valid_photo_ids),
+                    "message": f"Suppression de {len(valid_photo_ids)} photos en cours de traitement"
+                }
+            )
+        except Exception as e:
+            db.rollback()
+            logger.exception(f"[DELETE-JOB] Failed to create async job: {e}")
+            # Fallback vers mode synchrone
+            logger.warning("[DELETE-JOB] Falling back to synchronous deletion")
+    
+    # ========== Mode synchrone (fallback) ==========
+    # Limiter à 50 photos pour éviter les timeouts
+    MAX_SYNC_DELETE = 50
+    if len(valid_photo_ids) > MAX_SYNC_DELETE:
+        logger.warning(f"delete_multiple_photos: limiting sync delete to {MAX_SYNC_DELETE} photos (requested {len(valid_photo_ids)})")
+        valid_photo_ids = valid_photo_ids[:MAX_SYNC_DELETE]
+    
+    photos = db.query(Photo).filter(Photo.id.in_(valid_photo_ids)).all()
     
     deleted_count = 0
     try:
@@ -4085,7 +4175,7 @@ async def delete_multiple_photos(
         
         db.commit()
         logger.info(f"delete_multiple_photos: success deleted={deleted_count}")
-        return {"message": f"{deleted_count} photos supprimées avec succès"}
+        return {"message": f"{deleted_count} photos supprimées avec succès", "deleted_count": deleted_count}
     except Exception as e:
         db.rollback()
         logger.exception("delete_multiple_photos: failed")
@@ -6401,7 +6491,7 @@ async def get_job_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Récupère le statut d'un job spécifique."""
+    """Récupère le statut d'un job spécifique (photo queue legacy)."""
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
     
@@ -6413,6 +6503,124 @@ async def get_job_status(
         raise HTTPException(status_code=404, detail="Job non trouvé")
     
     return job_status
+
+
+# === MONITORING DES JOBS DE SUPPRESSION ===
+
+@app.get("/api/admin/delete-jobs")
+async def list_delete_jobs(
+    status: str = None,
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Liste les jobs de suppression de photos.
+    
+    Args:
+        status: Filtrer par statut (PENDING, IN_PROGRESS, DONE, PARTIAL, FAILED)
+        limit: Nombre max de résultats (défaut 50)
+    """
+    import json
+    
+    # Autoriser photographes et admins
+    if current_user.user_type not in [UserType.ADMIN, UserType.PHOTOGRAPHER]:
+        raise HTTPException(status_code=403, detail="Accès non autorisé")
+    
+    query = db.query(DeleteJob)
+    
+    # Les photographes ne voient que leurs propres jobs
+    if current_user.user_type == UserType.PHOTOGRAPHER:
+        query = query.filter(DeleteJob.photographer_id == current_user.id)
+    
+    if status:
+        query = query.filter(DeleteJob.status == status.upper())
+    
+    jobs = query.order_by(DeleteJob.created_at.desc()).limit(limit).all()
+    
+    return [
+        {
+            "job_id": job.job_id,
+            "status": job.status,
+            "total_photos": job.total_photos,
+            "processed": job.processed_count,
+            "success": job.success_count,
+            "errors": job.error_count,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            "duration_seconds": job.duration_seconds,
+        }
+        for job in jobs
+    ]
+
+
+@app.get("/api/admin/delete-jobs/{job_id}")
+async def get_delete_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Récupère le statut détaillé d'un job de suppression.
+    
+    Response:
+    {
+        "job_id": "...",
+        "status": "PENDING|IN_PROGRESS|DONE|PARTIAL|FAILED",
+        "total": ...,
+        "processed": ...,
+        "success": ...,
+        "errors": [{"photo_id": ..., "error": "..."}, ...]
+    }
+    """
+    import json
+    
+    # Autoriser photographes et admins
+    if current_user.user_type not in [UserType.ADMIN, UserType.PHOTOGRAPHER]:
+        raise HTTPException(status_code=403, detail="Accès non autorisé")
+    
+    job = db.query(DeleteJob).filter(DeleteJob.job_id == job_id).first()
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trouvé")
+    
+    # Vérifier que le photographe a accès à son propre job
+    if current_user.user_type == UserType.PHOTOGRAPHER and job.photographer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Accès non autorisé à ce job")
+    
+    errors = []
+    if job.errors_json:
+        try:
+            errors = json.loads(job.errors_json)
+        except Exception:
+            errors = []
+    
+    return {
+        "job_id": job.job_id,
+        "status": job.status,
+        "total": job.total_photos,
+        "processed": job.processed_count,
+        "success": job.success_count,
+        "error_count": job.error_count,
+        "errors": errors,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "duration_seconds": job.duration_seconds,
+    }
+
+
+@app.get("/api/admin/delete-worker/stats")
+async def get_delete_worker_stats(
+    current_user: User = Depends(get_current_user),
+):
+    """Retourne les statistiques du worker de suppression."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+    
+    from delete_worker_sqs import get_delete_worker_stats
+    return get_delete_worker_stats()
 
 @app.post("/api/admin/cache/clear")
 async def clear_cache(

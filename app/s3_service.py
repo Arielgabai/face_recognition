@@ -114,6 +114,63 @@ class S3Service:
         except ClientError as e:
             print(f"[S3Service] Failed to delete {s3_key}: {e}")
             return False
+    
+    def delete_photos_batch(self, s3_keys: list) -> dict:
+        """
+        Supprime plusieurs photos de S3 en batch (max 1000 par appel S3).
+        
+        Args:
+            s3_keys: Liste des clés S3 à supprimer
+        
+        Returns:
+            dict: {
+                "deleted": [liste des clés supprimées],
+                "errors": [{"key": ..., "error": ...}]
+            }
+        """
+        if not s3_keys:
+            return {"deleted": [], "errors": []}
+        
+        # S3 delete_objects accepte max 1000 objets par appel
+        all_deleted = []
+        all_errors = []
+        
+        # Traiter par lots de 1000
+        for i in range(0, len(s3_keys), 1000):
+            batch = s3_keys[i:i+1000]
+            objects_to_delete = [{"Key": key} for key in batch if key]
+            
+            if not objects_to_delete:
+                continue
+            
+            try:
+                response = self.client.delete_objects(
+                    Bucket=settings.PHOTO_BUCKET_NAME,
+                    Delete={"Objects": objects_to_delete, "Quiet": False}
+                )
+                
+                # Récupérer les suppressions réussies
+                deleted = response.get("Deleted", [])
+                for d in deleted:
+                    all_deleted.append(d.get("Key"))
+                
+                # Récupérer les erreurs
+                errors = response.get("Errors", [])
+                for e in errors:
+                    all_errors.append({
+                        "key": e.get("Key"),
+                        "error": f"{e.get('Code')}: {e.get('Message')}"
+                    })
+                
+                print(f"[S3Service] Batch delete: {len(deleted)} deleted, {len(errors)} errors")
+                
+            except ClientError as e:
+                print(f"[S3Service] Batch delete failed: {e}")
+                # Marquer tout le batch en erreur
+                for key in batch:
+                    all_errors.append({"key": key, "error": str(e)})
+        
+        return {"deleted": all_deleted, "errors": all_errors}
 
 
 class SQSService:
@@ -144,6 +201,7 @@ class SQSService:
             ClientError: En cas d'erreur SQS
         """
         message_body = json.dumps({
+            "job_type": "process_photo",
             "photo_id": photo_id,
             "event_id": event_id,
             "s3_key": s3_key,
@@ -156,6 +214,38 @@ class SQSService:
         
         message_id = response.get("MessageId", "unknown")
         print(f"[SQSService] Sent message {message_id} for photo_id={photo_id}")
+        return message_id
+    
+    def send_delete_job(self, job_id: str, photographer_id: int) -> str:
+        """
+        Envoie un message dans la file SQS pour traiter un job de suppression.
+        
+        Args:
+            job_id: UUID du job de suppression
+            photographer_id: ID du photographe qui a demandé la suppression
+        
+        Returns:
+            str: MessageId du message envoyé
+        
+        Raises:
+            ClientError: En cas d'erreur SQS
+        """
+        message_body = json.dumps({
+            "job_type": "delete_photos",
+            "job_id": job_id,
+            "photographer_id": photographer_id,
+        })
+        
+        # Utiliser la queue de suppression (ou la queue par défaut)
+        queue_url = settings.delete_sqs_queue_url
+        
+        response = self.client.send_message(
+            QueueUrl=queue_url,
+            MessageBody=message_body,
+        )
+        
+        message_id = response.get("MessageId", "unknown")
+        print(f"[SQSService] Sent delete job message {message_id} for job_id={job_id}")
         return message_id
 
 
