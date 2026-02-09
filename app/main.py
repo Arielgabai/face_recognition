@@ -5,10 +5,7 @@
 # (database.py, settings.py, aws_face_recognizer.py, etc.)
 # =============================================================================
 
-# 1. Patch face_recognition (ne dépend pas de la config)
-import face_recognition_patch
-
-# 2. Charger les paramètres SSM AVANT les autres imports
+# 1. Charger les paramètres SSM AVANT les autres imports
 #    Cela injecte les valeurs SSM dans os.environ
 from ssm_loader import load_ssm_parameters
 load_ssm_parameters()
@@ -54,12 +51,8 @@ from concurrent.futures import ThreadPoolExecutor
 from database import SessionLocal  # là où tu l’as défini
 
 
-# ========== SEMAPHORES POUR THREAD-SAFETY ==========
-# dlib et face_recognition ne sont PAS thread-safe
-# Ces semaphores empêchent les crashs mémoire avec plusieurs workers
-_FACE_RECOGNITION_SEMAPHORE = threading.Semaphore(1)  # 1 seule validation à la fois par worker
-_DLIB_OPERATIONS_SEMAPHORE = threading.Semaphore(1)   # 1 seule opération dlib à la fois
-print("[Init] Semaphores de protection dlib/face_recognition initialisés")
+# NOTE: Les semaphores dlib/face_recognition ont été supprimés
+# car l'app utilise maintenant uniquement OpenCV/Haar (thread-safe) pour la validation selfie
 
 # ========== THREAD POOL POUR LE MATCHING ==========
 # ThreadPoolExecutor séparé pour isoler le matching des workers Gunicorn
@@ -1776,141 +1769,86 @@ def compress_selfie_for_storage(image_bytes: bytes, max_size_kb: int = 200) -> b
 def validate_selfie_image(image_bytes: bytes) -> None:
     """Valide qu'un selfie contient exactement un visage exploitable.
 
+    Utilise uniquement OpenCV/Haar Cascade (pas de dépendance à face_recognition/dlib).
+    
     - Rejette si aucun visage n'est détecté
     - Rejette si plusieurs visages sont détectés
     - Rejette si le visage détecté est trop petit (qualité insuffisante)
-    
-    ⚠️ THREAD-SAFE : Utilise un semaphore pour éviter les crashs avec dlib multi-workers
     """
-    # CRITIQUE : Protéger les opérations dlib/face_recognition avec un semaphore
-    # Sans ce lock, les workers crashent avec "free(): invalid size" et "corrupted double-linked list"
-    with _FACE_RECOGNITION_SEMAPHORE:
-        try:
-            # Forcer conversion bytes
-            if not isinstance(image_bytes, (bytes, bytearray)):
-                image_bytes = bytes(image_bytes)
+    try:
+        # Forcer conversion bytes
+        if not isinstance(image_bytes, (bytes, bytearray)):
+            image_bytes = bytes(image_bytes)
 
-            # Charger via PIL et réduire pour limiter la RAM (OPTIMISÉ)
-            from PIL import Image, ImageOps
-            import io as _io
-            pil_img = Image.open(_io.BytesIO(image_bytes))
-            pil_img = ImageOps.exif_transpose(pil_img)
-            if pil_img.mode not in ("RGB", "L"):
-                pil_img = pil_img.convert("RGB")
-            # OPTIMISÉ : Réduction à 800px au lieu de 1024px (économise 40% de RAM)
-            max_dim = 800
-            w, h = pil_img.size
-            scale = min(1.0, max_dim / float(max(w, h)))
-            if scale < 1.0:
-                # OPTIMISÉ : BILINEAR au lieu de LANCZOS (2x plus rapide, qualité acceptable)
-                pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
+        # Charger via PIL et réduire pour limiter la RAM
+        from PIL import Image, ImageOps
+        import io as _io
+        import numpy as _np
+        import cv2 as _cv2
+        
+        pil_img = Image.open(_io.BytesIO(image_bytes))
+        pil_img = ImageOps.exif_transpose(pil_img)
+        if pil_img.mode not in ("RGB", "L"):
+            pil_img = pil_img.convert("RGB")
+        
+        # Réduction à 800px pour performance
+        max_dim = 800
+        w, h = pil_img.size
+        scale = min(1.0, max_dim / float(max(w, h)))
+        if scale < 1.0:
+            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
 
-            # Vers numpy
-            import numpy as _np
-            np_img = _np.array(pil_img)
-            img_h, img_w = (np_img.shape[0], np_img.shape[1])
+        # Vers numpy
+        np_img = _np.array(pil_img)
+        img_h, img_w = (np_img.shape[0], np_img.shape[1])
 
-            # Détections multi-techniques (HOG prioritaire, Haar en fallback uniquement si HOG ne trouve rien)
-            # OPTIMISÉ : Réduction de l'upsampling pour performances (0 au lieu de 1)
-            try:
-                import face_recognition as _fr
-            except SystemExit:
-                # face_recognition appelle quit() si les modèles ne sont pas trouvés
-                raise HTTPException(
-                    status_code=503,
-                    detail="Service de reconnaissance faciale temporairement indisponible (modèles non chargés)"
-                )
-            faces = []  # (top, right, bottom, left)
+        # Détection avec OpenCV Haar Cascade uniquement
+        gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
+        cascade = _cv2.CascadeClassifier(_cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        
+        # Détection multi-scale
+        rects = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
+        
+        # Convertir au format (top, right, bottom, left) pour compatibilité
+        face_locations = [(int(y), int(x+fw), int(y+fh), int(x)) for (x, y, fw, fh) in rects]
+        
+        print(f"[SelfieValidation] faces_detected={len(face_locations)} img_w={img_w} img_h={img_h}")
 
-            try:
-                faces_hog = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=0)
-            except Exception:
-                faces_hog = []
-            faces.extend(faces_hog or [])
+        if not face_locations or len(face_locations) == 0:
+            raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer un selfie clair de votre visage.")
+        
+        # Tolérance: si plusieurs visages mais un est très petit (< 15% du plus grand), ignorer
+        if len(face_locations) > 1:
+            areas = []
+            for (t, r, b, l) in face_locations:
+                w_ = max(0, r - l)
+                h_ = max(0, b - t)
+                areas.append(w_ * h_)
+            if areas:
+                max_area = max(areas)
+                filtered = [f for f, a in zip(face_locations, areas) if a >= 0.15 * max_area]
+                face_locations = filtered
+        
+        if len(face_locations) > 1:
+            raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Essayez de recadrer votre visage ou de vous isoler en arrière-plan.")
 
-            # Si aucun visage trouvé, un seul upsample supplémentaire (1 au lieu de 2)
-            if len(faces) == 0:
-                try:
-                    faces_hog2 = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=1)
-                except Exception:
-                    faces_hog2 = []
-                faces.extend(faces_hog2 or [])
+        # Taille minimale
+        top, right, bottom, left = face_locations[0]
+        face_width = max(0, right - left)
+        face_height = max(0, bottom - top)
+        face_area = face_width * face_height
 
-            # Ne pas ajouter Haar si un visage est déjà trouvé, pour éviter des faux positifs multiplicateurs
-            if len(faces) == 0:
-                try:
-                    import cv2 as _cv2
-                    gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
-                    cascades = [
-                        _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml',
-                    ]
-                    rects = _cv2.CascadeClassifier(cascades[0]).detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(48, 48))
-                    haar_faces = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
-                    faces.extend(haar_faces)
-                except Exception:
-                    pass
-
-            # Déduplication par IoU
-            def _iou(a, b):
-                (t1, r1, b1, l1) = a
-                (t2, r2, b2, l2) = b
-                xA = max(l1, l2)
-                yA = max(t1, t2)
-                xB = min(r1, r2)
-                yB = min(b1, b2)
-                interW = max(0, xB - xA)
-                interH = max(0, yB - yA)
-                inter = interW * interH
-                area1 = max(0, (r1 - l1)) * max(0, (b1 - t1))
-                area2 = max(0, (r2 - l2)) * max(0, (b2 - t2))
-                union = area1 + area2 - inter if (area1 + area2 - inter) > 0 else 1
-                return inter / union
-
-            unique = []
-            for f in faces:
-                if (f[1] - f[3]) <= 0 or (f[2] - f[0]) <= 0:
-                    continue
-                if not unique:
-                    unique.append(f)
-                    continue
-                # Déduplication (IoU): fusionner les détections très recouvrantes (HOG/Haar du même visage)
-                if all(_iou(f, u) < 0.55 for u in unique):
-                    unique.append(f)
-
-            face_locations = unique
-            print(f"[SelfieValidation] faces_detected={len(face_locations)} img_w={img_w} img_h={img_h}")
-
-            if not face_locations or len(face_locations) == 0:
-                raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer un selfie clair de votre visage.")
-            # Tolérance: si 2 visages détectés mais un est très petit (< 15% de l'aire du plus grand), ignorer le plus petit
-            if len(face_locations) > 1:
-                areas = []
-                for (t, r, b, l) in face_locations:
-                    w_ = max(0, r - l); h_ = max(0, b - t)
-                    areas.append(w_ * h_)
-                if areas:
-                    max_area = max(areas)
-                    filtered = [f for f, a in zip(face_locations, areas) if a >= 0.15 * max_area]
-                    face_locations = filtered
-            if len(face_locations) > 1:
-                raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Essayez de recadrer votre visage ou de vous isoler en arrière-plan.")
-
-            # Taille minimale
-            top, right, bottom, left = face_locations[0]
-            face_width = max(0, right - left)
-            face_height = max(0, bottom - top)
-            face_area = face_width * face_height
-
-            min_abs_area = 5000
-            min_rel_ratio = 0.008  # 0.8%
-            min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio))
-            min_side = 44
-            print(f"[SelfieValidation] face_w={face_width} face_h={face_height} face_area={face_area} thresholds: min_area={min_face_area} min_side={min_side}")
-            if face_area < min_face_area or face_width < min_side or face_height < min_side:
-                raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
-        except HTTPException:
-            raise
-        except Exception:
+        min_abs_area = 5000
+        min_rel_ratio = 0.008  # 0.8%
+        min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio))
+        min_side = 44
+        print(f"[SelfieValidation] face_w={face_width} face_h={face_height} face_area={face_area} thresholds: min_area={min_face_area} min_side={min_side}")
+        
+        if face_area < min_face_area or face_width < min_side or face_height < min_side:
+            raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
+    except HTTPException:
+        raise
+    except Exception:
             import traceback as _tb
             print("[SelfieValidation] Unexpected error:\n" + _tb.format_exc())
             raise HTTPException(status_code=400, detail="Erreur lors de la vérification du selfie. Veuillez réessayer avec une photo plus claire.")
@@ -2774,10 +2712,6 @@ async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = F
         from PIL import Image, ImageOps as _ImageOps
         import io as _io
         import numpy as _np
-        try:
-            import face_recognition as _fr
-        except SystemExit:
-            raise HTTPException(status_code=503, detail="Service de reconnaissance faciale indisponible")
         import cv2 as _cv2
 
         pil_img = Image.open(_io.BytesIO(file_bytes))
@@ -2786,17 +2720,13 @@ async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = F
             pil_img = pil_img.convert("RGB")
         np_img = _np.array(pil_img)
         img_h, img_w = (np_img.shape[0], np_img.shape[1])
-        faces_hog = []
-        try:
-            faces_hog = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=1) or []
-        except Exception:
-            faces_hog = []
+        
+        # Détection uniquement avec OpenCV/Haar
         gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
         cascade_path = _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         rects = _cv2.CascadeClassifier(cascade_path).detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
         faces_haar = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
-        faces_total = len(faces_hog) + len(faces_haar)
-        return {"valid": True, "debug": {"img_w": img_w, "img_h": img_h, "faces_hog": len(faces_hog), "faces_haar": len(faces_haar), "faces_total": faces_total}}
+        return {"valid": True, "debug": {"img_w": img_w, "img_h": img_h, "faces_haar": len(faces_haar), "faces_total": len(faces_haar)}}
     except HTTPException as e:
         if not debug:
             raise
@@ -2805,27 +2735,20 @@ async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = F
             from PIL import Image, ImageOps as _ImageOps
             import io as _io
             import numpy as _np
-            try:
-                import face_recognition as _fr
-            except SystemExit:
-                raise HTTPException(status_code=503, detail="Service de reconnaissance faciale indisponible")
             import cv2 as _cv2
+            
             pil_img = Image.open(_io.BytesIO(file_bytes))
             pil_img = _ImageOps.exif_transpose(pil_img)
             if pil_img.mode not in ("RGB", "L"):
                 pil_img = pil_img.convert("RGB")
             np_img = _np.array(pil_img)
             img_h, img_w = (np_img.shape[0], np_img.shape[1])
-            faces_hog = []
-            try:
-                faces_hog = _fr.face_locations(np_img, model='hog', number_of_times_to_upsample=2) or []
-            except Exception:
-                faces_hog = []
+            
+            # Détection uniquement avec OpenCV/Haar
             gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
             cascade_path = _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
             rects = _cv2.CascadeClassifier(cascade_path).detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
             faces_haar = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
-            faces_total = len(faces_hog) + len(faces_haar)
             return Response(status_code=400, content=_io.BytesIO(_np.array([])).getvalue(), media_type="application/json", headers={
             })
         except Exception:
@@ -3866,12 +3789,8 @@ async def get_photo_faces(
     try:
         from PIL import Image, ImageOps
         import numpy as _np
-        import face_recognition as _fr
-    except SystemExit:
-        # face_recognition appelle quit() si les modèles ne sont pas trouvés
-        raise HTTPException(status_code=503, detail="Service de reconnaissance faciale indisponible (modèles non chargés)")
+        import cv2 as _cv2
     except Exception:
-        # Dépendances manquantes
         raise HTTPException(status_code=500, detail="Dépendances de reconnaissance non disponibles")
 
     try:
@@ -3881,7 +3800,7 @@ async def get_photo_faces(
             pil_img = pil_img.convert("RGB")
         orig_w, orig_h = pil_img.size
 
-        # Downscale agressif pour stabilité (aligné avec FaceRecognizer.detect_faces)
+        # Downscale agressif pour stabilité
         max_dim = 1280
         scale = min(1.0, max_dim / float(max(orig_w, orig_h))) if max(orig_w, orig_h) > 0 else 1.0
         work_img = pil_img
@@ -3891,57 +3810,17 @@ async def get_photo_faces(
 
         np_img = _np.array(work_img)
 
-        # Détection multi-pass légère
-        face_locations = _fr.face_locations(np_img, model="hog", number_of_times_to_upsample=0) or []
-        if len(face_locations) == 0:
-            try:
-                face_locations = _fr.face_locations(np_img, model="hog", number_of_times_to_upsample=1) or []
-            except Exception:
-                face_locations = []
+        # Détection avec OpenCV/Haar uniquement
+        gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
+        cascade = _cv2.CascadeClassifier(_cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        rects = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
+        # Format: (top, right, bottom, left)
+        face_locations = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
 
-        # Encodage du selfie de l'utilisateur (provider-agnostic): depuis selfie_data ou selfie_path
-        user_encoding = None
-        try:
-            if current_user and getattr(current_user, "user_type", None) == UserType.USER:
-                selfie_bytes = None
-                if getattr(current_user, "selfie_data", None):
-                    try:
-                        selfie_bytes = bytes(current_user.selfie_data)
-                    except Exception:
-                        selfie_bytes = None
-                if selfie_bytes is None and getattr(current_user, "selfie_path", None):
-                    try:
-                        sp = current_user.selfie_path
-                        if sp and os.path.exists(sp):
-                            with open(sp, "rb") as f:
-                                selfie_bytes = f.read()
-                    except Exception:
-                        selfie_bytes = None
-
-                if selfie_bytes:
-                    try:
-                        _pil = Image.open(BytesIO(selfie_bytes))
-                        _pil = ImageOps.exif_transpose(_pil)
-                        if _pil.mode not in ("RGB", "L"):
-                            _pil = _pil.convert("RGB")
-                        _np_selfie = _np.array(_pil)
-                        _encs = _fr.face_encodings(_np_selfie)
-                        if _encs:
-                            user_encoding = _encs[0]
-                    except Exception:
-                        user_encoding = None
-        except Exception:
-            user_encoding = None
-
-        encodings = []
-        if face_locations:
-            try:
-                encodings = _fr.face_encodings(np_img, face_locations) or []
-            except Exception:
-                encodings = []
-
+        # Construire les boîtes de visages détectés
+        # Note: La comparaison avec le selfie est gérée par AWS Rekognition (pas de face_recognition local)
         boxes: List[Dict[str, Any]] = []
-        for idx, loc in enumerate(face_locations):
+        for loc in face_locations:
             (top, right, bottom, left) = loc
             w = max(1, right - left)
             h = max(1, bottom - top)
@@ -3951,20 +3830,9 @@ async def get_photo_faces(
                 "left": max(0.0, float(left) / float(work_w)),
                 "width": min(1.0, float(w) / float(work_w)),
                 "height": min(1.0, float(h) / float(work_h)),
-                "matched": False,
+                "matched": False,  # Le matching est géré par AWS Rekognition
                 "confidence": None,
             }
-
-            if user_encoding is not None and idx < len(encodings):
-                try:
-                    dist = float(_fr.face_distance([user_encoding], encodings[idx])[0])
-                    matched = dist <= getattr(face_recognizer, "tolerance", 0.7)
-                    score = max(0, int((1.0 - dist) * 100))
-                    box["matched"] = bool(matched)
-                    box["confidence"] = int(score)
-                except Exception:
-                    pass
-
             boxes.append(box)
 
         result = {

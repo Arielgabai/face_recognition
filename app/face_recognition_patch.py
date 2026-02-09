@@ -5,6 +5,7 @@ Ce fichier doit être importé avant face_recognition
 """
 
 import sys
+import os
 import importlib
 
 def _ensure_pkg_resources():
@@ -19,19 +20,121 @@ def _ensure_pkg_resources():
             import pkg_resources
             return True
         except ImportError:
-            print("❌ pkg_resources non disponible - installez setuptools")
+            print("❌ pkg_resources non disponible - tentative de création d'un fallback")
             return False
+
+def _create_fake_face_recognition_models():
+    """
+    Crée un module face_recognition_models factice qui fournit les chemins des modèles
+    directement, sans utiliser pkg_resources.
+    """
+    import types
+    import glob
+    
+    # Chercher le répertoire d'installation de face_recognition_models
+    possible_paths = [
+        "/usr/local/lib/python3.11/site-packages/face_recognition_models/models",
+        "/usr/local/lib/python3.10/site-packages/face_recognition_models/models",
+        "/usr/local/lib/python3.9/site-packages/face_recognition_models/models",
+        "/usr/lib/python3/dist-packages/face_recognition_models/models",
+        os.path.expanduser("~/.local/lib/python3.11/site-packages/face_recognition_models/models"),
+        os.path.expanduser("~/.local/lib/python3.10/site-packages/face_recognition_models/models"),
+    ]
+    
+    models_dir = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            models_dir = path
+            print(f"✅ Modèles trouvés dans: {models_dir}")
+            break
+    
+    if not models_dir:
+        # Essayer de trouver via le système de fichiers
+        for site_packages in sys.path:
+            if not site_packages:
+                continue
+            candidate = os.path.join(site_packages, "face_recognition_models", "models")
+            if os.path.exists(candidate):
+                models_dir = candidate
+                print(f"✅ Modèles trouvés via sys.path: {models_dir}")
+                break
+    
+    if not models_dir:
+        # Dernière tentative : recherche glob
+        try:
+            pattern = "/usr/**/face_recognition_models/models"
+            matches = glob.glob(pattern, recursive=True)
+            if matches:
+                models_dir = matches[0]
+                print(f"✅ Modèles trouvés via glob: {models_dir}")
+        except Exception:
+            pass
+    
+    if not models_dir:
+        print("❌ Impossible de localiser les modèles face_recognition_models")
+        print(f"   Chemins vérifiés: {possible_paths[:3]}...")
+        return False
+    
+    # Créer le module factice
+    fake_module = types.ModuleType("face_recognition_models")
+    
+    # Définir les fonctions qui retournent les chemins des modèles
+    def pose_predictor_model_location():
+        return os.path.join(models_dir, "shape_predictor_68_face_landmarks.dat")
+    
+    def pose_predictor_five_point_model_location():
+        return os.path.join(models_dir, "shape_predictor_5_face_landmarks.dat")
+    
+    def face_recognition_model_location():
+        return os.path.join(models_dir, "dlib_face_recognition_resnet_model_v1.dat")
+    
+    def cnn_face_detector_model_location():
+        path = os.path.join(models_dir, "mmod_human_face_detector.dat")
+        if os.path.exists(path):
+            return path
+        return "/tmp/nonexistent_cnn_model.dat"  # Fallback si CNN non disponible
+    
+    # Ajouter les fonctions au module
+    fake_module.pose_predictor_model_location = pose_predictor_model_location
+    fake_module.pose_predictor_five_point_model_location = pose_predictor_five_point_model_location
+    fake_module.face_recognition_model_location = face_recognition_model_location
+    fake_module.cnn_face_detector_model_location = cnn_face_detector_model_location
+    
+    # Alias pour compatibilité
+    fake_module.shape_predictor_model_location = pose_predictor_model_location
+    
+    # Enregistrer le module dans sys.modules
+    sys.modules["face_recognition_models"] = fake_module
+    
+    print("✅ Module face_recognition_models factice créé avec succès")
+    return True
 
 def apply_face_recognition_patch():
     """Applique le patch pour face_recognition_models"""
     try:
-        # S'assurer que pkg_resources est disponible
-        if not _ensure_pkg_resources():
-            print("⚠️ Patch face_recognition_models ignoré (pkg_resources manquant)")
-            return False
+        face_recognition_models = None
         
-        # Importer face_recognition_models
-        import face_recognition_models
+        # D'abord essayer avec pkg_resources
+        pkg_ok = _ensure_pkg_resources()
+        
+        if pkg_ok:
+            try:
+                # Importer face_recognition_models normalement
+                import face_recognition_models as frm
+                face_recognition_models = frm
+                print("✅ face_recognition_models importé avec pkg_resources")
+            except Exception as e:
+                # Capturer TOUTES les exceptions (pas juste ImportError)
+                print(f"⚠️ Import face_recognition_models échoué: {type(e).__name__}: {e}")
+                face_recognition_models = None
+        
+        # Si l'import normal a échoué, créer le module factice
+        if face_recognition_models is None:
+            print("⚠️ Création du module face_recognition_models factice...")
+            if not _create_fake_face_recognition_models():
+                print("❌ Impossible de créer le module factice")
+                return False
+            import face_recognition_models
         
         # Liste des attributs manquants et leurs équivalents
         missing_attributes = {
