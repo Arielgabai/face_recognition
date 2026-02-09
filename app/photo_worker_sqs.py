@@ -12,6 +12,14 @@ Architecture:
        met à jour la DB (status=DONE ou FAILED)
     4. Si succès: supprime le message SQS. Si échec: laisse le message pour retry/DLQ.
 
+Gestion idempotente des messages orphelins:
+    - PhotoNotFoundError: La photo référencée n'existe plus en DB. Cela peut arriver si:
+        * Une suppression en masse a été effectuée pendant que le message était en queue
+        * Un rollback DB a eu lieu après l'envoi du message SQS
+        * Race condition entre upload et traitement
+      Dans ce cas, on log un WARNING et on supprime le message SQS sans retry.
+    - Autres erreurs: On laisse le message pour retry via VisibilityTimeout ou DLQ.
+
 Usage:
     from photo_worker_sqs import start_photo_worker, stop_photo_worker
     
@@ -33,6 +41,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from settings import settings
+from aws_face_recognizer import PhotoNotFoundError
 
 
 # État global du worker
@@ -176,9 +185,17 @@ class PhotoWorkerSQS:
                 raise
     
     def _process_message(self, message: Dict):
-        """Traite un message SQS individuel."""
+        """
+        Traite un message SQS individuel.
+        
+        Gestion idempotente des messages SQS:
+        - PhotoNotFoundError: cas logique (suppression async, rollback) → WARNING + suppression du message
+        - Autres erreurs: log ERROR + laisser le message pour retry/DLQ
+        """
         receipt_handle = message.get("ReceiptHandle")
         message_id = message.get("MessageId", "unknown")
+        photo_id = None
+        event_id = None
         
         try:
             # Parser le corps du message
@@ -219,9 +236,24 @@ class PhotoWorkerSQS:
             
             print(f"[PhotoWorkerSQS] Successfully processed photo_id={photo_id}")
         
+        except PhotoNotFoundError as e:
+            # Cas logique: la photo n'existe plus en DB (suppression async, rollback, etc.)
+            # Ce n'est PAS une erreur à retenter - le message SQS est simplement obsolète
+            print(f"[PhotoWorkerSQS] WARNING: Photo {photo_id} not found in DB, discarding SQS message (event_id={event_id}, message_id={message_id})")
+            
+            # Supprimer le message SQS pour éviter les retries inutiles
+            self._delete_message(receipt_handle)
+            
+            # Ne pas compter comme échec - c'est un cas normal dans un système async
+            with self._stats_lock:
+                self._stats["total_processed"] += 1  # Compté comme "traité" (message consommé)
+            
+            # Note: on ne met pas à jour le statut en DB car la photo n'existe plus
+            return
+        
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
-            print(f"[PhotoWorkerSQS] Error processing message {message_id}: {error_msg}")
+            print(f"[PhotoWorkerSQS] ERROR processing message {message_id}: {error_msg}")
             traceback.print_exc()
             
             with self._stats_lock:
@@ -229,15 +261,13 @@ class PhotoWorkerSQS:
                 self._stats["last_error"] = error_msg
             
             # Mettre à jour le statut en DB: FAILED avec le message d'erreur
-            try:
-                body = json.loads(message.get("Body", "{}"))
-                photo_id = body.get("photo_id")
-                if photo_id:
+            if photo_id:
+                try:
                     self._update_photo_status(photo_id, "FAILED", error_msg)
-            except Exception:
-                pass
+                except Exception:
+                    pass
             
-            # NE PAS supprimer le message SQS en cas d'échec
+            # NE PAS supprimer le message SQS en cas d'échec réel
             # Il sera retenté après le VisibilityTimeout ou envoyé en DLQ
     
     def _download_from_s3(self, s3_key: str) -> Optional[bytes]:

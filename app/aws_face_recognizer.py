@@ -18,6 +18,22 @@ from PIL import Image as _Image, ImageOps as _ImageOps
 import gc as _gc
 
 
+# === EXCEPTIONS PERSONNALISÉES ===
+
+class PhotoNotFoundError(Exception):
+    """
+    Raised when a photo_id referenced in a job does not exist in the database.
+    
+    This is NOT a fatal error in an async system - it can happen when:
+    - A photo was deleted (bulk deletion) while its SQS message was still in queue
+    - A database rollback occurred after the SQS message was sent
+    - Race condition between upload and processing
+    
+    The SQS message should be deleted without retry when this exception is raised.
+    """
+    pass
+
+
 # Région spécifique pour Rekognition (eu-west-1 = Irlande, Rekognition non disponible à Paris)
 REKOGNITION_REGION = os.environ.get("REKOGNITION_REGION", "eu-west-1")
 COLL_PREFIX = os.environ.get("AWS_REKOGNITION_COLLECTION_PREFIX", "event_")
@@ -1384,9 +1400,11 @@ class AwsFaceRecognizer:
         print(f"[PROCESS-PHOTO-BYTES] START photo_id={photo_id} event_id={event_id} size={len(image_bytes)} bytes")
         
         # Récupérer la photo existante
+        # Note: PhotoNotFoundError est un cas logique (suppression async, rollback, etc.)
+        # et doit être géré proprement par le worker SQS (supprimer le message sans retry)
         photo = db.query(Photo).filter(Photo.id == photo_id).first()
         if not photo:
-            raise ValueError(f"Photo {photo_id} not found in database")
+            raise PhotoNotFoundError(f"Photo {photo_id} not found in database")
         
         # Optimiser l'image
         optimization_result = PhotoOptimizer.optimize_image(
