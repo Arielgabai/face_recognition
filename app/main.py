@@ -4127,6 +4127,74 @@ async def toggle_photo_show_in_general(
         "show_in_general": request.show_in_general
     }
 
+@app.put("/api/photographer/events/{event_id}/show-in-general")
+async def update_event_photos_show_in_general(
+    event_id: int,
+    request: ShowInGeneralRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Met à jour show_in_general pour TOUTES les photos d'un événement en une seule requête.
+    
+    Accessible aux:
+    - Photographes propriétaires de l'événement
+    - Admins
+    
+    Body JSON: { "show_in_general": true/false }
+    
+    Retourne: { "updated_count", "event_id", "show_in_general" }
+    """
+    # Vérification des permissions
+    if current_user.user_type not in [UserType.PHOTOGRAPHER, UserType.ADMIN]:
+        raise HTTPException(status_code=403, detail="Accès réservé aux photographes et admins")
+    
+    # Vérifier que l'événement existe
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail=f"Événement {event_id} non trouvé")
+    
+    # Vérifier que le photographe est propriétaire (sauf admin)
+    if current_user.user_type == UserType.PHOTOGRAPHER and event.photographer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que vos propres événements")
+    
+    # UPDATE en une seule requête SQL (pas de boucle Python)
+    query = db.query(Photo).filter(Photo.event_id == event_id)
+    
+    # Pour les photographes, filtrer aussi par photographer_id (sécurité supplémentaire)
+    if current_user.user_type == UserType.PHOTOGRAPHER:
+        query = query.filter(Photo.photographer_id == current_user.id)
+    
+    # Exécuter l'UPDATE bulk
+    updated_count = query.update(
+        {Photo.show_in_general: request.show_in_general},
+        synchronize_session=False
+    )
+    
+    db.commit()
+    
+    # Logging
+    logger.info(
+        f"[SHOW-IN-GENERAL] user_id={current_user.id} event_id={event_id} "
+        f"show_in_general={request.show_in_general} updated_count={updated_count}"
+    )
+    
+    # Si aucune photo mise à jour, retourner un message explicite
+    if updated_count == 0:
+        return {
+            "message": "Aucune photo trouvée pour cet événement",
+            "updated_count": 0,
+            "event_id": event_id,
+            "show_in_general": request.show_in_general
+        }
+    
+    return {
+        "message": f"{updated_count} photo(s) mise(s) à jour avec succès",
+        "updated_count": updated_count,
+        "event_id": event_id,
+        "show_in_general": request.show_in_general
+    }
+
 # === ADMINISTRATION ===
 
 @app.get("/api/admin/photographers")

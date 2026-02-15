@@ -917,24 +917,110 @@ async function updateShowInGeneralBulk(photoIds, desired, successMessage) {
     }
 }
 
+// Mise à jour de TOUTES les photos d'un événement (nouvel endpoint event-level)
+async function updateShowInGeneralForEvent(eventId, desired) {
+    if (!eventId) {
+        showAlert('Aucun événement sélectionné', 'error');
+        return;
+    }
+    try {
+        const resp = await fetch(`/api/photographer/events/${eventId}/show-in-general`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ show_in_general: desired })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            throw new Error(data.detail || 'Erreur lors de la mise à jour');
+        }
+        const action = desired ? 'affichée(s)' : 'masquée(s)';
+        showAlert(`${data.updated_count} photo(s) ${action} avec succès`, 'success');
+        // Rafraîchir les photos et les stats
+        await loadMyPhotos();
+        loadStats();
+        return data;
+    } catch (e) {
+        console.error(e);
+        showAlert(e.message || 'Erreur lors de la mise à jour', 'error');
+        throw e;
+    }
+}
+
 async function showVisibleInGeneral() {
-    const ids = getFilteredPhotos().map(photo => photo.id);
-    if (ids.length === 0) {
+    const eventId = currentEvent ? currentEvent.id : null;
+    const viewIds = getFilteredPhotos().map(photo => photo.id);
+    const totalPhotos = currentPhotos ? currentPhotos.length : 0;
+    
+    if (viewIds.length === 0 && totalPhotos === 0) {
+        showAlert('Aucune photo disponible', 'error');
+        return;
+    }
+    
+    // Proposer les 2 options si on est en mode filtré et qu'il y a plus de photos au total
+    if (viewIds.length < totalPhotos && totalPhotos > 0) {
+        const choice = prompt(
+            `Que voulez-vous afficher dans l'onglet "Général" ?\n\n` +
+            `Tapez 1 pour : Vue courante (${viewIds.length} photo(s))\n` +
+            `Tapez 2 pour : TOUT l'événement (${totalPhotos} photo(s))\n\n` +
+            `Votre choix (1 ou 2) :`
+        );
+        
+        if (choice === '2') {
+            if (!confirm(`Afficher TOUTES les ${totalPhotos} photos de cet événement dans l'onglet "Général" ?`)) return;
+            await updateShowInGeneralForEvent(eventId, true);
+            return;
+        } else if (choice !== '1') {
+            return; // Annulé
+        }
+    }
+    
+    // Option 1 ou seule option : vue courante
+    if (viewIds.length === 0) {
         showAlert('Aucune photo dans cette vue', 'error');
         return;
     }
-    if (!confirm(`Afficher ${ids.length} photo(s) dans l'onglet "Général" ?`)) return;
-    await updateShowInGeneralBulk(ids, true, 'Vue affichée dans l’onglet Général');
+    if (!confirm(`Afficher ${viewIds.length} photo(s) dans l'onglet "Général" ?`)) return;
+    await updateShowInGeneralBulk(viewIds, true, 'Vue affichée dans l\'onglet Général');
 }
 
 async function hideVisibleInGeneral() {
-    const ids = getFilteredPhotos().map(photo => photo.id);
-    if (ids.length === 0) {
+    const eventId = currentEvent ? currentEvent.id : null;
+    const viewIds = getFilteredPhotos().map(photo => photo.id);
+    const totalPhotos = currentPhotos ? currentPhotos.length : 0;
+    
+    if (viewIds.length === 0 && totalPhotos === 0) {
+        showAlert('Aucune photo disponible', 'error');
+        return;
+    }
+    
+    // Proposer les 2 options si on est en mode filtré et qu'il y a plus de photos au total
+    if (viewIds.length < totalPhotos && totalPhotos > 0) {
+        const choice = prompt(
+            `Que voulez-vous masquer de l'onglet "Général" ?\n\n` +
+            `Tapez 1 pour : Vue courante (${viewIds.length} photo(s))\n` +
+            `Tapez 2 pour : TOUT l'événement (${totalPhotos} photo(s))\n\n` +
+            `Votre choix (1 ou 2) :`
+        );
+        
+        if (choice === '2') {
+            if (!confirm(`Masquer TOUTES les ${totalPhotos} photos de cet événement de l'onglet "Général" ?`)) return;
+            await updateShowInGeneralForEvent(eventId, false);
+            return;
+        } else if (choice !== '1') {
+            return; // Annulé
+        }
+    }
+    
+    // Option 1 ou seule option : vue courante
+    if (viewIds.length === 0) {
         showAlert('Aucune photo dans cette vue', 'error');
         return;
     }
-    if (!confirm(`Masquer ${ids.length} photo(s) de l'onglet "Général" ?`)) return;
-    await updateShowInGeneralBulk(ids, false, 'Vue masquée de l’onglet Général');
+    if (!confirm(`Masquer ${viewIds.length} photo(s) de l'onglet "Général" ?`)) return;
+    await updateShowInGeneralBulk(viewIds, false, 'Vue masquée de l\'onglet Général');
 }
 
         function updateSelectionCount() {

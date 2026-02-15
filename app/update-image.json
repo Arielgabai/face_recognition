@@ -2,7 +2,7 @@
   "ServiceArn": "arn:aws:apprunner:eu-west-3:801541932532:service/findme-prod-v7/bc130b363f614b43b4d82dfd9699dff7",
   "SourceConfiguration": {
     "ImageRepository": {
-      "ImageIdentifier": "801541932532.dkr.ecr.eu-west-3.amazonaws.com/findme-prod:v138",
+      "ImageIdentifier": "801541932532.dkr.ecr.eu-west-3.amazonaws.com/findme-prod:v139",
       "ImageRepositoryType": "ECR"
     }
   }
