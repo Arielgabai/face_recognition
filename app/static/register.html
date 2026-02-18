@@ -898,24 +898,47 @@
                 }
                 return data.access_token;
             })
-            // 3) Uploader le selfie avec le token
-            .then((token) => {
-                try { overlayText.textContent = 'Envoi du selfie...'; } catch {}
+            // 3) Uploader le selfie avec le token (avec timeout + retry réseau)
+            .then(async (token) => {
+                try { overlayText.textContent = 'Validation du selfie...'; } catch {}
                 const form = new FormData();
                 form.append('file', selfieFile);
-                return fetch('/api/upload-selfie', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: form
-                }).then(async (resp) => {
-                    if (!resp.ok) {
+                const maxRetries = 2;
+                let lastError = null;
+                for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 30000);
+                        const resp = await fetch('/api/upload-selfie', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}` },
+                            body: form,
+                            signal: controller.signal
+                        });
+                        clearTimeout(timeout);
                         const data = await resp.json().catch(() => ({}));
-                        throw new Error(data.detail || 'Erreur lors de l\'upload du selfie');
+                        if (resp.status === 400) {
+                            // Validation échouée (selfie invalide) : ne pas retry
+                            throw new Error(data.detail || 'Selfie invalide. Veuillez réessayer avec une photo plus nette de votre visage.');
+                        }
+                        if (!resp.ok) {
+                            throw new Error(data.detail || 'Erreur lors de l\'upload du selfie');
+                        }
+                        localStorage.setItem('token', token);
+                        return true;
+                    } catch (err) {
+                        lastError = err;
+                        // Ne pas retry pour les erreurs de validation (400)
+                        if (err.message && !err.message.includes('aborted') && !err.name?.includes('Abort') && !err.message.includes('Failed to fetch')) {
+                            throw err;
+                        }
+                        if (attempt < maxRetries) {
+                            try { overlayText.textContent = 'Connexion instable, nouvelle tentative...'; } catch {}
+                            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                        }
                     }
-                    // Sauvegarder le token pour la session
-                    localStorage.setItem('token', token);
-                    return true;
-                });
+                }
+                throw lastError || new Error('Échec de l\'upload du selfie après plusieurs tentatives');
             })
             // 3.5) Lancer le polling pour charger "Vos Photos" immédiatement
             .then(async () => {

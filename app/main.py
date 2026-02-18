@@ -93,6 +93,154 @@ class ShowInGeneralRequest(BaseModel):
 class BulkShowInGeneralRequest(BaseModel):
     photo_ids: List[int]
     show_in_general: bool
+
+# ========== PAGINATION CURSOR-BASED (PROD-READY) ==========
+import base64
+from schemas import PhotoMeta, PaginatedPhotosResponse
+from sqlalchemy import exists, and_
+
+def encode_cursor(uploaded_at: datetime, photo_id: int) -> str:
+    """
+    Encode (uploaded_at, id) en cursor base64 pour pagination stable.
+    Format: "ISO_TIMESTAMP:ID" encodé en base64 URL-safe.
+    """
+    ts = uploaded_at.isoformat() if uploaded_at else ""
+    raw = f"{ts}:{photo_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+
+def decode_cursor(cursor: str) -> tuple:
+    """
+    Décode un cursor en (uploaded_at, id).
+    Retourne (None, None) si invalide.
+    """
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        ts_str, id_str = raw.rsplit(":", 1)
+        uploaded_at = datetime.fromisoformat(ts_str)
+        photo_id = int(id_str)
+        return (uploaded_at, photo_id)
+    except Exception:
+        return (None, None)
+
+
+def build_paginated_photo_query(
+    db: Session,
+    base_query,
+    user_id: int,
+    cursor: str = None,
+    limit: int = 100,
+    count_total: bool = False
+) -> PaginatedPhotosResponse:
+    """
+    Applique pagination cursor-based sur une requête de photos.
+    
+    Optimisations:
+    - Pas de .all() sans limit
+    - has_face_match calculé via EXISTS sur les IDs retournés uniquement
+    - Tri stable: ORDER BY uploaded_at DESC, id DESC
+    
+    Args:
+        db: Session SQLAlchemy
+        base_query: Requête de base (déjà filtrée sur event_id, show_in_general, etc.)
+        user_id: ID utilisateur pour calcul has_face_match
+        cursor: Cursor de pagination (None pour première page)
+        limit: Nombre max de résultats (sera capé à 200)
+        count_total: Si True, compte le total (peut être lent sur grosses tables)
+    
+    Returns:
+        PaginatedPhotosResponse avec items, next_cursor, has_more, total
+    """
+    from sqlalchemy.orm import defer
+    
+    # Cap le limit
+    safe_limit = min(max(1, limit), 200)
+    
+    # Appliquer le cursor si présent
+    if cursor:
+        cursor_ts, cursor_id = decode_cursor(cursor)
+        if cursor_ts and cursor_id:
+            # Pagination keyset: photos AVANT ce cursor (uploaded_at DESC, id DESC)
+            base_query = base_query.filter(
+                (Photo.uploaded_at < cursor_ts) |
+                ((Photo.uploaded_at == cursor_ts) & (Photo.id < cursor_id))
+            )
+    
+    # Compter le total si demandé (avant limit)
+    total = None
+    if count_total:
+        try:
+            # Timeout court pour éviter les blocages
+            total = base_query.with_entities(func.count(Photo.id)).scalar()
+        except Exception:
+            total = None
+    
+    # Appliquer tri et limit (+1 pour détecter has_more)
+    photos = base_query.options(
+        defer(Photo.photo_data)  # JAMAIS charger les binaires
+    ).order_by(
+        Photo.uploaded_at.desc(),
+        Photo.id.desc()
+    ).limit(safe_limit + 1).all()
+    
+    # Détecter si plus de résultats
+    has_more = len(photos) > safe_limit
+    if has_more:
+        photos = photos[:safe_limit]  # Retirer l'élément en trop
+    
+    # Calcul has_face_match via EXISTS sur les IDs retournés uniquement
+    photo_ids = [p.id for p in photos]
+    matched_ids = set()
+    if photo_ids and user_id:
+        matched_ids = {
+            pid for (pid,) in 
+            db.query(FaceMatch.photo_id).filter(
+                FaceMatch.user_id == user_id,
+                FaceMatch.photo_id.in_(photo_ids)
+            ).all()
+        }
+    
+    # Construire les PhotoMeta
+    items = []
+    event_cache = {}  # Cache des noms d'événements
+    
+    for photo in photos:
+        # Cache event_name pour éviter N+1
+        event_name = None
+        if photo.event_id:
+            if photo.event_id not in event_cache:
+                event = db.query(Event.name).filter(Event.id == photo.event_id).first()
+                event_cache[photo.event_id] = event[0] if event else None
+            event_name = event_cache.get(photo.event_id)
+        
+        items.append(PhotoMeta(
+            id=photo.id,
+            original_filename=photo.original_filename or photo.filename,
+            filename=photo.filename,
+            content_type=photo.content_type,
+            uploaded_at=photo.uploaded_at,
+            event_id=photo.event_id,
+            event_name=event_name,
+            show_in_general=photo.show_in_general,
+            has_face_match=photo.id in matched_ids,
+            s3_key=getattr(photo, 's3_key', None),
+            processing_status=getattr(photo, 'processing_status', None)
+        ))
+    
+    # Calculer next_cursor
+    next_cursor = None
+    if has_more and photos:
+        last = photos[-1]
+        next_cursor = encode_cursor(last.uploaded_at, last.id)
+    
+    return PaginatedPhotosResponse(
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+        total=total
+    )
+
+
 from auth import verify_password, get_password_hash, create_access_token, get_current_user, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from recognizer_factory import get_face_recognizer
 from photo_optimizer import PhotoOptimizer
@@ -105,24 +253,25 @@ from base64 import urlsafe_b64encode
 
 app = FastAPI(title="FindMe", version="1.0.0")
 import time
+import uuid as _uuid_mod
 from fastapi import Request
 
 @app.middleware("http")
-async def log_request_timings(request: Request, call_next):
+async def request_id_and_timings(request: Request, call_next):
+    """Injecte X-Request-Id, mesure la durée, log les requêtes lentes."""
+    req_id = request.headers.get("x-request-id") or str(_uuid_mod.uuid4())[:12]
+    request.state.request_id = req_id
+
     start = time.time()
     try:
         response = await call_next(request)
+        response.headers["X-Request-Id"] = req_id
         return response
     finally:
         duration = time.time() - start
         path = request.url.path
-
-        # Si tu veux voir TOUT :
-        # print(f"[REQ] {path} took {duration:.2f}s")
-
-        # Si tu veux seulement les lentes (> 5s par ex)
         if duration > 5:
-            print(f"[SLOW] {path} took {duration:.2f}s")
+            print(f"[SLOW] req_id={req_id} {request.method} {path} took {duration:.2f}s")
 
 # Créer les tables au démarrage (non-bloquant)
 @app.on_event("startup")
@@ -151,6 +300,10 @@ def _startup_create_tables():
         # Créer la table delete_jobs pour les suppressions asynchrones
         from add_delete_jobs_table import run_migration as add_delete_jobs_table
         add_delete_jobs_table()
+
+        # Ajouter les colonnes selfie_status / selfie_error / selfie_content_type
+        from add_selfie_status_columns import add_selfie_status_columns
+        add_selfie_status_columns()
 
         # Ajouter des index de performance si nécessaires
         from add_perf_indexes import add_perf_indexes
@@ -2376,6 +2529,9 @@ async def register(
     # Sauvegarder le selfie (COMPRESSÉ pour économiser RAM)
     compressed_selfie = compress_selfie_for_storage(file_data, max_size_kb=200)
     new_user.selfie_data = compressed_selfie
+    new_user.selfie_status = "valid"
+    new_user.selfie_error = None
+    new_user.selfie_content_type = "image/jpeg"
     
     db.add(new_user)
     db.commit()
@@ -2517,12 +2673,14 @@ async def register_invite_with_selfie(
     file_extension = os.path.splitext(file.filename)[1] or ".jpg"
     unique_filename = f"{db_user.id}_{uuid.uuid4()}{file_extension}"
     file_path = os.path.join("static/uploads/selfies", unique_filename)
-    # Compresser le selfie avant sauvegarde (économise RAM)
     compressed_selfie = compress_selfie_for_storage(selfie_bytes, max_size_kb=200)
     with open(file_path, "wb") as buffer:
         buffer.write(compressed_selfie)
     db_user.selfie_path = file_path
     db_user.selfie_data = compressed_selfie
+    db_user.selfie_status = "valid"
+    db_user.selfie_error = None
+    db_user.selfie_content_type = "image/jpeg"
     db.commit()
     
     return db_user
@@ -2652,32 +2810,39 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     finally:
         print(f"[PERF][login] total took {time.time() - _t_total:.3f}s")
 
-@app.get("/api/me", response_model=UserSchema)
+@app.get("/api/me")
 async def get_current_user_info(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """R+�cup+�rer les informations de l'utilisateur connect+� avec son +�v+�nement associ+�"""
-    # R+�cup+�rer l'+�v+�nement associ+� +� l'utilisateur
+    """Récupérer les informations de l'utilisateur connecté avec selfie_status."""
+    # Calcul du selfie_status (backward-compatible pour anciens users sans colonne)
+    selfie_status = getattr(current_user, "selfie_status", None)
+    if not selfie_status:
+        if current_user.selfie_data or current_user.selfie_path:
+            selfie_status = "valid"
+        else:
+            selfie_status = "none"
+    selfie_error = getattr(current_user, "selfie_error", None)
+
+    user_dict = {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "user_type": current_user.user_type,
+        "is_active": current_user.is_active,
+        "created_at": current_user.created_at,
+        "selfie_status": selfie_status,
+        "selfie_error": selfie_error,
+    }
+
     user_event = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).first()
-    
     if user_event:
         event = db.query(Event).filter(Event.id == user_event.event_id).first()
         if event:
-            # Cr+�er un dictionnaire avec les informations de l'utilisateur et de l'+�v+�nement
-            user_dict = {
-                "id": current_user.id,
-                "username": current_user.username,
-                "email": current_user.email,
-                "user_type": current_user.user_type,
-                "is_active": current_user.is_active,
-                "created_at": current_user.created_at,
-                "event_name": event.name,
-                "event_id": event.id,
-                "event_code": event.event_code,
-                "event_date": event.date
-            }
-            return user_dict
-    
-    # Si pas d'+�v+�nement associ+�, retourner juste les infos utilisateur
-    return current_user
+            user_dict["event_name"] = event.name
+            user_dict["event_id"] = event.id
+            user_dict["event_code"] = event.event_code
+            user_dict["event_date"] = event.date
+
+    return user_dict
 
 @app.get("/api/my-selfie")
 async def get_my_selfie(current_user: User = Depends(get_current_user)):
@@ -2763,11 +2928,12 @@ async def delete_my_selfie(
     if not current_user.selfie_data:
         raise HTTPException(status_code=404, detail="Aucun selfie à supprimer")
 
-    # Supprimer les donn+�es binaires de la base utilisateur
     current_user.selfie_data = None
     current_user.selfie_path = None
+    current_user.selfie_status = "none"
+    current_user.selfie_error = None
+    current_user.selfie_content_type = None
     db.commit()
-    # Supprimer tous les FaceMatch li+�s +� cet utilisateur
     db.query(FaceMatch).filter(FaceMatch.user_id == current_user.id).delete()
     db.commit()
     return {"message": "Selfie supprimé avec succès"}
@@ -2820,9 +2986,10 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                 validate_selfie_image(file_data)
                 print(f"[SelfieValidationBg] ✅ Validation succeeded for user_id={user_id}")
             except HTTPException as e:
-                # Validation a échoué : supprimer le selfie
-                print(f"[SelfieValidationBg] ❌ Validation failed for user_id={user_id}: {e.detail}")
+                print(f"[SelfieValidationBg] Validation failed for user_id={user_id}: {e.detail}")
                 user.selfie_data = None
+                user.selfie_status = "invalid"
+                user.selfie_error = e.detail
                 session.commit()
                 try:
                     REMATCH_STATUS[user_id] = {
@@ -2831,11 +2998,13 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                         "finished_at": time.time(),
                     }
                 except Exception:
-                    print(f"[SelfieValidationBg] Failed to update status for user_id={user_id} (validation_failed)")
+                    pass
                 return
             except Exception as e:
-                print(f"[SelfieValidationBg] ❌ Validation error for user_id={user_id}: {e}")
+                print(f"[SelfieValidationBg] Validation error for user_id={user_id}: {e}")
                 user.selfie_data = None
+                user.selfie_status = "invalid"
+                user.selfie_error = str(e)[:500]
                 session.commit()
                 try:
                     REMATCH_STATUS[user_id] = {
@@ -2844,7 +3013,7 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                         "finished_at": time.time(),
                     }
                 except Exception:
-                    print(f"[SelfieValidationBg] Failed to update status for user_id={user_id} (validation_failed)")
+                    pass
                 return
         
         # 2. SUPPRESSION DES ANCIENNES CORRESPONDANCES (optimisé avec subquery)
@@ -2954,8 +3123,123 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
             pass
 
 
+def _rematch_selfie_background_only(user_id: int, file_data: bytes):
+    """
+    Matching ONLY en arrière-plan (validation déjà faite en synchrone).
+    Supprime anciennes correspondances puis lance le matching par événement.
+    """
+    if _is_selfie_matching_disabled():
+        logger.info(f"[SelfieMatchBg] SELFIE_MATCHING_DISABLED=1 -> skipping for user_id={user_id}")
+        try:
+            REMATCH_STATUS[user_id] = {
+                "status": "disabled",
+                "info": "Selfie matching disabled via SELFIE_MATCHING_DISABLED",
+                "finished_at": time.time(),
+            }
+        except Exception:
+            pass
+        return
+
+    session = next(get_db())
+    try:
+        user = session.query(User).filter(User.id == user_id).first()
+        if not user:
+            logger.warning(f"[SelfieMatchBg] User {user_id} not found")
+            try:
+                REMATCH_STATUS[user_id] = {"status": "error", "error": "user_not_found", "finished_at": time.time()}
+            except Exception:
+                pass
+            return
+
+        # Suppression des anciennes correspondances
+        user_events = session.query(UserEvent.event_id).filter(UserEvent.user_id == user_id).all()
+        event_ids = [ue.event_id for ue in user_events]
+        logger.info(f"[SelfieMatchBg] user_id={user_id} event_ids={event_ids}")
+
+        if event_ids:
+            from sqlalchemy import delete, and_, select
+            stmt = delete(FaceMatch).where(
+                and_(
+                    FaceMatch.user_id == user_id,
+                    FaceMatch.photo_id.in_(
+                        select(Photo.id).where(Photo.event_id.in_(event_ids))
+                    )
+                )
+            )
+            result = session.execute(stmt)
+            session.commit()
+            deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
+            logger.info(f"[SelfieMatchBg] Deleted {deleted_count} old face matches for user_id={user_id}")
+
+        # Matching
+        logger.info(f"[SelfieMatchBg] Starting rematch for user_id={user_id}")
+        try:
+            REMATCH_STATUS[user_id] = {"status": "running", "started_at": time.time(), "matched": 0}
+        except Exception:
+            pass
+
+        events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
+        total_matches = 0
+        with _MATCHING_SEMAPHORE:
+            for ue in events:
+                try:
+                    from aws_metrics import aws_metrics as _m
+                    with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
+                        try:
+                            from sqlalchemy import func, or_ as _or
+                            missing_count = (
+                                session.query(func.count(Photo.id))
+                                .filter(
+                                    Photo.event_id == ue.event_id,
+                                    _or(Photo.is_indexed.is_(False), Photo.is_indexed.is_(None))
+                                )
+                                .scalar()
+                            ) or 0
+                            if missing_count > 0 and hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                                logger.info(f"[SelfieMatchBg] indexing missing photos event_id={ue.event_id} missing={missing_count}")
+                                face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
+                        except Exception as _e:
+                            logger.warning(f"[SelfieMatchBg] ensure photos indexed failed: {_e}")
+
+                        logger.info(f"[SelfieMatchBg] match-user-selfie user_id={user_id} event_id={ue.event_id}")
+                        if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
+                            matched = face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
+                        else:
+                            matched = face_recognizer.match_user_selfie_with_photos(user, session)
+                        total_matches += int(matched or 0)
+                        logger.info(f"[SelfieMatchBg] match result user_id={user_id} event_id={ue.event_id} matched={matched}")
+                except Exception as e:
+                    logger.error(f"[SelfieMatchBg] Error matching event {ue.event_id}: {e}")
+                    continue
+
+        logger.info(f"[SelfieMatchBg] Rematch completed for user_id={user_id}, total_matches={total_matches}")
+        try:
+            REMATCH_STATUS[user_id] = {"status": "done", "finished_at": time.time(), "matched": int(total_matches or 0)}
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.error(f"[SelfieMatchBg] Unexpected error for user_id={user_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        try:
+            REMATCH_STATUS[user_id] = {"status": "error", "error": str(e), "finished_at": time.time()}
+        except Exception:
+            pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+
 @app.post("/api/upload-selfie")
 async def upload_selfie(
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -2963,27 +3247,29 @@ async def upload_selfie(
     background_tasks: BackgroundTasks = None,
 ):
     """
-    Upload d'un selfie pour l'utilisateur (VERSION OPTIMISÉE ASYNCHRONE).
+    Upload d'un selfie pour l'utilisateur (VERSION PROD-READY).
     
-    - Sauvegarde immédiate du selfie (réponse rapide au client)
-    - Validation + matching en arrière-plan (ne bloque pas)
-    - Si validation échoue en background, le selfie est supprimé automatiquement
+    - Validation SYNCHRONE du selfie (1 visage, taille OK) AVANT de répondre 200
+    - Si invalide: retourne 400 avec raison claire + persiste selfie_status=invalid
+    - Si valide: sauvegarde + lance matching async + retourne 200
     """
     _t_total = time.time()
-    print(f"[SelfieUpload] start user_id={current_user.id} strict={strict}")
+    req_id = getattr(request.state, "request_id", "?")
+    logger.info(f"[SelfieUpload] req_id={req_id} user_id={current_user.id} strict={strict}")
+
     if current_user.user_type == UserType.PHOTOGRAPHER:
         raise HTTPException(
             status_code=403, 
             detail="Les photographes ne peuvent pas uploader de selfies"
         )
     
-    if not file.content_type.startswith("image/"):
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     
     # Lire les données binaires du fichier
     _t_read = time.time()
     file_data = await file.read()
-    print(f"[PERF][upload-selfie] read file took {time.time() - _t_read:.3f}s")
+    logger.info(f"[PERF][upload-selfie] req_id={req_id} read file took {time.time() - _t_read:.3f}s size={len(file_data)}")
     
     # Validation rapide : taille maximale
     if len(file_data) > 10 * 1024 * 1024:  # 10MB max
@@ -2995,26 +3281,54 @@ async def upload_selfie(
         from PIL import Image
         import io as _io
         img = Image.open(_io.BytesIO(file_data))
-        img.verify()  # Vérification basique du format
-        print(f"[PERF][upload-selfie] parse image took {time.time() - _t_parse:.3f}s")
+        img.verify()
+        logger.info(f"[PERF][upload-selfie] req_id={req_id} parse image took {time.time() - _t_parse:.3f}s")
     except Exception:
+        current_user.selfie_status = "invalid"
+        current_user.selfie_error = "Format d'image invalide"
+        db.commit()
         raise HTTPException(status_code=400, detail="Format d'image invalide")
     
-    # ✅ COMPRESSION du selfie (économise RAM : ~80% de réduction)
+    # VALIDATION SYNCHRONE : exactement 1 visage, taille OK
+    _t_validate = time.time()
+    try:
+        validate_selfie_image(file_data)
+        logger.info(f"[PERF][upload-selfie] req_id={req_id} validate_selfie took {time.time() - _t_validate:.3f}s result=OK")
+    except HTTPException as ve:
+        # Validation échouée: persister l'état invalide et retourner 400
+        logger.warning(f"[SelfieUpload] req_id={req_id} user_id={current_user.id} validation_failed: {ve.detail}")
+        current_user.selfie_status = "invalid"
+        current_user.selfie_error = ve.detail
+        current_user.selfie_data = None
+        current_user.selfie_path = None
+        db.commit()
+        raise HTTPException(status_code=400, detail=ve.detail)
+    except Exception as ve:
+        logger.warning(f"[SelfieUpload] req_id={req_id} user_id={current_user.id} validation_error: {ve}")
+        current_user.selfie_status = "invalid"
+        current_user.selfie_error = str(ve)[:500]
+        current_user.selfie_data = None
+        current_user.selfie_path = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="Erreur de validation du selfie. Veuillez réessayer.")
+
+    # Compression du selfie
     compressed_data = compress_selfie_for_storage(file_data, max_size_kb=200)
     
-    # ✅ SAUVEGARDE IMMÉDIATE (réponse rapide au client)
+    # Sauvegarde avec statut valid
     _t_save = time.time()
     current_user.selfie_data = compressed_data
     current_user.selfie_path = None
+    current_user.selfie_status = "valid"
+    current_user.selfie_error = None
+    current_user.selfie_content_type = "image/jpeg"
     db.commit()
-    print(f"[PERF][upload-selfie] save selfie took {time.time() - _t_save:.3f}s")
-    
-    print(f"[SelfieUpload] Selfie saved for user_id={current_user.id}, scheduling validation+matching")
+    logger.info(f"[PERF][upload-selfie] req_id={req_id} save selfie took {time.time() - _t_save:.3f}s")
+    logger.info(f"[SelfieUpload] req_id={req_id} Selfie validated+saved for user_id={current_user.id}")
     
     # Si le matching est désactivé, on ne soumet PAS de tâche au ThreadPool
     if _is_selfie_matching_disabled():
-        print(f"[SelfieUpload] SELFIE_MATCHING_DISABLED=1 -> not scheduling background validation/matching for user_id={current_user.id}")
+        logger.info(f"[SelfieUpload] req_id={req_id} SELFIE_MATCHING_DISABLED=1 -> skipping matching for user_id={current_user.id}")
         try:
             REMATCH_STATUS[current_user.id] = {
                 "status": "disabled",
@@ -3023,36 +3337,35 @@ async def upload_selfie(
             }
         except Exception:
             pass
-        print(f"[PERF][upload-selfie] total took {time.time() - _t_total:.3f}s")
+        logger.info(f"[PERF][upload-selfie] req_id={req_id} total took {time.time() - _t_total:.3f}s")
         return {
-            "message": "Selfie uploadé avec succès. Le matching est désactivé temporairement côté serveur.",
-            "status": "disabled"
+            "message": "Selfie uploadé et validé avec succès. Le matching est désactivé temporairement.",
+            "status": "valid",
+            "selfie_status": "valid"
         }
 
-    # ✅ VALIDATION + MATCHING EN THREAD POOL ISOLÉ (évite les timeouts workers)
-    # Utilisation d'un ThreadPoolExecutor séparé au lieu de background_tasks
-    # pour garantir que les workers Gunicorn ne sont jamais bloqués
+    # Matching ASYNC en thread pool (ne valide plus, juste le matching)
     try:
         future = _MATCHING_THREAD_POOL.submit(
-            _validate_and_rematch_selfie_background,
+            _rematch_selfie_background_only,
             current_user.id,
-            compressed_data,  # Utiliser les données compressées
-            strict
+            compressed_data,
         )
-        print(f"[SelfieUpload] Matching scheduled in thread pool for user_id={current_user.id}")
-        print(f"[PERF][upload-selfie] total took {time.time() - _t_total:.3f}s")
+        logger.info(f"[SelfieUpload] req_id={req_id} Matching scheduled in thread pool for user_id={current_user.id}")
+        logger.info(f"[PERF][upload-selfie] req_id={req_id} total took {time.time() - _t_total:.3f}s")
         return {
-            "message": "Selfie uploadé avec succès. La validation et le matching sont en cours...",
-            "status": "processing"
+            "message": "Selfie validé avec succès. La recherche de vos photos est en cours...",
+            "status": "processing",
+            "selfie_status": "valid"
         }
     except Exception as e:
-        print(f"[SelfieUpload] ERROR: Failed to submit to thread pool: {e}")
-        # Fallback synchrone en cas d'erreur du pool (ne devrait jamais arriver)
-        _validate_and_rematch_selfie_background(current_user.id, compressed_data, strict)
-        print(f"[PERF][upload-selfie] total took {time.time() - _t_total:.3f}s")
+        logger.error(f"[SelfieUpload] req_id={req_id} ERROR submitting to thread pool: {e}")
+        _rematch_selfie_background_only(current_user.id, compressed_data)
+        logger.info(f"[PERF][upload-selfie] req_id={req_id} total took {time.time() - _t_total:.3f}s")
         return {
-            "message": "Selfie uploadé et traité avec succès",
-            "status": "completed"
+            "message": "Selfie validé et traité avec succès",
+            "status": "completed",
+            "selfie_status": "valid"
         }
 
 @app.get("/api/rematch-status")
@@ -3229,93 +3542,135 @@ async def get_my_photos(
     
     return result
 
-@app.get("/api/all-photos", response_model=List[PhotoSchema])
+@app.get("/api/all-photos")
 async def get_all_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    page: int = 1,
-    limit: int = 50
+    # Pagination cursor-based (recommandé)
+    cursor: str = None,
+    limit: int = 100,
+    # Rétrocompatibilité page/limit (déprécié)
+    page: int = None
 ):
-    """Version simplifi�e SANS cache pour diagnostiquer les plantages.
+    """
+    Récupérer les photos de l'événement principal de l'utilisateur (onglet "Général").
     
-    NOUVELLE LOGIQUE (onglet "Général"):
-    - Si des photos ont show_in_general=True, retourner UNIQUEMENT celles-là
-    - Sinon (aucune photo sélectionnée), retourner TOUTES les photos (fallback)
+    PAGINATION CURSOR-BASED (recommandé):
+        - cursor: Cursor pour la page suivante
+        - limit: Nombre de photos (max 200)
+    
+    RÉTROCOMPATIBILITÉ (déprécié):
+        - page: Si fourni, utilise l'ancienne pagination offset-based
+    
+    Logique:
+        - Si des photos ont show_in_general=True, retourner UNIQUEMENT celles-là
+        - Sinon (aucune sélectionnée), fallback: toutes les photos
+    
+    Response (cursor-based):
+        {
+            "items": [PhotoMeta...],
+            "next_cursor": "...",
+            "has_more": bool,
+            "total": int | null
+        }
+    
+    Response (page-based - déprécié):
+        [...] (liste simple de photos)
     """
     _t_total = time.perf_counter()
-    if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc�der � cette route")
-
-    # Pagination simple pour réduire la charge (réponse reste une liste)
-    safe_page = max(1, int(page or 1))
-    safe_limit = max(1, min(int(limit or 50), 1000))
-    offset = (safe_page - 1) * safe_limit
     
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+    
+    # Récupérer l'événement principal de l'utilisateur
     user_event = db.query(UserEvent).filter_by(user_id=current_user.id).first()
     if not user_event:
-        raise HTTPException(status_code=404, detail="Aucun �v�nement associ� � cet utilisateur")
+        raise HTTPException(status_code=404, detail="Aucun événement associé à cet utilisateur")
     event_id = user_event.event_id
     
-    # Charger l'event UNE SEULE FOIS (évite N+1 lazy load)
-    event = db.query(Event).filter_by(id=event_id).first()
-    event_name = event.name if event else None
+    # Vérifier s'il y a des photos avec show_in_general=True
+    has_general_photos = db.query(
+        exists().where(
+            and_(Photo.event_id == event_id, Photo.show_in_general.is_(True))
+        )
+    ).scalar()
     
-    # OPTIMISATION: Récupérer les matches en une seule requête rapide
-    from sqlalchemy.orm import defer
+    # Construire la requête de base
+    if has_general_photos:
+        base_query = db.query(Photo).filter(
+            Photo.event_id == event_id,
+            Photo.show_in_general.is_(True)
+        )
+    else:
+        base_query = db.query(Photo).filter(Photo.event_id == event_id)
     
-    # Construire la requête filtrée sur les photos explicitement autorisées
-    query = db.query(Photo).options(
-        defer(Photo.photo_data)  # Ne pas charger les données binaires
-    ).filter(
-        Photo.event_id == event_id,
-        Photo.show_in_general.is_(True)
+    # Si page est fourni, utiliser l'ancienne pagination (rétrocompatibilité)
+    if page is not None:
+        from sqlalchemy.orm import defer
+        
+        safe_page = max(1, int(page))
+        safe_limit = max(1, min(int(limit or 50), 200))  # Cap à 200 maintenant
+        offset = (safe_page - 1) * safe_limit
+        
+        photos = base_query.options(
+            defer(Photo.photo_data)
+        ).order_by(
+            Photo.uploaded_at.desc(),
+            Photo.id.desc()
+        ).offset(offset).limit(safe_limit).all()
+        
+        # Calcul has_face_match pour la page
+        photo_ids = [p.id for p in photos]
+        matched_ids = set()
+        if photo_ids:
+            matched_ids = {
+                pid for (pid,) in
+                db.query(FaceMatch.photo_id).filter(
+                    FaceMatch.user_id == current_user.id,
+                    FaceMatch.photo_id.in_(photo_ids)
+                ).all()
+            }
+        
+        # Charger event_name une seule fois
+        event = db.query(Event).filter_by(id=event_id).first()
+        event_name = event.name if event else None
+        
+        result = []
+        for photo in photos:
+            result.append({
+                "id": photo.id,
+                "filename": photo.filename,
+                "original_filename": photo.original_filename or photo.filename,
+                "file_path": photo.file_path,
+                "content_type": photo.content_type,
+                "photo_type": photo.photo_type,
+                "user_id": photo.user_id,
+                "photographer_id": photo.photographer_id,
+                "uploaded_at": photo.uploaded_at,
+                "event_id": photo.event_id,
+                "event_name": event_name,
+                "has_face_match": photo.id in matched_ids,
+            })
+        
+        _duration = time.perf_counter() - _t_total
+        if _duration > 2:
+            print(f"[PERF][all-photos-legacy] page={page} took {_duration:.2f}s")
+        
+        return result
+    
+    # Utiliser la nouvelle pagination cursor-based
+    result = build_paginated_photo_query(
+        db=db,
+        base_query=base_query,
+        user_id=current_user.id,
+        cursor=cursor,
+        limit=min(limit, 200),
+        count_total=False  # Éviter COUNT(*) sur grosses tables
     )
-
-    # Charger les photos avec pagination pour éviter les requêtes trop longues
-    _t_query = time.perf_counter()
-    photos = query.order_by(
-        Photo.uploaded_at.desc(),
-        Photo.id.desc()
-    ).offset(offset).limit(safe_limit).all()
-    print(f"[PERF][all-photos] query photos took {time.perf_counter() - _t_query:.3f}s")
-
-    # Récupérer les IDs des photos matchées pour la page courante
-    _t_matches = time.perf_counter()
-    photo_ids = [p.id for p in photos]
-    matched_photo_ids = set()
-    if photo_ids:
-        matched_photo_ids = {
-            photo_id for (photo_id,) in
-            db.query(FaceMatch.photo_id).filter(
-                FaceMatch.user_id == current_user.id,
-                FaceMatch.photo_id.in_(photo_ids)
-            ).all()
-        }
-    print(f"[PERF][all-photos] query matches took {time.perf_counter() - _t_matches:.3f}s")
     
-    _t_post = time.perf_counter()
-    result = []
-    for photo in photos:
-        result.append({
-            "id": photo.id,
-            "filename": photo.filename,
-            "original_filename": photo.original_filename or photo.filename,
-            "file_path": photo.file_path,
-            "content_type": photo.content_type,
-            "photo_type": photo.photo_type,
-            "user_id": photo.user_id,
-            "photographer_id": photo.photographer_id,
-            "uploaded_at": photo.uploaded_at,
-            "event_id": photo.event_id,
-            "event_name": event_name,  # Utiliser la valeur préchargée (pas de lazy load)
-            "has_face_match": photo.id in matched_photo_ids,
-        })
-    print(f"[PERF][all-photos] post-process took {time.perf_counter() - _t_post:.3f}s")
-
-    total = time.perf_counter() - _t_total
-    print(f"[PERF][all-photos] total took {total:.3f}s")
-    if total > 5:
-        print(f"[SLOW] /api/all-photos took {total:.2f}s")
+    _duration = time.perf_counter() - _t_total
+    if _duration > 2:
+        print(f"[PERF][all-photos] cursor-based took {_duration:.2f}s")
     
     return result
 
@@ -3696,19 +4051,69 @@ async def get_image(filename: str):
 @app.get("/api/photo/{photo_id}")
 async def get_photo_by_id(
     photo_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ):
-    """Servir une photo depuis la base de donn+�es par son ID (SANS cache serveur, le navigateur cache)"""
+    """
+    Servir une photo depuis la base de données par son ID.
     
-    # PAS DE CACHE SERVEUR - évite les problèmes de mémoire
-    # Le navigateur cache avec Cache-Control (plus efficace et stable)
+    CACHE OPTIMISÉ:
+    - Cache-Control: public, max-age=3600 (1h), immutable
+    - ETag basé sur (photo_id, uploaded_at) pour invalidation si photo modifiée
+    - Support If-None-Match: retourne 304 Not Modified si cache valide
+    - Support If-Modified-Since: retourne 304 si non modifié
     
+    NOTE: Pas de cache serveur pour éviter les problèmes de mémoire.
+    Le navigateur/CDN cache avec les headers HTTP.
+    """
+    from sqlalchemy.orm import load_only
+    
+    # Charger uniquement les métadonnées d'abord (pas photo_data)
+    photo_meta = db.query(Photo).options(
+        load_only(Photo.id, Photo.uploaded_at, Photo.content_type, Photo.file_path)
+    ).filter(Photo.id == photo_id).first()
+    
+    if not photo_meta:
+        raise HTTPException(status_code=404, detail="Photo non trouvée")
+    
+    # Générer ETag basé sur (photo_id, uploaded_at) pour invalidation si modifiée
+    # Plus robuste que juste photo_id car permet de détecter les modifications
+    ts = photo_meta.uploaded_at.isoformat() if photo_meta.uploaded_at else "0"
+    etag = f'"{photo_id}-{hashlib.md5(ts.encode()).hexdigest()[:8]}"'
+    
+    # Vérifier If-None-Match (ETag validation)
+    if_none_match = request.headers.get("If-None-Match")
+    if if_none_match and if_none_match == etag:
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": etag,
+                "Cache-Control": "public, max-age=3600, immutable"
+            }
+        )
+    
+    # Vérifier If-Modified-Since (pour anciens navigateurs/CDN)
+    if_modified_since = request.headers.get("If-Modified-Since")
+    if if_modified_since and photo_meta.uploaded_at:
+        try:
+            # Parse RFC 7231 date format
+            from email.utils import parsedate_to_datetime
+            ims_dt = parsedate_to_datetime(if_modified_since)
+            # Si la photo n'a pas été modifiée depuis
+            if photo_meta.uploaded_at.replace(tzinfo=timezone.utc) <= ims_dt:
+                return Response(
+                    status_code=304,
+                    headers={
+                        "ETag": etag,
+                        "Cache-Control": "public, max-age=3600, immutable"
+                    }
+                )
+        except Exception:
+            pass  # Ignorer les dates mal formatées
+    
+    # Charger les données binaires (requête séparée pour éviter de charger inutilement)
     photo = db.query(Photo).filter(Photo.id == photo_id).first()
     
-    if not photo:
-        raise HTTPException(status_code=404, detail="Photo non trouv+�e")
-
-    # Préférer les données DB, sinon fallback file_path si disponible
     content_bytes: bytes | None = None
     if getattr(photo, "photo_data", None):
         try:
@@ -3725,14 +4130,24 @@ async def get_photo_by_id(
             content_bytes = None
     if not content_bytes:
         raise HTTPException(status_code=404, detail="Données de photo non disponibles")
-
+    
+    # Générer Last-Modified header
+    last_modified = None
+    if photo_meta.uploaded_at:
+        from email.utils import format_datetime
+        last_modified = format_datetime(photo_meta.uploaded_at.replace(tzinfo=timezone.utc))
+    
+    headers = {
+        "Cache-Control": "public, max-age=3600, immutable",  # 1h + immutable pour CDN
+        "ETag": etag,
+    }
+    if last_modified:
+        headers["Last-Modified"] = last_modified
+    
     return Response(
         content=content_bytes,
         media_type=photo.content_type or "image/jpeg",
-        headers={
-            "Cache-Control": "public, max-age=31536000",  # Navigateur cache 1 an
-            "ETag": f'"{photo_id}"'  # Pour validation cache
-        }
+        headers=headers
     )
 
 @app.get("/api/photo/{photo_id}/faces")
@@ -3858,21 +4273,40 @@ async def get_selfie_by_user_id(
     user_id: int,
     db: Session = Depends(get_db)
 ):
-    """Servir un selfie depuis la base de données par l'ID utilisateur"""
+    """Servir un selfie avec fallback robuste: fichier > blob DB > 404"""
     user = db.query(User).filter(User.id == user_id).first()
-    
+
     if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouv+�")
-    
-    if not user.selfie_data:
-        raise HTTPException(status_code=404, detail="Selfie non disponible")
-    
-    # Retourner les donn+�es binaires avec le bon type MIME
-    return Response(
-        content=user.selfie_data,
-        media_type="image/jpeg",  # Par d+�faut pour les selfies
-        headers={"Cache-Control": "public, max-age=31536000"}  # Cache pour 1 an
-    )
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+    # Priorité 1: fichier sur disque
+    if user.selfie_path:
+        try:
+            import os as _os
+            if _os.path.isfile(user.selfie_path):
+                import mimetypes
+                ct = mimetypes.guess_type(user.selfie_path)[0] or "image/jpeg"
+                with open(user.selfie_path, "rb") as f:
+                    data = f.read()
+                return Response(
+                    content=data,
+                    media_type=ct,
+                    headers={"Cache-Control": "public, max-age=3600"}
+                )
+        except Exception:
+            pass  # Fallback au blob DB
+
+    # Priorité 2: blob DB (selfie_data)
+    if user.selfie_data:
+        ct = user.selfie_content_type or "image/jpeg"
+        return Response(
+            content=user.selfie_data,
+            media_type=ct,
+            headers={"Cache-Control": "public, max-age=3600"}
+        )
+
+    # Aucun selfie disponible
+    raise HTTPException(status_code=404, detail="Selfie non disponible")
 
 # === ROUTES ADMIN ===
 
@@ -5209,95 +5643,143 @@ async def get_user_events(
 @app.get("/api/user/events/{event_id}/photos")
 async def get_user_event_photos(
     event_id: int,
+    cursor: str = None,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+�cup+�rer les photos d'un +�v+�nement sp+�cifique pour un utilisateur"""
-    if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+�der +� cette route")
+    """
+    Récupérer les photos où l'utilisateur apparaît (onglet "Vos Photos").
     
-    # V+�rifier que l'utilisateur est inscrit +� cet +�v+�nement
+    PAGINATION CURSOR-BASED pour supporter 1000+ photos sans timeout.
+    
+    Query params:
+        - cursor: Cursor de pagination (null pour première page)
+        - limit: Nombre de photos par page (max 200)
+    
+    Response:
+        {
+            "items": [PhotoMeta...],
+            "next_cursor": "...", 
+            "has_more": true/false,
+            "total": int (optionnel)
+        }
+    """
+    _t_start = time.perf_counter()
+    
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+    
+    # Vérifier inscription à l'événement
     user_event = db.query(UserEvent).filter(
         UserEvent.user_id == current_user.id,
         UserEvent.event_id == event_id
     ).first()
     
     if not user_event:
-        raise HTTPException(status_code=403, detail="Vous n'+�tes pas inscrit +� cet +�v+�nement")
+        raise HTTPException(status_code=403, detail="Vous n'êtes pas inscrit à cet événement")
     
-    # R+�cup+�rer les photos o+� l'utilisateur appara+�t dans cet +�v+�nement
-    photos = db.query(Photo).join(FaceMatch).filter(
+    # Requête de base: photos où l'utilisateur a un FaceMatch
+    base_query = db.query(Photo).join(
+        FaceMatch, FaceMatch.photo_id == Photo.id
+    ).filter(
         FaceMatch.user_id == current_user.id,
-        FaceMatch.photo_id == Photo.id,
         Photo.event_id == event_id
-    ).all()
+    )
     
-    # Retourner seulement les m+�tadonn+�es, pas les donn+�es binaires
-    photo_list = []
-    for photo in photos:
-        photo_list.append({
-            "id": photo.id,
-            "filename": photo.filename,
-            "original_filename": photo.original_filename,
-            "file_path": photo.file_path,
-            "content_type": photo.content_type,
-            "photo_type": photo.photo_type,
-            "user_id": photo.user_id,
-            "photographer_id": photo.photographer_id,
-            "uploaded_at": photo.uploaded_at,
-            "event_id": photo.event_id
-        })
+    # Utiliser la fonction de pagination optimisée
+    result = build_paginated_photo_query(
+        db=db,
+        base_query=base_query,
+        user_id=current_user.id,
+        cursor=cursor,
+        limit=min(limit, 200),
+        count_total=True  # Total utile ici car généralement < 100 photos/user
+    )
     
-    return photo_list
+    _duration = time.perf_counter() - _t_start
+    if _duration > 2:
+        print(f"[PERF][user-photos] event_id={event_id} user_id={current_user.id} took {_duration:.2f}s")
+    
+    return result
+
 
 @app.get("/api/user/events/{event_id}/all-photos")
 async def get_all_event_photos(
     event_id: int,
+    cursor: str = None,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """R+�cup+�rer toutes les photos d'un +�v+�nement pour un utilisateur (onglet "Général")
-    
-    NOUVELLE LOGIQUE:
-    - Si des photos ont show_in_general=True, retourner UNIQUEMENT celles-là
-    - Sinon (aucune photo sélectionnée), retourner TOUTES les photos (fallback)
     """
-    if current_user.user_type != UserType.USER:
-        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent acc+�der +� cette route")
+    Récupérer toutes les photos d'un événement (onglet "Général").
     
-    # V+�rifier que l'utilisateur est inscrit +� cet +�v+�nement
+    PAGINATION CURSOR-BASED pour supporter 1000+ photos sans timeout.
+    
+    Logique:
+    - Si des photos ont show_in_general=True, retourner UNIQUEMENT celles-là
+    - Sinon (aucune sélectionnée), fallback: toutes les photos de l'événement
+    
+    Query params:
+        - cursor: Cursor de pagination (null pour première page)
+        - limit: Nombre de photos par page (max 200)
+    
+    Response:
+        {
+            "items": [PhotoMeta...],
+            "next_cursor": "...",
+            "has_more": true/false,
+            "total": int | null
+        }
+    """
+    _t_start = time.perf_counter()
+    
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+    
+    # Vérifier inscription à l'événement
     user_event = db.query(UserEvent).filter(
         UserEvent.user_id == current_user.id,
         UserEvent.event_id == event_id
     ).first()
     
     if not user_event:
-        raise HTTPException(status_code=403, detail="Vous n'+�tes pas inscrit +� cet +�v+�nement")
+        raise HTTPException(status_code=403, detail="Vous n'êtes pas inscrit à cet événement")
     
-    from sqlalchemy.orm import defer
+    # Vérifier s'il y a des photos avec show_in_general=True
+    has_general_photos = db.query(
+        exists().where(
+            and_(Photo.event_id == event_id, Photo.show_in_general.is_(True))
+        )
+    ).scalar()
     
-    photos = db.query(Photo).options(
-        defer(Photo.photo_data),
-        joinedload(Photo.event)
-    ).filter(
-        Photo.event_id == event_id,
-        Photo.show_in_general.is_(True)
-    ).all()
+    # Construire la requête de base
+    if has_general_photos:
+        # Mode normal: uniquement les photos sélectionnées pour "Général"
+        base_query = db.query(Photo).filter(
+            Photo.event_id == event_id,
+            Photo.show_in_general.is_(True)
+        )
+    else:
+        # Fallback: toutes les photos de l'événement
+        base_query = db.query(Photo).filter(Photo.event_id == event_id)
     
-    # Récupérer les matches pour cet utilisateur (requête séparée)
-    user_matched_photo_ids = set([
-        fm.photo_id for fm in
-        db.query(FaceMatch.photo_id).filter(
-            FaceMatch.user_id == current_user.id
-        ).all()
-    ])
+    # Utiliser la fonction de pagination optimisée
+    # Note: count_total=False sur grosses tables pour éviter les timeouts
+    result = build_paginated_photo_query(
+        db=db,
+        base_query=base_query,
+        user_id=current_user.id,
+        cursor=cursor,
+        limit=min(limit, 200),
+        count_total=False  # Éviter COUNT(*) sur 1000+ photos
+    )
     
-    # Retourner les métadonnées avec has_face_match calculé
-    result = []
-    for photo in photos:
-        photo_dict = photo_to_dict(photo, None)
-        photo_dict["has_face_match"] = photo.id in user_matched_photo_ids
-        result.append(photo_dict)
+    _duration = time.perf_counter() - _t_start
+    if _duration > 2:
+        print(f"[PERF][all-photos-event] event_id={event_id} user_id={current_user.id} took {_duration:.2f}s")
+    
     return result
 
 # === ROUTES POUR LES CODES +�V+�NEMENT MANUELS ===

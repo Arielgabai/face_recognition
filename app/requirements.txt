@@ -20,6 +20,4 @@ boto3==1.34.131
 # Versions spécifiques pour éviter les conflits
 numpy==1.24.3
 opencv-python-headless==4.8.1.78
-face-recognition-models==0.1.3
 Pillow==10.0.1
-# face_recognition sera installé depuis GitHub avec une version compatible

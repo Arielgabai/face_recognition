@@ -2788,22 +2788,80 @@
             }
         }
 
-        async function loadAllPhotos() {
+        // ========== PAGINATION STATE (Infinite Scroll) ==========
+        let __allPhotosState = {
+            photos: [],
+            nextCursor: null,
+            hasMore: true,
+            loading: false,
+            gallery: null,
+            observer: null
+        };
+        
+        async function loadAllPhotos(reset = true) {
             const container = document.getElementById('allPhotosList');
             const loadingDiv = document.getElementById('allPhotosLoading');
             const emptyDiv = document.getElementById('allPhotosEmpty');
             
-            // Afficher l'état de chargement global de l'onglet
-            if (loadingDiv) loadingDiv.style.display = 'flex';
+            // Si reset, vider l'état
+            if (reset) {
+                __allPhotosState = {
+                    photos: [],
+                    nextCursor: null,
+                    hasMore: true,
+                    loading: false,
+                    gallery: null,
+                    observer: null
+                };
+                if (container) container.innerHTML = '';
+            }
+            
+            // Éviter les appels concurrents
+            if (__allPhotosState.loading) return;
+            if (!__allPhotosState.hasMore && !reset) return;
+            
+            __allPhotosState.loading = true;
+            
+            // Afficher l'état de chargement
+            if (loadingDiv && reset) loadingDiv.style.display = 'flex';
             if (emptyDiv) emptyDiv.style.display = 'none';
             
             try {
-                const response = await apiFetch('/api/all-photos');
+                // Construire l'URL avec cursor si disponible
+                let url = '/api/all-photos?limit=100';
+                if (__allPhotosState.nextCursor) {
+                    url += `&cursor=${encodeURIComponent(__allPhotosState.nextCursor)}`;
+                }
+                
+                const response = await apiFetch(url);
                 
                 if (response.ok) {
-                    const photos = await response.json();
+                    const data = await response.json();
                     
-                    if (!photos || photos.length === 0) {
+                    // Support ancien format (liste) et nouveau format (paginé)
+                    let photos, nextCursor, hasMore;
+                    if (Array.isArray(data)) {
+                        // Ancien format (rétrocompatibilité)
+                        photos = data;
+                        nextCursor = null;
+                        hasMore = false;
+                    } else {
+                        // Nouveau format paginé
+                        photos = data.items || [];
+                        nextCursor = data.next_cursor || null;
+                        hasMore = data.has_more || false;
+                    }
+                    
+                    // Ajouter les nouvelles photos (éviter doublons par ID)
+                    const existingIds = new Set(__allPhotosState.photos.map(p => p.id));
+                    const newPhotos = photos.filter(p => !existingIds.has(p.id));
+                    __allPhotosState.photos.push(...newPhotos);
+                    __allPhotosState.nextCursor = nextCursor;
+                    __allPhotosState.hasMore = hasMore;
+                    
+                    const allPhotos = __allPhotosState.photos;
+                    
+                    if (allPhotos.length === 0) {
                         container.innerHTML = `
                             <div class="empty-state">
                                 <div class="empty-state-icon">📷</div>
@@ -2814,40 +2872,51 @@
                     } else {
                         // Mettre à jour le titre de l'événement dans la bannière
                         const eventTitle = document.getElementById('eventTitle');
-                        console.log('Event title element (all photos):', eventTitle);
-                        console.log('Photos (all):', photos);
-                        console.log('First photo complète (all):', photos[0]);
-                        console.log('First photo event_name (all):', photos[0]?.event_name);
-                        console.log('First photo has_face_match (all):', photos[0]?.has_face_match);
-                        console.log('Photos with face match (all):', photos.filter(p => p.has_face_match).length);
-                        
-                        if (eventTitle && photos[0].event_name) {
-                            eventTitle.textContent = photos[0].event_name;
-                            console.log('Titre mis à jour avec (all):', photos[0].event_name);
-                        } else {
-                            console.log('Pas de nom d\'événement trouvé dans les photos (all)');
+                        if (eventTitle && allPhotos[0]?.event_name) {
+                            eventTitle.textContent = allPhotos[0].event_name;
                         }
                         
                         // Mettre à jour le nombre de photos dans l'onglet
                         const allPhotosTab = document.getElementById('allPhotosTab');
                         if (allPhotosTab) {
-                            allPhotosTab.textContent = `Général (${photos.length})`;
+                            const countText = hasMore ? `${allPhotos.length}+` : `${allPhotos.length}`;
+                            allPhotosTab.textContent = `Général (${countText})`;
                         }
                         
-                        // Affichage via ModernGallery si dispo
+                        // Affichage via ModernGallery avec support incrémental
                         if (typeof window.ModernGallery !== 'undefined' && typeof renderPhotosModern === 'function') {
-                            // On laisse le cache navigateur sur /api/photo (PAS de cache-busting ici)
-                            container.innerHTML = '';
-                            renderPhotosModern(container, photos, 'allModernGallery', {
-                                lazy: true,        // lazy dans la galerie (chargement progressif)
-                                batchSize: 24,     // montre rapidement plusieurs lignes
-                                cacheBust: false   // important : ne pas casser le cache des photos
-                            });
+                            if (reset || !__allPhotosState.gallery) {
+                                // Première page: créer la galerie
+                                container.innerHTML = '';
+                                renderPhotosModern(container, allPhotos, 'allModernGallery', {
+                                    lazy: true,
+                                    batchSize: 24,
+                                    cacheBust: false
+                                });
+                                // Stocker la référence si ModernGallery expose une instance
+                                __allPhotosState.gallery = window.__lastModernGallery || null;
+                            } else if (__allPhotosState.gallery && typeof __allPhotosState.gallery.addImages === 'function') {
+                                // Pages suivantes: ajouter les images
+                                const galleryPhotos = newPhotos.map(p => ({
+                                    src: `/api/photo/${p.id}`,
+                                    id: p.id,
+                                    has_face_match: p.has_face_match
+                                }));
+                                __allPhotosState.gallery.addImages(galleryPhotos);
+                            } else {
+                                // Fallback: recréer la galerie complète
+                                container.innerHTML = '';
+                                renderPhotosModern(container, allPhotos, 'allModernGallery', {
+                                    lazy: true,
+                                    batchSize: 24,
+                                    cacheBust: false
+                                });
+                            }
                         } else {
                             // Fallback simple en masonry
                             container.innerHTML = `
                                 <div class="masonry">
-                                    ${photos.map(photo => `
+                                    ${allPhotos.map(photo => `
                                         <div class="masonry-item" style="position: relative;">
                                             <img src="/api/photo/${photo.id}" alt="Photo" loading="lazy">
                                             ${photo.has_face_match ? `
@@ -2860,8 +2929,30 @@
                                 </div>
                             `;
                         }
+                        
+                        // Ajouter bouton "Charger plus" si encore des photos
+                        if (hasMore) {
+                            _setupLoadMoreButton(container, 'all');
+                        } else {
+                            // Retirer le bouton s'il existe
+                            const existingBtn = document.getElementById('loadMoreAll');
+                            if (existingBtn) existingBtn.remove();
+                        }
                     }
                 } else {
+                    if (reset) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-state-icon">⚠️</div>
+                                <h4>Erreur lors du chargement</h4>
+                                <p>Impossible de charger les photos pour le moment</p>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement des photos:', error);
+                if (reset) {
                     container.innerHTML = `
                         <div class="empty-state">
                             <div class="empty-state-icon">⚠️</div>
@@ -2870,17 +2961,44 @@
                         </div>
                     `;
                 }
-            } catch (error) {
-                console.error('Erreur lors du chargement des photos:', error);
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">⚠️</div>
-                        <h4>Erreur lors du chargement</h4>
-                        <p>Impossible de charger les photos pour le moment</p>
-                    </div>
-                `;
             } finally {
+                __allPhotosState.loading = false;
                 if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+        }
+        
+        // Bouton "Charger plus" pour infinite scroll manuel
+        function _setupLoadMoreButton(container, type) {
+            const btnId = type === 'all' ? 'loadMoreAll' : 'loadMoreMy';
+            let btn = document.getElementById(btnId);
+            
+            if (!btn) {
+                btn = document.createElement('button');
+                btn.id = btnId;
+                btn.className = 'btn btn-secondary';
+                btn.style.cssText = 'margin: 20px auto; display: block;';
+                btn.innerHTML = '📷 Charger plus de photos';
+                btn.onclick = () => {
+                    btn.disabled = true;
+                    btn.innerHTML = '⏳ Chargement...';
+                    if (type === 'all') {
+                        loadAllPhotos(false).finally(() => {
+                            btn.disabled = false;
+                            btn.innerHTML = '📷 Charger plus de photos';
+                        });
+                    } else {
+                        loadMyPhotos(false).finally(() => {
+                            btn.disabled = false;
+                            btn.innerHTML = '📷 Charger plus de photos';
+                        });
+                    }
+                };
+            }
+            
+            // Ajouter ou mettre à jour
+            const existingBtn = document.getElementById(btnId);
+            if (!existingBtn) {
+                container.appendChild(btn);
             }
         }
 
@@ -3185,8 +3303,7 @@
 
         function loadProfileSelfie() {
             const profileSelfie = document.getElementById('profileSelfie');
-            
-            // Charger le selfie depuis l'API
+
             fetch('/api/my-selfie', {
                 headers: { 'Authorization': `Bearer ${token}` },
             }).then(response => {
@@ -3197,34 +3314,55 @@
                 }
             }).then(selfieData => {
                 if (selfieData.user_id) {
-                    // Utiliser un timestamp unique pour éviter le cache
                     const timestamp = new Date().getTime();
                     const randomId = Math.random().toString(36).substring(7);
+                    const imgUrl = `/api/selfie/${selfieData.user_id}?t=${timestamp}&r=${randomId}`;
                     profileSelfie.innerHTML = `
-                        <img src="/api/selfie/${selfieData.user_id}?t=${timestamp}&r=${randomId}" 
-                             alt="Votre selfie" class="selfie-preview" style="display: block;">
+                        <img src="${imgUrl}" 
+                             alt="Votre selfie" class="selfie-preview" style="display: block;"
+                             onerror="this.onerror=null; _retrySelfieLoad(this, '${selfieData.user_id}', 0);">
                         <p style="margin-top: 15px; color: #9ca3af; text-align: center;">
                             Selfie téléchargé le ${new Date(selfieData.created_at).toLocaleDateString()}
                         </p>
                     `;
                 } else {
-                    profileSelfie.innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">📸</div>
-                            <h4>Aucun selfie téléchargé</h4>
-                            <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
-                        </div>
-                    `;
+                    _showNoSelfie(profileSelfie);
                 }
             }).catch(error => {
-                profileSelfie.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📸</div>
-                        <h4>Aucun selfie téléchargé</h4>
-                        <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
-                    </div>
-                `;
+                _showNoSelfie(profileSelfie);
             });
+        }
+
+        function _showNoSelfie(container) {
+            if (!container) return;
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📸</div>
+                    <h4>Aucun selfie téléchargé</h4>
+                    <p>Ajoutez votre selfie pour commencer à reconnaître vos photos</p>
+                </div>
+            `;
+        }
+
+        function _retrySelfieLoad(imgEl, userId, attempt) {
+            const maxRetries = 5;
+            const delays = [200, 500, 1000, 2000, 3000];
+            if (attempt >= maxRetries) {
+                imgEl.style.display = 'none';
+                const p = imgEl.parentElement;
+                if (p) {
+                    const notice = document.createElement('p');
+                    notice.style.cssText = 'color: #f59e0b; text-align: center; margin-top: 10px;';
+                    notice.textContent = 'Selfie en cours de traitement, réessayez dans un instant.';
+                    p.appendChild(notice);
+                }
+                return;
+            }
+            setTimeout(() => {
+                const ts = Date.now();
+                imgEl.src = `/api/selfie/${userId}?t=${ts}&retry=${attempt + 1}`;
+                imgEl.onerror = function() { _retrySelfieLoad(imgEl, userId, attempt + 1); };
+            }, delays[attempt] || 3000);
         }
 
         function showSelfieUploadInProfile() {
@@ -3501,6 +3639,14 @@
                     }
 
                     // "Général" continue de charger en background, son propre spinner s'en occupe
+
+                    // Afficher un message si le selfie est invalide ou absent
+                    if (currentUser.selfie_status === 'invalid') {
+                        const errMsg = currentUser.selfie_error || 'Selfie invalide';
+                        showAlert('Selfie non valide : ' + errMsg + '. Mettez à jour votre selfie dans votre profil.', 'error');
+                    } else if (currentUser.selfie_status === 'none') {
+                        showAlert('Aucun selfie enregistré. Ajoutez votre selfie dans votre profil pour voir vos photos.', 'info');
+                    }
 
                     // Initialiser le compte à rebours d'expiration
                     try { initExpirationCountdown(); } catch (e) { console.warn('Countdown init error', e); }

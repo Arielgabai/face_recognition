@@ -63,6 +63,9 @@ class User(Base):
     event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True)  # NEW: événement principal
     selfie_path = Column(String, nullable=True)
     selfie_data = Column(LargeBinary, nullable=True)  # Données binaires du selfie
+    selfie_status = Column(String, nullable=True, default=None)  # none|uploaded|valid|invalid
+    selfie_error = Column(String, nullable=True, default=None)  # Message d'erreur si selfie invalide
+    selfie_content_type = Column(String, nullable=True, default=None)  # ex: image/jpeg
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
