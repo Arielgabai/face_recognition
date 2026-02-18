@@ -70,15 +70,40 @@ def check_and_fix_database():
     else:
         print("✅ Toutes les colonnes nécessaires existent")
     
+    # Ensure the photo_faces table exists (DB-driven Rekognition face tracking)
+    if not inspector.has_table('photo_faces'):
+        print("Creating 'photo_faces' table...")
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS photo_faces (
+                        id SERIAL PRIMARY KEY,
+                        event_id INTEGER NOT NULL REFERENCES events(id),
+                        photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+                        face_id VARCHAR NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_photo_faces_event ON photo_faces (event_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_photo_faces_photo ON photo_faces (photo_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_photo_faces_face ON photo_faces (face_id)"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_photo_faces_photo_face ON photo_faces (photo_id, face_id)"))
+                conn.commit()
+            print("Table 'photo_faces' created successfully")
+        except Exception as e:
+            print(f"Error creating 'photo_faces' table (may already exist): {e}")
+    else:
+        print("Table 'photo_faces' already exists")
+
     # Vérifier à nouveau après les modifications
     inspector = inspect(engine)
     final_users_columns = [col['name'] for col in inspector.get_columns('users')]
     final_photos_columns = [col['name'] for col in inspector.get_columns('photos')]
     
-    print(f"📋 Colonnes finales dans 'users': {final_users_columns}")
-    print(f"📋 Colonnes finales dans 'photos': {final_photos_columns}")
+    print(f"Colonnes finales dans 'users': {final_users_columns}")
+    print(f"Colonnes finales dans 'photos': {final_photos_columns}")
     
-    print("🎉 Vérification de la base de données terminée!")
+    print("Verification de la base de donnees terminee!")
 
 if __name__ == "__main__":
     check_and_fix_database() 

@@ -57,7 +57,7 @@ from database import SessionLocal  # là où tu l’as défini
 # ========== THREAD POOL POUR LE MATCHING ==========
 # ThreadPoolExecutor séparé pour isoler le matching des workers Gunicorn
 # Cela évite que les workers soient bloqués pendant le matching (qui peut prendre 30-60s)
-_MATCHING_THREAD_POOL_SIZE = int(os.getenv("MATCHING_THREAD_POOL_SIZE", "10"))
+_MATCHING_THREAD_POOL_SIZE = int(os.getenv("MATCHING_THREAD_POOL_SIZE", "1"))
 _MATCHING_THREAD_POOL = ThreadPoolExecutor(
     max_workers=_MATCHING_THREAD_POOL_SIZE,
     thread_name_prefix="MatchingWorker"
@@ -1900,20 +1900,19 @@ def compress_selfie_for_storage(image_bytes: bytes, max_size_kb: int = 200) -> b
     if scale < 1.0:
         img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
     
-    # Compression adaptative JPEG
-    for quality in [85, 75, 65, 55]:
+    # Compression adaptative JPEG (optimize=False to reduce CPU under concurrency)
+    for quality in [85, 65]:
         buffer = _io.BytesIO()
-        img.save(buffer, format='JPEG', quality=quality, optimize=True)
+        img.save(buffer, format='JPEG', quality=quality, optimize=False)
         compressed = buffer.getvalue()
         
-        # Si taille OK, retourner
         if len(compressed) <= max_size_kb * 1024:
             print(f"[SelfieCompress] Original: {len(image_bytes)} bytes, Compressed: {len(compressed)} bytes (quality={quality})")
             return compressed
     
     # Dernière tentative avec qualité minimale
     buffer = _io.BytesIO()
-    img.save(buffer, format='JPEG', quality=45, optimize=True)
+    img.save(buffer, format='JPEG', quality=45, optimize=False)
     compressed = buffer.getvalue()
     print(f"[SelfieCompress] Fallback quality=45: {len(compressed)} bytes")
     return compressed
@@ -2587,23 +2586,17 @@ async def register_invite(
         email=user_data.email,
         hashed_password=hashed_password,
         user_type=UserType.USER,
-        event_id=event.id  # NEW: Lier l'utilisateur à son événement principal
+        event_id=event.id,
+        selfie_status="pending",
     )
-    _t_insert_user = time.time()
     db.add(db_user)
-    print(f"[PERF][register] insert user took {time.time() - _t_insert_user:.3f}s")
-    _t_commit = time.time()
     db.commit()
-    print(f"[PERF][register] db.commit() took {time.time() - _t_commit:.3f}s")
     db.refresh(db_user)
-    # Lier l'utilisateur +� l'+�v+�nement
+
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
-    _t_insert_link = time.time()
     db.add(user_event)
-    print(f"[PERF][register] insert user_event took {time.time() - _t_insert_link:.3f}s")
-    _t_commit_link = time.time()
     db.commit()
-    print(f"[PERF][register] db.commit() took {time.time() - _t_commit_link:.3f}s")
+
     return db_user
 
 @app.post("/api/register-invite-with-selfie", response_model=UserSchema)
@@ -3048,35 +3041,52 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
         except Exception:
             print(f"[SelfieValidationBg] Failed to update status for user_id={user_id} (running)")
         
+        _can_index_missing = os.getenv("SELFIE_MATCH_CAN_INDEX_MISSING_PHOTOS", "0").strip().lower() in {"1", "true", "yes"}
+        _index_limit = int(os.getenv("SELFIE_MATCH_INDEX_LIMIT", "5") or "5")
+
         events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
         total_matches = 0
+        t_match_start = time.time()
         with _MATCHING_SEMAPHORE:
             print(f"[SelfieValidationBg] Step=rematch-loop user_id={user_id}, events={[ue.event_id for ue in events]}")
             for ue in events:
                 try:
                     from aws_metrics import aws_metrics as _m
                     with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
-                        # S'assurer que les photos de l'événement sont indexées
-                        try:
-                            print(f"[SelfieValidationBg] Step=ensure-event-photos-indexed user_id={user_id}, event_id={ue.event_id}")
-                            from sqlalchemy import func, or_ as _or
-                            missing_count = (
-                                session.query(func.count(Photo.id))
-                                .filter(
-                                    Photo.event_id == ue.event_id,
-                                    _or(Photo.is_indexed.is_(False), Photo.is_indexed.is_(None))
+                        if _can_index_missing:
+                            try:
+                                from sqlalchemy import func, or_ as _or
+                                missing_photos = (
+                                    session.query(Photo)
+                                    .filter(
+                                        Photo.event_id == ue.event_id,
+                                        _or(Photo.is_indexed.is_(False), Photo.is_indexed.is_(None))
+                                    )
+                                    .limit(_index_limit)
+                                    .all()
                                 )
-                                .scalar()
-                            ) or 0
-                            if missing_count > 0 and hasattr(face_recognizer, 'ensure_event_photos_indexed'):
-                                print(f"[SelfieValidationBg] indexing missing photos event_id={ue.event_id} missing={missing_count}")
-                                face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
-                            else:
-                                print(f"[SelfieValidationBg] skip reindex event_id={ue.event_id} missing={missing_count}")
-                        except Exception as _e:
-                            print(f"[SelfieValidationBg] ensure photos indexed failed: {_e}")
+                                if missing_photos and hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                                    print(f"[SelfieValidationBg] indexing {len(missing_photos)} missing photos (limit={_index_limit}) event_id={ue.event_id}")
+                                    for p in missing_photos:
+                                        try:
+                                            photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
+                                            if not photo_input:
+                                                continue
+                                            img_bytes = face_recognizer._prepare_image_bytes(photo_input)
+                                            if img_bytes:
+                                                face_recognizer._index_photo_faces_and_get_ids(ue.event_id, p.id, img_bytes)
+                                                p.is_indexed = True
+                                        except Exception as _ie:
+                                            print(f"[SelfieValidationBg] index photo {p.id} failed: {_ie}")
+                                    try:
+                                        session.commit()
+                                    except Exception:
+                                        session.rollback()
+                            except Exception as _e:
+                                print(f"[SelfieValidationBg] ensure photos indexed failed: {_e}")
+                        else:
+                            print(f"[SelfieValidationBg] skip photo indexing (disabled) event_id={ue.event_id}")
 
-                        # Matching
                         print(f"[SelfieValidationBg] Step=match-user-selfie user_id={user_id}, event_id={ue.event_id}")
                         if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
                             matched = face_recognizer.match_user_selfie_with_photos_event(user, ue.event_id, session)
@@ -3090,7 +3100,7 @@ def _validate_and_rematch_selfie_background(user_id: int, file_data: bytes, stri
                     print(f"[SelfieValidationBg] Error matching event {ue.event_id}: {e}")
                     continue
         
-        print(f"[SelfieValidationBg] ✅ Rematch completed for user_id={user_id}, total_matches={total_matches}")
+        print(f"[SelfieValidationBg] Rematch completed user_id={user_id}, total_matches={total_matches} elapsed={time.time() - t_match_start:.3f}s")
         try:
             REMATCH_STATUS[user_id] = {
                 "status": "done",
@@ -3178,28 +3188,50 @@ def _rematch_selfie_background_only(user_id: int, file_data: bytes):
         except Exception:
             pass
 
+        _can_index_missing = os.getenv("SELFIE_MATCH_CAN_INDEX_MISSING_PHOTOS", "0").strip().lower() in {"1", "true", "yes"}
+        _index_limit = int(os.getenv("SELFIE_MATCH_INDEX_LIMIT", "5") or "5")
+
         events = session.query(UserEvent).filter(UserEvent.user_id == user_id).all()
         total_matches = 0
+        t_match_start = time.time()
         with _MATCHING_SEMAPHORE:
             for ue in events:
                 try:
                     from aws_metrics import aws_metrics as _m
                     with _m.action_context(f"selfie_update:event:{ue.event_id}:user:{user_id}"):
-                        try:
-                            from sqlalchemy import func, or_ as _or
-                            missing_count = (
-                                session.query(func.count(Photo.id))
-                                .filter(
-                                    Photo.event_id == ue.event_id,
-                                    _or(Photo.is_indexed.is_(False), Photo.is_indexed.is_(None))
+                        if _can_index_missing:
+                            try:
+                                from sqlalchemy import func, or_ as _or
+                                missing_photos = (
+                                    session.query(Photo)
+                                    .filter(
+                                        Photo.event_id == ue.event_id,
+                                        _or(Photo.is_indexed.is_(False), Photo.is_indexed.is_(None))
+                                    )
+                                    .limit(_index_limit)
+                                    .all()
                                 )
-                                .scalar()
-                            ) or 0
-                            if missing_count > 0 and hasattr(face_recognizer, 'ensure_event_photos_indexed'):
-                                logger.info(f"[SelfieMatchBg] indexing missing photos event_id={ue.event_id} missing={missing_count}")
-                                face_recognizer.ensure_event_photos_indexed(ue.event_id, session)
-                        except Exception as _e:
-                            logger.warning(f"[SelfieMatchBg] ensure photos indexed failed: {_e}")
+                                if missing_photos and hasattr(face_recognizer, 'ensure_event_photos_indexed'):
+                                    logger.info(f"[SelfieMatchBg] indexing {len(missing_photos)} missing photos (limit={_index_limit}) event_id={ue.event_id}")
+                                    for p in missing_photos:
+                                        try:
+                                            photo_input = p.file_path if (p.file_path and os.path.exists(p.file_path)) else p.photo_data
+                                            if not photo_input:
+                                                continue
+                                            img_bytes = face_recognizer._prepare_image_bytes(photo_input)
+                                            if img_bytes:
+                                                face_recognizer._index_photo_faces_and_get_ids(ue.event_id, p.id, img_bytes)
+                                                p.is_indexed = True
+                                        except Exception as _ie:
+                                            logger.warning(f"[SelfieMatchBg] index photo {p.id} failed: {_ie}")
+                                    try:
+                                        session.commit()
+                                    except Exception:
+                                        session.rollback()
+                            except Exception as _e:
+                                logger.warning(f"[SelfieMatchBg] ensure photos indexed failed: {_e}")
+                        else:
+                            logger.info(f"[SelfieMatchBg] skip photo indexing (SELFIE_MATCH_CAN_INDEX_MISSING_PHOTOS=0) event_id={ue.event_id}")
 
                         logger.info(f"[SelfieMatchBg] match-user-selfie user_id={user_id} event_id={ue.event_id}")
                         if hasattr(face_recognizer, 'match_user_selfie_with_photos_event'):
@@ -3212,7 +3244,7 @@ def _rematch_selfie_background_only(user_id: int, file_data: bytes):
                     logger.error(f"[SelfieMatchBg] Error matching event {ue.event_id}: {e}")
                     continue
 
-        logger.info(f"[SelfieMatchBg] Rematch completed for user_id={user_id}, total_matches={total_matches}")
+        logger.info(f"[SelfieMatchBg] Rematch completed for user_id={user_id}, total_matches={total_matches} elapsed={time.time() - t_match_start:.3f}s")
         try:
             REMATCH_STATUS[user_id] = {"status": "done", "finished_at": time.time(), "matched": int(total_matches or 0)}
         except Exception:
@@ -3998,6 +4030,34 @@ async def admin_dedupe_face_matches(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/cleanup-pending-users")
+async def admin_cleanup_pending_users(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Deactivate users with selfie_status='pending' older than PENDING_SELFIE_TTL_MINUTES (default 60).
+
+    These are accounts created during registration where the selfie upload never completed.
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    ttl_minutes = int(os.getenv("PENDING_SELFIE_TTL_MINUTES", "60"))
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)
+    stale_users = db.query(User).filter(
+        User.selfie_status == "pending",
+        User.is_active == True,
+        User.created_at < cutoff,
+    ).all()
+    count = 0
+    for u in stale_users:
+        u.is_active = False
+        count += 1
+    if count:
+        db.commit()
+    return {"deactivated": count, "ttl_minutes": ttl_minutes}
+
 
 @app.post("/api/photographer/events/{event_id}/rematch")
 async def photographer_rematch_event(
@@ -6081,25 +6141,22 @@ async def register_with_event_code(
         # 400 pour rester cohérent avec validations agrégées
         raise HTTPException(status_code=400, detail="; ".join(errors))
 
-    # Créer le nouvel utilisateur
     hashed_password = get_password_hash(user_data.password)
     db_user = User(
         username=user_data.username,
         email=user_data.email,
         hashed_password=hashed_password,
         user_type=UserType.USER,
-        event_id=event.id  # NEW: Lier l'utilisateur à son événement principal
+        event_id=event.id,
+        selfie_status="pending",
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    
-    # Lier l'utilisateur +� l'+�v+�nement
+
     user_event = UserEvent(user_id=db_user.id, event_id=event.id)
     db.add(user_event)
     db.commit()
-
-    # Le matching sera déclenché uniquement lors de l’upload du selfie
 
     print(f"[PERF][register] total took {time.time() - _t_total:.3f}s")
     return db_user

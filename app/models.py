@@ -177,6 +177,28 @@ class GoogleDriveIntegration(Base):
     photographer = relationship("User")
 
 
+class PhotoFace(Base):
+    """Tracks FaceIds returned by Rekognition IndexFaces per photo.
+
+    Replaces the expensive ListFaces scan to find which FaceIds belong to a photo.
+    """
+    __tablename__ = "photo_faces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False, index=True)
+    photo_id = Column(Integer, ForeignKey("photos.id", ondelete="CASCADE"), nullable=False, index=True)
+    face_id = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('uq_photo_faces_photo_face', 'photo_id', 'face_id', unique=True),
+        Index('idx_photo_faces_event', 'event_id'),
+    )
+
+    photo = relationship("Photo")
+    event = relationship("Event")
+
+
 class GoogleDriveIngestionLog(Base):
     __tablename__ = "gdrive_ingestion_log"
 

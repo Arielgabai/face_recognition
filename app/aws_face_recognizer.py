@@ -6,11 +6,12 @@ from typing import List, Dict, Optional, Set, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 from database import SessionLocal
 
-from models import User, Photo, FaceMatch, Event, UserEvent
+from models import User, Photo, FaceMatch, Event, UserEvent, PhotoFace
 from aws_metrics import aws_metrics
 from photo_optimizer import PhotoOptimizer
 from io import BytesIO as _BytesIO
@@ -40,32 +41,40 @@ COLL_PREFIX = os.environ.get("AWS_REKOGNITION_COLLECTION_PREFIX", "event_")
 
 # Recherche
 AWS_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SEARCH_MAXFACES", "10") or "10")
-# Spécifique recherche depuis selfie: besoin de récupérer potentiellement des dizaines/centaines de visages
 AWS_SELFIE_SEARCH_MAXFACES = int(os.environ.get("AWS_REKOGNITION_SELFIE_SEARCH_MAXFACES", "500") or "500")
 AWS_SEARCH_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", "60") or "60")
-AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTER", "AUTO").upper()  # AUTO|LOW|MEDIUM|HIGH|NONE
+AWS_SEARCH_QUALITY_FILTER = os.environ.get("AWS_REKOGNITION_SEARCH_QUALITY_FILTER", "AUTO").upper()
 
 # Détection
 AWS_DETECT_MIN_CONF = float(os.environ.get("AWS_REKOGNITION_DETECT_MIN_CONF", "70") or "70")
 
 # Préparation image / crop
 AWS_IMAGE_MAX_DIM = int(os.environ.get("AWS_REKOGNITION_IMAGE_MAX_DIM", "1536") or "1536")
-AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.3") or "0.3")  # 30% padding
+AWS_CROP_PADDING = float(os.environ.get("AWS_REKOGNITION_CROP_PADDING", "0.3") or "0.3")
 AWS_MIN_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_CROP_SIDE", "36") or "36")
-# Dimension minimale de sortie pour un crop visage (on upsample si nécessaire)
 AWS_MIN_OUTPUT_CROP_SIDE = int(os.environ.get("AWS_REKOGNITION_MIN_OUTPUT_CROP_SIDE", "448") or "448")
-# Seuil d'aire relative (Width*Height) sous lequel on tente une détection upscalée
 AWS_TINY_FACE_AREA_THRESHOLD = float(os.environ.get("AWS_REKOGNITION_TINY_FACE_AREA", "0.015") or "0.015")
 
-# Parallélisation bornée (bornes codées simplement; pas d'arrière-plan)
+# Parallélisation bornée
 MAX_PARALLEL_PER_REQUEST = 2
 AWS_MAX_RETRIES = 2
 AWS_BACKOFF_BASE_SEC = 0.2
 
+# AWS boto timeouts / retries (configurable via env)
+AWS_BOTO_CONNECT_TIMEOUT = int(os.environ.get("AWS_BOTO_CONNECT_TIMEOUT", "3"))
+AWS_BOTO_READ_TIMEOUT = int(os.environ.get("AWS_BOTO_READ_TIMEOUT", "20"))
+AWS_BOTO_MAX_ATTEMPTS = int(os.environ.get("AWS_BOTO_MAX_ATTEMPTS", "3"))
+
+_boto_config = BotoConfig(
+    connect_timeout=AWS_BOTO_CONNECT_TIMEOUT,
+    read_timeout=AWS_BOTO_READ_TIMEOUT,
+    retries={"max_attempts": AWS_BOTO_MAX_ATTEMPTS, "mode": "standard"},
+)
+
 # Semaphore global pour limiter la concurrence AWS Rekognition
-# Permet d'éviter de surcharger l'API AWS pendant les uploads massifs
 AWS_CONCURRENT_REQUESTS = int(os.environ.get("AWS_CONCURRENT_REQUESTS", "10"))
 _aws_semaphore = threading.Semaphore(AWS_CONCURRENT_REQUESTS)
+_AWS_SEMAPHORE_TIMEOUT = 15.0
 
 
 class AwsFaceRecognizer:
@@ -80,35 +89,41 @@ class AwsFaceRecognizer:
     """
 
     def __init__(self):
-        self.client = boto3.client("rekognition", region_name=REKOGNITION_REGION)
-        print(f"[FaceRecognition][AWS] Using Rekognition region: {REKOGNITION_REGION}")
-        
-        # IMPORTANT: Initialiser search_threshold dans __init__ pour éviter AttributeError
-        # Ce seuil est utilisé par _search_faces_retry et d'autres méthodes
+        self.client = boto3.client(
+            "rekognition",
+            region_name=REKOGNITION_REGION,
+            config=_boto_config,
+        )
+        print(f"[FaceRecognition][AWS] region={REKOGNITION_REGION} "
+              f"connect_timeout={AWS_BOTO_CONNECT_TIMEOUT} read_timeout={AWS_BOTO_READ_TIMEOUT} "
+              f"max_attempts={AWS_BOTO_MAX_ATTEMPTS}")
+
         try:
             self.search_threshold: float = float(
-                os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", str(AWS_SEARCH_THRESHOLD)) 
+                os.environ.get("AWS_REKOGNITION_FACE_THRESHOLD", str(AWS_SEARCH_THRESHOLD))
                 or AWS_SEARCH_THRESHOLD
             )
         except Exception:
             self.search_threshold = AWS_SEARCH_THRESHOLD
         print(f"[FaceRecognition][AWS] Search threshold: {self.search_threshold}")
-        
-        # Debug credentials
+
+        # Credential check (no secrets in logs)
         try:
             session = boto3.Session()
             credentials = session.get_credentials()
             if credentials:
                 print(f"[FaceRecognition][AWS] Credentials source: {credentials.method}")
-                print(f"[FaceRecognition][AWS] Access key: {credentials.access_key[:8]}...")
             else:
-                print(f"[FaceRecognition][AWS] ⚠️  No credentials found!")
+                print("[FaceRecognition][AWS] WARNING: No credentials found!")
         except Exception as e:
-            print(f"[FaceRecognition][AWS] ⚠️  Error checking credentials: {e}")
-        
+            print(f"[FaceRecognition][AWS] WARNING: Error checking credentials: {e}")
+
         # Cache simple en mémoire pour éviter de réindexer à chaque photo
         self._indexed_events: Set[int] = set()
         self._photos_indexed_events: Set[int] = set()
+        # Collection existence cache (avoids repeated CreateCollection calls)
+        self._known_collections: Set[str] = set()
+        self._known_collections_lock = threading.Lock()
         # Locks pour thread-safety des caches
         self._indexed_events_lock = threading.Lock()
         self._photos_indexed_events_lock = threading.Lock()
@@ -164,37 +179,36 @@ class AwsFaceRecognizer:
 
     def ensure_collection(self, event_id: int):
         coll_id = self._collection_id(event_id)
-        print(f"[ENSURE-COLL] enter event_id={event_id}, coll_id={coll_id}")
 
-        acquired = False
+        # Fast path: already known in this process
+        with self._known_collections_lock:
+            if coll_id in self._known_collections:
+                return
+
+        acquired = _aws_semaphore.acquire(timeout=_AWS_SEMAPHORE_TIMEOUT)
+        if not acquired:
+            print(f"[ENSURE-COLL] WARNING: semaphore timeout for coll_id={coll_id}, failing fast")
+            return
         try:
-            # On limite quand même la concurrence, mais sans bloquer à l'infini
-            acquired = _aws_semaphore.acquire(timeout=5.0)
-            if not acquired:
-                print(f"[ENSURE-COLL] WARNING: could not acquire _aws_semaphore within 5s for coll_id={coll_id}, proceeding without semaphore")
-
+            # Double-check after acquiring
+            with self._known_collections_lock:
+                if coll_id in self._known_collections:
+                    return
             try:
-                # Stratégie simple : on tente CreateCollection,
-                # si elle existe déjà, on ignore l'erreur.
-                print(f"[ENSURE-COLL] calling CreateCollection for coll_id={coll_id}")
                 aws_metrics.inc("CreateCollection")
                 self.client.create_collection(CollectionId=coll_id)
-                print(f"[ENSURE-COLL] CreateCollection OK for coll_id={coll_id}")
+                print(f"[ENSURE-COLL] Created collection {coll_id}")
             except ClientError as e:
                 code = e.response.get("Error", {}).get("Code")
-                print(f"[ENSURE-COLL] ClientError on CreateCollection coll_id={coll_id}: code={code}")
                 if code in {"ResourceAlreadyExistsException", "ResourceInUseException"}:
-                    # La collection existe déjà → c'est ce qu'on voulait
-                    print(f"[ENSURE-COLL] Collection already exists for coll_id={coll_id}, that's fine")
+                    pass
                 else:
-                    print(f"[ENSURE-COLL] ERROR (re-raise) for coll_id={coll_id}: {e}")
+                    print(f"[ENSURE-COLL] ERROR for coll_id={coll_id}: code={code}")
                     raise
-
-            print(f"[ENSURE-COLL] exit OK event_id={event_id}, coll_id={coll_id}")
+            with self._known_collections_lock:
+                self._known_collections.add(coll_id)
         finally:
-            if acquired:
-                _aws_semaphore.release()
-                print(f"[ENSURE-COLL] released _aws_semaphore for coll_id={coll_id}")
+            _aws_semaphore.release()
 
 
     def index_user_selfie(self, event_id: int, user: User):
@@ -280,38 +294,68 @@ class AwsFaceRecognizer:
                 print(f"[AWS][SelfieIndex] index_faces error user_id={user.id}: {e}")
 
     def _delete_photo_faces(self, event_id: int, photo_id: int):
+        """DB-driven: reads FaceIds from photo_faces table, deletes from Rekognition, removes DB rows."""
         coll_id = self._collection_id(event_id)
+        session = SessionLocal()
         try:
-            next_token = None
-            while True:
-                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
-                if next_token:
-                    kwargs["NextToken"] = next_token
-                aws_metrics.inc('ListFaces')
-                faces = self.client.list_faces(**kwargs)
-                to_delete = []
-                for f in faces.get('Faces', []) or []:
-                    if f.get('ExternalImageId') == f"photo:{photo_id}":
-                        fid = f.get('FaceId')
-                        if fid:
-                            to_delete.append(fid)
-                if to_delete:
+            rows = session.query(PhotoFace).filter(PhotoFace.photo_id == photo_id).all()
+            face_ids_to_delete = [r.face_id for r in rows if r.face_id]
+            if face_ids_to_delete:
+                # Rekognition accepts max 4096 FaceIds per call; batch in chunks of 1000
+                for i in range(0, len(face_ids_to_delete), 1000):
+                    chunk = face_ids_to_delete[i:i + 1000]
                     try:
-                        self.client.delete_faces(CollectionId=coll_id, FaceIds=to_delete)
-                    except ClientError:
-                        pass
-                next_token = faces.get("NextToken")
-                if not next_token:
-                    break
-        except ClientError:
-            pass
+                        aws_metrics.inc('DeleteFaces')
+                        self.client.delete_faces(CollectionId=coll_id, FaceIds=chunk)
+                    except ClientError as e:
+                        print(f"[DeletePhotoFaces] DeleteFaces error photo_id={photo_id}: {e}")
+            # Remove DB rows
+            if rows:
+                session.query(PhotoFace).filter(PhotoFace.photo_id == photo_id).delete(synchronize_session=False)
+                session.commit()
+        except Exception as e:
+            print(f"[DeletePhotoFaces] error photo_id={photo_id}: {e}")
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+    def _persist_photo_face_ids(self, event_id: int, photo_id: int, face_ids: List[str]):
+        """Bulk-insert FaceIds into photo_faces table."""
+        if not face_ids:
+            return
+        session = SessionLocal()
+        try:
+            for fid in face_ids:
+                session.add(PhotoFace(event_id=event_id, photo_id=photo_id, face_id=fid))
+            session.commit()
+        except Exception as e:
+            print(f"[PersistPhotoFaces] error photo_id={photo_id}: {e}")
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
 
     def _index_photo_faces_and_get_ids(self, event_id: int, photo_id: int, image_bytes: bytes) -> List[str]:
-        """Indexe les visages d'une photo (crops carrés) et retourne la liste des FaceId créés."""
+        """Indexe les visages d'une photo (crops carrés) et retourne la liste des FaceId créés.
+        
+        Uses DB-driven cleanup (PhotoFace table) instead of ListFaces.
+        """
         coll_id = self._collection_id(event_id)
-        # Nettoyer d'abord d'anciens visages pour ce photo_id
+        t0 = time.time()
+        # DB-driven cleanup of old faces for this photo
         self._delete_photo_faces(event_id, photo_id)
-        # Détecter et recadrer tous les visages puis indexer par crop pour une meilleure qualité
+        # Détecter et recadrer tous les visages
         try:
             faces = self._detect_faces_boxes(image_bytes)
             crops = self._crop_face_regions(image_bytes, faces) if faces else []
@@ -337,10 +381,9 @@ class AwsFaceRecognizer:
                         if fid:
                             face_ids.append(fid)
                 except ClientError as e:
-                    print(f"❌ AWS IndexFaces error (crop) for photo {photo_id}: {e}")
+                    print(f"[IndexFaces] crop error photo_id={photo_id}: {e}")
                     continue
         else:
-            # Fallback: indexation sur l'image entière (comportement historique)
             try:
                 aws_metrics.inc('IndexFaces')
                 resp = self.client.index_faces(
@@ -357,9 +400,13 @@ class AwsFaceRecognizer:
                     if fid:
                         face_ids.append(fid)
             except ClientError as e:
-                print(f"❌ AWS IndexFaces error for photo {photo_id}: {e}")
+                print(f"[IndexFaces] error photo_id={photo_id}: {e}")
                 return []
 
+        # Persist face IDs to DB (single commit)
+        self._persist_photo_face_ids(event_id, photo_id, face_ids)
+        elapsed = time.time() - t0
+        print(f"[IndexFaces] photo_id={photo_id} faces={len(face_ids)} elapsed={elapsed:.3f}s")
         return face_ids
 
     def ensure_event_photos_indexed(self, event_id: int, db: Session):
@@ -440,54 +487,6 @@ class AwsFaceRecognizer:
             for u in users_with_selfies:
                 self.index_user_selfie(event_id, u)
 
-            # Nettoyer la collection des visages orphelins (toujours dans le lock)
-            # - Conserver toutes les faces "photo:{photo_id}" (appartiennent à l'événement)
-            # - Conserver les faces des users de l'événement sous formes "user:{id}" ou legacy "{id}"
-            # - Supprimer uniquement les faces "user:*" dont l'id n'est pas dans la liste des users de l'événement
-            try:
-                allowed_user_ids = set(str(uid) for uid in user_ids)
-                coll_id = self._collection_id(event_id)
-                next_token = None
-                while True:
-                    kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
-                    if next_token:
-                        kwargs["NextToken"] = next_token
-                    faces = self.client.list_faces(**kwargs)
-                    stale_face_ids = []
-                    for f in faces.get('Faces', []) or []:
-                        ext = (f.get('ExternalImageId') or "").strip()
-                        face_id = f.get('FaceId')
-                        if ext.startswith('photo:'):
-                            continue  # ne pas supprimer les faces des photos ici
-                        if ext.startswith('user:'):
-                            try:
-                                uid = ext.split(':', 1)[1]
-                            except Exception:
-                                uid = None
-                            if not uid or uid not in allowed_user_ids:
-                                if face_id:
-                                    stale_face_ids.append(face_id)
-                        else:
-                            # legacy: ext est un id numérique
-                            if ext and ext.isdigit():
-                                if ext not in allowed_user_ids and face_id:
-                                    stale_face_ids.append(face_id)
-                            else:
-                                # ext inconnu -> supprimer prudemment
-                                if face_id:
-                                    stale_face_ids.append(face_id)
-                    if stale_face_ids:
-                        try:
-                            aws_metrics.inc('DeleteFaces')
-                            self.client.delete_faces(CollectionId=coll_id, FaceIds=stale_face_ids)
-                        except ClientError:
-                            pass
-                    next_token = faces.get("NextToken")
-                    if not next_token:
-                        break
-            except ClientError:
-                pass
-            
             print(f"[AWS] Event {event_id} users indexed successfully")
             # Marquer comme indexé à la FIN seulement (toujours dans le lock)
             self._indexed_events.add(event_id)
@@ -536,7 +535,7 @@ class AwsFaceRecognizer:
             if scale < 1.0:
                 im = im.resize((int(w * scale), int(h * scale)), _Image.Resampling.LANCZOS)
             out = _BytesIO()
-            im.save(out, format="JPEG", quality=92, optimize=True, progressive=False)
+            im.save(out, format="JPEG", quality=92, optimize=False, progressive=False)
             return out.getvalue()
         except Exception:
             # Fallback brut si échec PIL
@@ -572,7 +571,7 @@ class AwsFaceRecognizer:
                     try:
                         up = im.resize((min(W * 2, AWS_IMAGE_MAX_DIM), min(H * 2, AWS_IMAGE_MAX_DIM)), _Image.Resampling.LANCZOS)
                         out = _BytesIO()
-                        up.save(out, format="JPEG", quality=92, optimize=True)
+                        up.save(out, format="JPEG", quality=92, optimize=False)
                         up_bytes = out.getvalue()
                         aws_metrics.inc('DetectFaces')
                         resp2 = self.client.detect_faces(Image={"Bytes": up_bytes}, Attributes=["ALL"])
@@ -636,7 +635,7 @@ class AwsFaceRecognizer:
                         except Exception:
                             pass
                     out = _BytesIO()
-                    crop.save(out, format="JPEG", quality=92, optimize=True)
+                    crop.save(out, format="JPEG", quality=92, optimize=False)
                     crops.append(out.getvalue())
                 except Exception:
                     continue
@@ -737,37 +736,14 @@ class AwsFaceRecognizer:
         return None
 
     def _find_user_face_id(self, event_id: int, user_id: int) -> Optional[str]:
-        coll_id = self._collection_id(event_id)
-        # Cache rapide
+        """Finds the user's FaceId from in-memory cache or DB (no ListFaces)."""
         fid_cached = self._user_faceid_cache.get((event_id, user_id))
         if fid_cached:
             return fid_cached
-        # Persistance DB
         fid_db = self._get_persisted_user_face_id(event_id, user_id)
         if fid_db:
             self._user_faceid_cache[(event_id, user_id)] = fid_db
             return fid_db
-        next_token = None
-        target_exts = {str(user_id), f"user:{user_id}"}
-        try:
-            while True:
-                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
-                if next_token:
-                    kwargs["NextToken"] = next_token
-                resp = self.client.list_faces(**kwargs)
-                for f in resp.get('Faces', []) or []:
-                    ext = (f.get('ExternalImageId') or '').strip()
-                    if ext in target_exts:
-                        fid = f.get('FaceId')
-                        if fid:
-                            # Mémoriser en cache et retourner
-                            self._user_faceid_cache[(event_id, user_id)] = fid
-                            return fid
-                next_token = resp.get('NextToken')
-                if not next_token:
-                    break
-        except ClientError as e:
-            print(f"⚠️  list_faces error while finding user face id: {e}")
         return None
 
     def process_photo_for_event(self, photo_input, event_id: int, db: Session) -> List[Dict]:
@@ -957,36 +933,22 @@ class AwsFaceRecognizer:
             print("[SELFIE-MATCH] raw FaceMatches ExternalImageIds=",
             [ (fm.get("Face", {}) or {}).get("ExternalImageId") for fm in resp.get("FaceMatches", []) ])
 
-            db_reopened = False
+            # Use a fresh local session for DB writes (never close the caller's session)
+            local_db = SessionLocal()
             try:
-                # Réouvrir une session propre après les appels AWS
-                try:
-                    db.close()
-                except Exception:
-                    pass
-                db = SessionLocal()
-                db_reopened = True
-
                 allowed_ids = set(
-                    pid for (pid,) in db.query(Photo.id)
+                    pid for (pid,) in local_db.query(Photo.id)
                     .filter(Photo.event_id == event_id, Photo.id.in_(list(matched_photo_ids.keys())))
                     .all()
                 )
-                # DEBUG : chatgpt
-                print(f"[SELFIE-MATCH] matched_photo_ids keys={list(matched_photo_ids.keys())}")
-                print(f"[SELFIE-MATCH] allowed_ids after DB filter={allowed_ids}")
-
-                # juste avant le traitement FaceMatch / DB :
+                print(f"[SELFIE-MATCH] matched_photo_ids keys={list(matched_photo_ids.keys())} allowed={len(allowed_ids)}")
 
                 t4 = time.time()
                 print(f"[MATCH-SELFIE] before DB FaceMatch loop: {t4 - t0:.3f}s")
 
-                # <-- insère ici la version optimisée du bloc FaceMatch (avec bulk select)
                 from sqlalchemy import and_ as _and
-
-                # 1) On récupère tous les FaceMatch existants pour ce user + ces photos en UNE requête
                 existing_rows = (
-                    db.query(FaceMatch)
+                    local_db.query(FaceMatch)
                     .filter(
                         FaceMatch.user_id == user.id,
                         FaceMatch.photo_id.in_(allowed_ids)
@@ -1000,25 +962,30 @@ class AwsFaceRecognizer:
                     score = int(matched_photo_ids.get(pid) or 0)
                     existing = existing_by_pid.get(pid)
                     if existing:
-                        # Check si meilleur score
                         if score > int(existing.confidence_score or 0):
                             existing.confidence_score = score
                     else:
-                        db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
+                        local_db.add(FaceMatch(photo_id=pid, user_id=user.id, confidence_score=score))
                         count_matches += 1
 
                 t5 = time.time()
                 print(f"[MATCH-SELFIE] before db.commit(): {t5 - t0:.3f}s")
-                db.commit()
+                local_db.commit()
                 t6 = time.time()
                 print(f"[MATCH-SELFIE] DONE user_id={user.id} event_id={event_id} in {t6 - t0:.3f}s")
                 return count_matches
+            except Exception as db_err:
+                print(f"[MATCH-SELFIE] DB error: {db_err}")
+                try:
+                    local_db.rollback()
+                except Exception:
+                    pass
+                return 0
             finally:
-                if db_reopened:
-                    try:
-                        db.close()
-                    except Exception:
-                        pass
+                try:
+                    local_db.close()
+                except Exception:
+                    pass
         except Exception as e:
             print(f"❌ [MATCH-SELFIE] EXCEPTION user_id={getattr(user,'id',None)} event_id={event_id}: {e}")
             traceback.print_exc()
@@ -1584,81 +1551,44 @@ class AwsFaceRecognizer:
         return photo
 
     def get_collection_snapshot(self, event_id: int) -> Dict:
-        """Retourne un instantané de la collection Rekognition pour un événement.
-
-        Structure:
-        {
-          "collection_id": str,
-          "total_faces": int,
-          "users": { user_id: { "count": int, "face_ids": [str, ...] } },
-          "photos": { photo_id: { "count": int, "face_ids": [str, ...] } },
-          "others": [ { "external_image_id": str, "face_id": str } ]
-        }
-        """
+        """DB-driven snapshot: reads from photo_faces + user_events tables instead of ListFaces."""
         coll_id = self._collection_id(event_id)
+        session = SessionLocal()
         try:
-            self.ensure_collection(event_id)
-        except Exception:
-            # Si la collection n'existe pas et ne peut pas être créée, retourner vide
+            # Photo faces from DB
+            pf_rows = session.query(PhotoFace).filter(PhotoFace.event_id == event_id).all()
+            photos: Dict[str, Dict[str, object]] = {}
+            for row in pf_rows:
+                key = str(row.photo_id)
+                if key not in photos:
+                    photos[key] = {"count": 0, "face_ids": []}
+                photos[key]["count"] = int(photos[key]["count"]) + 1
+                photos[key]["face_ids"].append(row.face_id)
+
+            # User faces from UserEvent.rekognition_face_id
+            ue_rows = session.query(UserEvent).filter(UserEvent.event_id == event_id).all()
+            users: Dict[str, Dict[str, object]] = {}
+            for ue in ue_rows:
+                if ue.rekognition_face_id:
+                    key = str(ue.user_id)
+                    users[key] = {"count": 1, "face_ids": [ue.rekognition_face_id]}
+
+            total = sum(int(v["count"]) for v in photos.values()) + sum(int(v["count"]) for v in users.values())
             return {
                 "collection_id": coll_id,
-                "total_faces": 0,
-                "users": {},
-                "photos": {},
-                "others": []
+                "total_faces": total,
+                "users": users,
+                "photos": photos,
+                "others": [],
             }
-
-        users: Dict[str, Dict[str, object]] = {}
-        photos: Dict[str, Dict[str, object]] = {}
-        others: List[Dict[str, str]] = []
-        total = 0
-
-        next_token = None
-        try:
-            while True:
-                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
-                if next_token:
-                    kwargs["NextToken"] = next_token
-                aws_metrics.inc('ListFaces')
-                resp = self.client.list_faces(**kwargs)
-                for f in (resp.get('Faces') or []):
-                    total += 1
-                    face_id = f.get('FaceId') or ''
-                    ext = (f.get('ExternalImageId') or '').strip()
-                    if ext.startswith('user:'):
-                        key = ext.split(':', 1)[1]
-                        if key not in users:
-                            users[key] = {"count": 0, "face_ids": []}
-                        users[key]["count"] = int(users[key]["count"]) + 1
-                        users[key]["face_ids"].append(face_id)
-                    elif ext.startswith('photo:'):
-                        key = ext.split(':', 1)[1]
-                        if key not in photos:
-                            photos[key] = {"count": 0, "face_ids": []}
-                        photos[key]["count"] = int(photos[key]["count"]) + 1
-                        photos[key]["face_ids"].append(face_id)
-                    elif ext.isdigit():
-                        # Legacy user id stocké en clair
-                        key = ext
-                        if key not in users:
-                            users[key] = {"count": 0, "face_ids": []}
-                        users[key]["count"] = int(users[key]["count"]) + 1
-                        users[key]["face_ids"].append(face_id)
-                    else:
-                        others.append({"external_image_id": ext, "face_id": face_id})
-                next_token = resp.get('NextToken')
-                if not next_token:
-                    break
-        except ClientError as e:
-            print(f"⚠️  list_faces error in snapshot: {e}")
-
-        return {
-            "collection_id": coll_id,
-            "total_faces": total,
-            "users": users,
-            "photos": photos,
-            "others": others,
-        }
+        except Exception as e:
+            print(f"[CollectionSnapshot] error: {e}")
+            return {"collection_id": coll_id, "total_faces": 0, "users": {}, "photos": {}, "others": []}
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
 
     def find_photo_matches_with_boxes(self, event_id: int, source_face_id: str, db: Session, limit: int = 10) -> List[Dict]:
         """Pour un FaceId donné (souvent un face utilisateur), retourne jusqu'à N photos
@@ -1812,36 +1742,11 @@ class AwsFaceRecognizer:
         if not best_for_photo:
             return []
 
-        # 3) Construire un index FaceId -> BoundingBox par un passage sur ListFaces
+        # 3) faceid_to_box is no longer available without ListFaces;
+        #    fast mode returns results without box, non-fast mode uses detect+crop.
         faceid_to_box: Dict[str, Dict[str, float]] = {}
-        next_token = None
-        try:
-            while True:
-                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
-                if next_token:
-                    kwargs["NextToken"] = next_token
-                aws_metrics.inc('ListFaces')
-                lf = self.client.list_faces(**kwargs)
-                for f in (lf.get('Faces') or []):
-                    ext = (f.get('ExternalImageId') or '').strip()
-                    if not ext.startswith('photo:'):
-                        continue
-                    fid = f.get('FaceId')
-                    bb = (f.get('BoundingBox') or {})
-                    if fid and bb:
-                        faceid_to_box[fid] = {
-                            'Left': float(bb.get('Left', 0.0)),
-                            'Top': float(bb.get('Top', 0.0)),
-                            'Width': float(bb.get('Width', 0.0)),
-                            'Height': float(bb.get('Height', 0.0)),
-                        }
-                next_token = lf.get('NextToken')
-                if not next_token:
-                    break
-        except ClientError as e:
-            print(f"⚠️  ListFaces error while building faceid_to_box: {e}")
 
-        # 4) Assembler résultats en recalculant la box et la similarité via SearchFacesByImage (crop)
+        # 4) Assembler résultats
         pairs = list(best_for_photo.items())  # [(pid, (pfid, sim_float))]
         # Tri par similarité selon l'ordre demandé (asc = plus faibles d'abord)
         try:
@@ -2234,124 +2139,60 @@ class AwsFaceRecognizer:
         }
 
     def purge_collection_to_event(self, event_id: int, db: Session) -> Dict:
-        """Purge la collection de l'événement pour ne garder que les faces pertinentes:
-        - photo:{photo_id} où photo_id ∈ photos(event_id)
-        - user:{user_id} où user_id ∈ users(event_id)
-        Retour: { deleted: int, kept: int }
+        """DB-driven purge: deletes PhotoFace rows for photos no longer in the event.
+
+        Also deletes the corresponding Rekognition faces.
         """
         self.ensure_collection(event_id)
         coll_id = self._collection_id(event_id)
-        # Construire les ensembles autorisés
-        photo_ids = set(int(x) for (x,) in db.query(Photo.id).filter(Photo.event_id == event_id).all())
-        user_ids = set(int(x) for (x,) in db.query(UserEvent.user_id).filter(UserEvent.event_id == event_id).all())
+        valid_photo_ids = set(int(x) for (x,) in db.query(Photo.id).filter(Photo.event_id == event_id).all())
 
+        session = SessionLocal()
         deleted = 0
         kept = 0
-        next_token = None
         try:
-            while True:
-                kwargs = {"CollectionId": coll_id, "MaxResults": 1000}
-                if next_token:
-                    kwargs["NextToken"] = next_token
-                aws_metrics.inc('ListFaces')
-                resp = self.client.list_faces(**kwargs)
-                to_delete: List[str] = []
-                for f in (resp.get('Faces') or []):
-                    ext = (f.get('ExternalImageId') or '').strip()
-                    fid = f.get('FaceId')
-                    if not fid:
-                        continue
-                    ok = False
-                    if ext.startswith('photo:'):
-                        try:
-                            pid = int(ext.split(':', 1)[1])
-                        except Exception:
-                            pid = None
-                        ok = (pid is not None and pid in photo_ids)
-                    elif ext.startswith('user:'):
-                        try:
-                            uid = int(ext.split(':', 1)[1])
-                        except Exception:
-                            uid = None
-                        ok = (uid is not None and uid in user_ids)
-                    elif ext.isdigit():
-                        # legacy user id
-                        try:
-                            uid = int(ext)
-                        except Exception:
-                            uid = None
-                        ok = (uid is not None and uid in user_ids)
-                    else:
-                        ok = False
-                    if not ok:
-                        to_delete.append(fid)
-                    else:
-                        kept += 1
-                if to_delete:
-                    try:
-                        aws_metrics.inc('DeleteFaces')
-                        self.client.delete_faces(CollectionId=coll_id, FaceIds=to_delete)
-                        deleted += len(to_delete)
-                    except ClientError:
-                        pass
-                next_token = resp.get('NextToken')
-                if not next_token:
-                    break
-        except ClientError as e:
-            print(f"[Purge] list/delete error: {e}")
-        return { 'deleted': deleted, 'kept': kept }
+            all_pf = session.query(PhotoFace).filter(PhotoFace.event_id == event_id).all()
+            stale_face_ids: List[str] = []
+            stale_pf_ids: List[int] = []
+            for pf in all_pf:
+                if pf.photo_id not in valid_photo_ids:
+                    stale_face_ids.append(pf.face_id)
+                    stale_pf_ids.append(pf.id)
+                else:
+                    kept += 1
+            # Delete from Rekognition
+            for i in range(0, len(stale_face_ids), 1000):
+                chunk = stale_face_ids[i:i + 1000]
+                try:
+                    aws_metrics.inc('DeleteFaces')
+                    self.client.delete_faces(CollectionId=coll_id, FaceIds=chunk)
+                    deleted += len(chunk)
+                except ClientError:
+                    pass
+            # Delete from DB
+            if stale_pf_ids:
+                session.query(PhotoFace).filter(PhotoFace.id.in_(stale_pf_ids)).delete(synchronize_session=False)
+                session.commit()
+        except Exception as e:
+            print(f"[Purge] error: {e}")
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+        return {"deleted": deleted, "kept": kept}
 
-    # ---------- Auto-purge helpers ----------
     def _maybe_purge_collection(self, event_id: int, db: Session) -> None:
-        """Purge automatiquement si la collection contient des faces hors-événement.
-        Heuristique: on inspecte jusqu'à 1000 faces; si au moins une invalide, purge complète.
-        Contrôlable via env AWS_REKOGNITION_PURGE_AUTO (true/false)."""
+        """DB-driven auto-purge (no ListFaces). Only runs if AWS_REKOGNITION_PURGE_AUTO is true."""
         try:
-            auto = os.environ.get("AWS_REKOGNITION_PURGE_AUTO", "true").strip().lower() not in {"false", "0", "no"}
+            auto = os.environ.get("AWS_REKOGNITION_PURGE_AUTO", "false").strip().lower() in {"1", "true", "yes"}
             if not auto:
                 return
-            self.ensure_collection(event_id)
-            coll_id = self._collection_id(event_id)
-            allowed_photo_ids = set(int(x) for (x,) in db.query(Photo.id).filter(Photo.event_id == event_id).all())
-            allowed_user_ids = set(int(x) for (x,) in db.query(UserEvent.user_id).filter(UserEvent.event_id == event_id).all())
-            # Inspecter une page (1000)
-            aws_metrics.inc('ListFaces')
-            resp = self.client.list_faces(CollectionId=coll_id, MaxResults=1000)
-            invalid_found = False
-            for f in (resp.get('Faces') or []):
-                ext = (f.get('ExternalImageId') or '').strip()
-                if ext.startswith('photo:'):
-                    try:
-                        pid = int(ext.split(':', 1)[1])
-                    except Exception:
-                        pid = None
-                    if (pid is None) or (pid not in allowed_photo_ids):
-                        invalid_found = True
-                        break
-                elif ext.startswith('user:'):
-                    try:
-                        uid = int(ext.split(':', 1)[1])
-                    except Exception:
-                        uid = None
-                    if (uid is None) or (uid not in allowed_user_ids):
-                        invalid_found = True
-                        break
-                elif ext.isdigit():
-                    try:
-                        uid = int(ext)
-                    except Exception:
-                        uid = None
-                    if (uid is None) or (uid not in allowed_user_ids):
-                        invalid_found = True
-                        break
-                else:
-                    # inconnu
-                    invalid_found = True
-                    break
-            if invalid_found:
-                self.purge_collection_to_event(event_id, db)
-        except ClientError as _e:
-            print(f"[AutoPurge] AWS error: {_e}")
+            self.purge_collection_to_event(event_id, db)
         except Exception as _e:
             print(f"[AutoPurge] error: {_e}")
 
