@@ -1933,13 +1933,20 @@ def _selfie_iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def _selfie_merge_faces(face_locations):
-    """Supprime doublons Haar et petits faux positifs via IoU.
+def _selfie_merge_faces(face_locations,
+                        iou_duplicate: float = 0.45,
+                        min_area_ratio: float = 0.30):
+    """NMS léger pour supprimer doublons Haar et petits faux positifs.
 
-    - Garde la face principale (plus grande aire).
-    - Élimine si IoU avec principale > 0.30 (doublon même visage).
-    - Élimine si aire < 0.30 * aire_principale (petit faux positif).
-    - Retourne la liste nettoyée.
+    Algorithme :
+    - Trier par aire décroissante.
+    - kept[] construit itérativement : on rejette un candidat si :
+        * son aire < min_area_ratio * aire_principale  (petit faux positif)
+        * IoU avec n'importe quel rect déjà gardé > iou_duplicate (doublon)
+    - Retourne la liste kept (faces "indépendantes" restantes).
+
+    iou_duplicate et min_area_ratio sont passés explicitement pour les tests
+    mais valent par défaut les mêmes valeurs que les env (0.45 / 0.30).
     """
     if not face_locations:
         return []
@@ -1950,10 +1957,10 @@ def _selfie_merge_faces(face_locations):
         return [main_face]
     kept = [main_face]
     for face, area in areas[1:]:
-        if area < 0.30 * main_area:
+        if area < min_area_ratio * main_area:
             continue  # petit faux positif
-        if _selfie_iou(face, main_face) > 0.30:
-            continue  # doublon du visage principal
+        if any(_selfie_iou(face, k) > iou_duplicate for k in kept):
+            continue  # doublon d'un rect déjà gardé
         kept.append(face)
     return kept
 
@@ -1964,12 +1971,19 @@ def validate_selfie_image(image_bytes: bytes) -> dict:
     Retourne un dict de métriques (ignorable par les appelants existants).
     Lève HTTPException 400 si rejeté.
 
-    Règles :
-    - Aucun visage => 400
-    - Après merge IoU, ≥2 faces significatives => 400 (plusieurs personnes)
-    - Visage trop petit (< 0.8% image, < 44px) => 400
-    - Trop flou (Laplacian variance < SELFIE_MIN_SHARPNESS, défaut 40) => 400
-    - Trop sombre / surexposé / contraste nul => warning log uniquement
+    Variables d'environnement (toutes optionnelles) :
+      SELFIE_IOU_DUPLICATE            défaut 0.45  (seuil doublon NMS)
+      SELFIE_MIN_AREA_RATIO_TO_MAIN   défaut 0.30  (seuil petit faux positif)
+      SELFIE_SECOND_FACE_MIN_AREA_RATIO défaut 0.35 (2e face "réelle")
+      SELFIE_SECOND_FACE_MAX_IOU       défaut 0.20 (2e face "réelle")
+      SELFIE_DETECT_MIN_SIDE_RATIO    défaut 0.10  (minSize Haar)
+      SELFIE_DETECT_MIN_SIDE_ABS      défaut 60    (plancher minSize Haar)
+      SELFIE_MIN_SHARPNESS            défaut 25    (seuil flou souple)
+      SELFIE_MIN_SHARPNESS_HARD       défaut 18    (seuil flou dur)
+      SELFIE_MIN_FACE_RATIO_FOR_LOW_SHARPNESS défaut 0.012
+      SELFIE_MIN_BRIGHTNESS           défaut 30    (soft, log seulement)
+      SELFIE_MAX_BRIGHTNESS           défaut 225   (soft, log seulement)
+      SELFIE_MIN_CONTRAST             défaut 18    (soft, log seulement)
     """
     try:
         if not isinstance(image_bytes, (bytes, bytearray)):
@@ -1999,8 +2013,11 @@ def validate_selfie_image(image_bytes: bytes) -> dict:
         gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
         gray_eq = _cv2.equalizeHist(gray)
 
-        # minSize relatif (~12% du petit côté, plancher 60px)
-        min_side_detect = max(60, int(min(img_h, img_w) * 0.12))
+        # minSize relatif configurable (défaut 10% du petit côté, plancher 60px)
+        detect_ratio = float(os.environ.get("SELFIE_DETECT_MIN_SIDE_RATIO", "0.10"))
+        detect_abs   = int(os.environ.get("SELFIE_DETECT_MIN_SIDE_ABS", "60"))
+        min_side_detect = max(detect_abs, int(min(img_h, img_w) * detect_ratio))
+
         cascade = _cv2.CascadeClassifier(_cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         rects = cascade.detectMultiScale(
             gray_eq, scaleFactor=1.1, minNeighbors=7,
@@ -2015,53 +2032,89 @@ def validate_selfie_image(image_bytes: bytes) -> dict:
         if not face_locations:
             raise HTTPException(status_code=400, detail="Aucun visage détecté. Veuillez envoyer un selfie clair de votre visage.")
 
-        # Merge IoU : supprimer doublons et petits faux positifs
-        merged = _selfie_merge_faces(face_locations)
-        merged_count = len(merged)
+        # Lire les seuils NMS depuis l'env
+        iou_dup      = float(os.environ.get("SELFIE_IOU_DUPLICATE", "0.45"))
+        area_ratio   = float(os.environ.get("SELFIE_MIN_AREA_RATIO_TO_MAIN", "0.30"))
 
-        # Rejet multi-visage uniquement si ≥2 faces significatives après merge
+        # NMS léger : supprimer doublons et petits faux positifs
+        nms_kept = _selfie_merge_faces(face_locations, iou_duplicate=iou_dup, min_area_ratio=area_ratio)
+        nms_count = len(nms_kept)
+
+        # Seuils "2e face réelle"
+        sec_area_ratio = float(os.environ.get("SELFIE_SECOND_FACE_MIN_AREA_RATIO", "0.35"))
+        sec_max_iou    = float(os.environ.get("SELFIE_SECOND_FACE_MAX_IOU", "0.20"))
+
+        # Compter les faces "réellement distinctes" après NMS
+        main_face = nms_kept[0]
+        main_area_val = max(0, main_face[1] - main_face[3]) * max(0, main_face[2] - main_face[0])
+        real_faces = [main_face]
+        for face in nms_kept[1:]:
+            face_area_val = max(0, face[1] - face[3]) * max(0, face[2] - face[0])
+            is_real = (
+                face_area_val >= sec_area_ratio * main_area_val
+                and _selfie_iou(face, main_face) < sec_max_iou
+            )
+            if is_real:
+                real_faces.append(face)
+
+        merged_count = len(real_faces)
+        print(f"[SelfieValidation] nms_kept={nms_count} real_faces={merged_count}")
+
         if merged_count >= 2:
             raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Assurez-vous d'être seul sur le selfie.")
 
-        top, right, bottom, left = merged[0]
-        face_width = max(0, right - left)
+        top, right, bottom, left = real_faces[0]
+        face_width  = max(0, right - left)
         face_height = max(0, bottom - top)
-        face_area = face_width * face_height
-        img_area = img_h * img_w
-        face_ratio = face_area / img_area if img_area > 0 else 0.0
+        face_area   = face_width * face_height
+        img_area    = img_h * img_w
+        face_ratio  = face_area / img_area if img_area > 0 else 0.0
 
         min_abs_area = 5000
         min_rel_ratio = 0.008
         min_face_area = max(min_abs_area, int(img_area * min_rel_ratio))
         min_face_side = 44
 
-        print(f"[SelfieValidation] merged={merged_count} face={face_width}x{face_height} area={face_area} ratio={face_ratio:.3f} min_area={min_face_area}")
+        print(f"[SelfieValidation] face={face_width}x{face_height} area={face_area} ratio={face_ratio:.3f}")
 
         if face_area < min_face_area or face_width < min_face_side or face_height < min_face_side:
             raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil.")
 
         # Qualité : netteté Laplacian sur ROI visage
-        sharpness = None
-        brightness = None
-        contrast = None
+        sharpness       = None
+        brightness      = None
+        contrast        = None
         quality_warnings = []
 
         roi = gray[top:bottom, left:right]
         if roi.size > 0 and face_width >= 32 and face_height >= 32:
             sharpness = round(float(_cv2.Laplacian(roi, _cv2.CV_64F).var()), 1)
-            min_sharpness = float(os.environ.get("SELFIE_MIN_SHARPNESS", "40"))
-            if sharpness < min_sharpness:
+
+            sharp_soft = float(os.environ.get("SELFIE_MIN_SHARPNESS", "25"))
+            sharp_hard = float(os.environ.get("SELFIE_MIN_SHARPNESS_HARD", "18"))
+            sharp_ratio_threshold = float(os.environ.get("SELFIE_MIN_FACE_RATIO_FOR_LOW_SHARPNESS", "0.012"))
+
+            if sharpness < sharp_hard:
+                # Photo vraiment floue : rejet inconditionnel
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Selfie trop flou (netteté={sharpness:.0f}). Veuillez prendre une photo plus nette."
+                    detail=f"Selfie trop flou (nettete={sharpness:.0f}). Veuillez prendre une photo plus nette."
                 )
+            elif sharpness < sharp_soft:
+                # Légèrement flou : toléré uniquement si le visage est assez grand
+                if face_ratio < sharp_ratio_threshold:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Selfie trop flou (nettete={sharpness:.0f}). Approchez-vous ou reprenez une photo plus nette."
+                    )
+
             # Luminosité / contraste — seuils souples, log seulement
             brightness = round(float(roi.mean()), 1)
-            contrast = round(float(roi.std()), 1)
+            contrast   = round(float(roi.std()), 1)
             if brightness < float(os.environ.get("SELFIE_MIN_BRIGHTNESS", "30")):
                 quality_warnings.append("image trop sombre")
             if brightness > float(os.environ.get("SELFIE_MAX_BRIGHTNESS", "225")):
-                quality_warnings.append("image surexposée")
+                quality_warnings.append("image surexposee")
             if contrast < float(os.environ.get("SELFIE_MIN_CONTRAST", "18")):
                 quality_warnings.append("contraste faible")
             if quality_warnings:
@@ -2071,6 +2124,7 @@ def validate_selfie_image(image_bytes: bytes) -> dict:
             "img_w": img_w,
             "img_h": img_h,
             "raw_rects": raw_count,
+            "nms_kept": nms_count,
             "merged_faces": merged_count,
             "face_area": face_area,
             "face_ratio": round(face_ratio, 4),
@@ -2078,6 +2132,15 @@ def validate_selfie_image(image_bytes: bytes) -> dict:
             "brightness": brightness,
             "contrast": contrast,
             "quality_warnings": quality_warnings,
+            "thresholds": {
+                "iou_duplicate": iou_dup,
+                "min_area_ratio": area_ratio,
+                "sec_area_ratio": sec_area_ratio,
+                "sec_max_iou": sec_max_iou,
+                "min_side_detect": min_side_detect,
+                "sharp_soft": float(os.environ.get("SELFIE_MIN_SHARPNESS", "25")),
+                "sharp_hard": float(os.environ.get("SELFIE_MIN_SHARPNESS_HARD", "18")),
+            },
         }
         return metrics
 
