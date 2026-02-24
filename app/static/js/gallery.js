@@ -558,9 +558,8 @@ class ModernGallery {
             const dx = clientX - this.touchStartX;
             const dy = clientY - this.touchStartY;
 
-            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+            if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 30) {
                 this.touchMoved = true;
-                // Only prevent default for horizontal swipes (navigation)
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
             }
         };

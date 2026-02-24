@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Recognition App</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Neonderthaw&family=Great+Vibes&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/gallery.css">
@@ -62,6 +62,11 @@
             width: 100%;
             max-width: 100%;
             overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        a, button, .btn, .tab, .hamburger-btn, .menu-item, input[type="submit"] {
+            touch-action: manipulation;
         }
 
         body {
@@ -75,9 +80,9 @@
             width: 100%;
             max-width: 100%;
             overflow-x: hidden;
+            overflow-y: auto;
             overscroll-behavior-x: none;
-            overscroll-behavior-y: contain;
-            touch-action: manipulation;
+            -webkit-overflow-scrolling: touch;
         }
 
         .container {
@@ -3365,8 +3370,9 @@
             }, delays[attempt] || 3000);
         }
 
+        let profileSelfieFileReady = null;
+
         function showSelfieUploadInProfile() {
-            // Créer un modal pour l'upload de selfie
             const modal = document.createElement('div');
             modal.className = 'modal-overlay active';
             modal.innerHTML = `
@@ -3378,10 +3384,14 @@
                     <div class="card">
                         <div id="profileSelfieModalError" class="selfie-validation error" style="display:none;"></div>
                         <h4>Sélectionner un nouveau selfie</h4>
-                        <div class="file-input-wrapper">
-                            <input type="file" id="profileSelfieFile" accept="image/*">
-                            <label for="profileSelfieFile">
-                                📸 Cliquez ici pour sélectionner un nouveau selfie
+                        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                            <input type="file" id="profileSelfieCamera" accept="image/*" capture="user" style="display: none;">
+                            <label for="profileSelfieCamera" class="btn btn-primary" style="margin: 0; cursor: pointer; text-align: center;">
+                                📸 Prendre une photo
+                            </label>
+                            <input type="file" id="profileSelfieGallery" accept="image/*" style="display: none;">
+                            <label for="profileSelfieGallery" class="btn btn-secondary" style="margin: 0; cursor: pointer; text-align: center;">
+                                🖼️ Choisir depuis la galerie
                             </label>
                         </div>
                         <img id="profileSelfiePreview" class="selfie-preview" alt="Aperçu du selfie" style="display: none;">
@@ -3397,26 +3407,38 @@
             `;
             document.body.appendChild(modal);
             
-            // Aperçu du selfie
+            async function handleProfileSelfieFile(e) {
+                const errBox = document.getElementById('profileSelfieModalError');
+                if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+                let file = e.target.files[0];
+                if (!file) return;
+                if (!file.type.startsWith('image/')) {
+                    showAlert('Format non supporté', 'error');
+                    return;
+                }
+                const COMPRESS_THRESHOLD = 3 * 1024 * 1024;
+                if (file.size > COMPRESS_THRESHOLD) {
+                    try { file = await compressImage(file); } catch (err) { console.error('Compression failed:', err); }
+                }
+                profileSelfieFileReady = file;
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const preview = document.getElementById('profileSelfiePreview');
+                    if (preview) { preview.src = ev.target.result; preview.style.display = 'block'; }
+                };
+                reader.readAsDataURL(file);
+            }
+
             setTimeout(() => {
-                document.getElementById('profileSelfieFile').addEventListener('change', function(e) {
-                    const errBox = document.getElementById('profileSelfieModalError');
-                    if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
-                    const file = e.target.files[0];
-                    if (file) {
-                        const reader = new FileReader();
-                        reader.onload = function(e) {
-                            const preview = document.getElementById('profileSelfiePreview');
-                            preview.src = e.target.result;
-                            preview.style.display = 'block';
-                        };
-                        reader.readAsDataURL(file);
-                    }
-                });
+                const cam = document.getElementById('profileSelfieCamera');
+                const gal = document.getElementById('profileSelfieGallery');
+                if (cam) cam.addEventListener('change', handleProfileSelfieFile);
+                if (gal) gal.addEventListener('change', handleProfileSelfieFile);
             }, 100);
         }
 
         function closeProfileSelfieModal() {
+            profileSelfieFileReady = null;
             const modal = document.querySelector('.modal-overlay.active');
             try { if (selfieUpdateController) { selfieUpdateController.abort(); } } catch {}
             selfieUpdateController = null;
@@ -3427,7 +3449,7 @@
 
         async function updateProfileSelfie() {
             if (navigator.vibrate) { try { navigator.vibrate(10); } catch {} }
-            const selfieFile = document.getElementById('profileSelfieFile').files[0];
+            const selfieFile = profileSelfieFileReady;
             
             if (!selfieFile) {
                 showAlert('Veuillez sélectionner un selfie', 'error');
@@ -3737,11 +3759,17 @@
                                 </div>
                             </div>
                             <div class="upload-section">
-                                <input type="file" id="newSelfieInput" accept="image/*" style="display: none;" onchange="previewNewSelfie(this)">
-                                <button class="btn btn-secondary" onclick="document.getElementById('newSelfieInput').click()" id="choosePhotoBtn">
-                                    📷 Choisir une nouvelle photo
-                                </button>
-                                <p class="upload-hint">Format recommandé: JPG, PNG. Taille max: 5MB</p>
+                                <input type="file" id="newSelfieCamera" accept="image/*" capture="user" style="display: none;" onchange="previewNewSelfie(this)">
+                                <input type="file" id="newSelfieGallery" accept="image/*" style="display: none;" onchange="previewNewSelfie(this)">
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    <button class="btn btn-primary" onclick="document.getElementById('newSelfieCamera').click()" id="takePhotoBtn">
+                                        📸 Prendre une photo
+                                    </button>
+                                    <button class="btn btn-secondary" onclick="document.getElementById('newSelfieGallery').click()" id="choosePhotoBtn">
+                                        🖼️ Choisir depuis la galerie
+                                    </button>
+                                </div>
+                                <p class="upload-hint">Format recommandé: JPG, PNG</p>
                             </div>
                             <div class="modal-actions">
                                 <button class="btn btn-secondary" onclick="closeSelfieModal()">Annuler</button>
@@ -3761,8 +3789,10 @@
             // S'assurer que l'état est propre à l'ouverture
             const errBox = document.getElementById('selfieModalError');
             if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
-            const newSelfieInput = document.getElementById('newSelfieInput');
-            if (newSelfieInput) newSelfieInput.value = '';
+            const newSelfieCamera = document.getElementById('newSelfieCamera');
+            const newSelfieGallery = document.getElementById('newSelfieGallery');
+            if (newSelfieCamera) newSelfieCamera.value = '';
+            if (newSelfieGallery) newSelfieGallery.value = '';
             const newImageBadge = document.getElementById('newImageBadge');
             if (newImageBadge) newImageBadge.style.display = 'none';
             const updateBtn = document.getElementById('updateSelfieBtn');
@@ -3791,14 +3821,19 @@
             }
         }
 
+        let selfieFileReady = null;
+
         function resetSelfieModal() {
-            const newSelfieInput = document.getElementById('newSelfieInput');
+            selfieFileReady = null;
+            const newSelfieCamera = document.getElementById('newSelfieCamera');
+            const newSelfieGallery = document.getElementById('newSelfieGallery');
             const newImageBadge = document.getElementById('newImageBadge');
             const updateBtn = document.getElementById('updateSelfieBtn');
             const chooseBtn = document.getElementById('choosePhotoBtn');
             const errBox = document.getElementById('selfieModalError');
 
-            if (newSelfieInput) newSelfieInput.value = '';
+            if (newSelfieCamera) newSelfieCamera.value = '';
+            if (newSelfieGallery) newSelfieGallery.value = '';
             if (newImageBadge) newImageBadge.style.display = 'none';
             if (updateBtn) {
                 updateBtn.disabled = true;
@@ -3812,34 +3847,84 @@
                 }
                 if (spinner) { spinner.style.display = 'none'; }
             }
-            if (chooseBtn) chooseBtn.textContent = '📷 Choisir une nouvelle photo';
+            if (chooseBtn) chooseBtn.textContent = '🖼️ Choisir depuis la galerie';
             if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
             
             // Recharger le selfie actuel
             loadCurrentSelfie();
         }
 
-        function previewNewSelfie(input) {
+        /**
+         * Compress an image file client-side: resize to maxDim and re-encode as JPEG.
+         * Returns a Promise<File> with the compressed result.
+         */
+        function compressImage(file, { maxDim = 1920, quality = 0.8 } = {}) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = function() {
+                    try {
+                        let w = img.naturalWidth;
+                        let h = img.naturalHeight;
+                        if (w > maxDim || h > maxDim) {
+                            const ratio = Math.min(maxDim / w, maxDim / h);
+                            w = Math.round(w * ratio);
+                            h = Math.round(h * ratio);
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        canvas.toBlob(function(blob) {
+                            if (!blob) { reject(new Error('Compression échouée')); return; }
+                            const compressed = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), {
+                                type: 'image/jpeg',
+                                lastModified: Date.now()
+                            });
+                            resolve(compressed);
+                        }, 'image/jpeg', quality);
+                    } catch (e) { reject(e); }
+                };
+                img.onerror = () => reject(new Error('Impossible de lire l\'image'));
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        async function previewNewSelfie(input) {
             const file = input.files[0];
             if (!file) return;
 
-            // Clear previous error in main selfie modal when a new file is picked
             const errBox = document.getElementById('selfieModalError');
             if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
 
-            // Validation du fichier
-            if (file.size > 5 * 1024 * 1024) {
-                showAlert('La taille du fichier ne doit pas dépasser 5MB', 'error');
-                input.value = '';
-                return;
-            }
-
-            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
-            if (!allowedTypes.includes(file.type)) {
+            if (!file.type.startsWith('image/')) {
                 showAlert('Format de fichier non supporté. Utilisez JPG ou PNG', 'error');
                 input.value = '';
                 return;
             }
+
+            const MAX_RAW = 20 * 1024 * 1024;
+            if (file.size > MAX_RAW) {
+                showAlert('Le fichier est trop volumineux (maximum 20 MB avant compression)', 'error');
+                input.value = '';
+                return;
+            }
+
+            let fileToUse = file;
+            const COMPRESS_THRESHOLD = 3 * 1024 * 1024;
+            if (file.size > COMPRESS_THRESHOLD) {
+                try {
+                    showAlert('Compression de l\'image en cours...', 'info');
+                    fileToUse = await compressImage(file);
+                    const savedPct = Math.round((1 - fileToUse.size / file.size) * 100);
+                    showAlert(`Image compressée (${(fileToUse.size / 1024 / 1024).toFixed(1)} MB, -${savedPct}%)`, 'success');
+                } catch (e) {
+                    console.error('Compression failed, using original:', e);
+                    fileToUse = file;
+                }
+            }
+
+            selfieFileReady = fileToUse;
 
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -3848,12 +3933,9 @@
                 const updateBtn = document.getElementById('updateSelfieBtn');
                 const noSelfieText = document.getElementById('noSelfieText');
 
-                // Remplacer l'image affichée par la nouvelle
                 if (displayedSelfie) {
                     displayedSelfie.src = e.target.result;
                     displayedSelfie.style.display = 'block';
-                    
-                    // Animation de remplacement
                     displayedSelfie.style.opacity = '0';
                     displayedSelfie.style.transform = 'scale(0.9)';
                     setTimeout(() => {
@@ -3870,7 +3952,7 @@
                     updateBtn.querySelector('.btn-text').textContent = 'Mettre à jour';
                 }
             };
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(fileToUse);
         }
 
 
@@ -3898,60 +3980,30 @@
             }
         }
 
-        function updateSelfie() {
-            const fileInput = document.getElementById('newSelfieInput');
-            const file = fileInput.files[0];
+        async function updateSelfie() {
+            const file = selfieFileReady;
             
             if (!file) {
                 showAlert('Veuillez sélectionner une photo', 'error');
                 return;
             }
 
-            // Validation du fichier
-            if (file.size > 5 * 1024 * 1024) {
-                showAlert('La taille du fichier ne doit pas dépasser 5MB', 'error');
-                return;
-            }
-
-            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
-            if (!allowedTypes.includes(file.type)) {
+            if (!file.type.startsWith('image/')) {
                 showAlert('Format de fichier non supporté. Utilisez JPG ou PNG', 'error');
                 return;
             }
 
-            // Validation du selfie avec face_recognition
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                const img = new Image();
-                img.onload = async function() {
-                    try {
-                        // Créer un canvas pour redimensionner l'image
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        ctx.drawImage(img, 0, 0);
-                        
-                        // Convertir en base64
-                        const base64Data = canvas.toDataURL('image/jpeg', 0.8);
-                        
-                        // Validation côté client (simulation)
-                        const hasFace = await validateSelfieClient(file);
-                        if (!hasFace) {
-                            showAlert('Aucun visage détecté ou plusieurs visages détectés. Veuillez prendre une photo avec un seul visage clairement visible.', 'error');
-                            return;
-                        }
-
-                        // Envoyer au serveur
-                        await uploadNewSelfie(file);
-                    } catch (error) {
-                        console.error('Erreur lors de la validation:', error);
-                        showAlert('Erreur lors de la validation de la photo', 'error');
-                    }
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
+            try {
+                const hasFace = await validateSelfieClient(file);
+                if (!hasFace) {
+                    showAlert('Aucun visage détecté ou plusieurs visages détectés. Veuillez prendre une photo avec un seul visage clairement visible.', 'error');
+                    return;
+                }
+                await uploadNewSelfie(file);
+            } catch (error) {
+                console.error('Erreur lors de la validation:', error);
+                showAlert('Erreur lors de la validation de la photo', 'error');
+            }
         }
 
         async function validateSelfieClient(file) {

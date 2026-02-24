@@ -713,18 +713,52 @@
             document.getElementById('selfieSection').classList.remove('active');
         }
 
-        // Android camera capture: Handle file selection from both camera and gallery inputs
-        function handleSelfieSelection(e) {
-            const file = e.target.files[0];
+        function compressImage(file, { maxDim = 1920, quality = 0.8 } = {}) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = function() {
+                    try {
+                        let w = img.naturalWidth, h = img.naturalHeight;
+                        if (w > maxDim || h > maxDim) {
+                            const ratio = Math.min(maxDim / w, maxDim / h);
+                            w = Math.round(w * ratio);
+                            h = Math.round(h * ratio);
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w; canvas.height = h;
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        canvas.toBlob(function(blob) {
+                            if (!blob) { reject(new Error('Compression échouée')); return; }
+                            resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg', lastModified: Date.now() }));
+                        }, 'image/jpeg', quality);
+                    } catch (e) { reject(e); }
+                };
+                img.onerror = () => reject(new Error('Impossible de lire l\'image'));
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        async function handleSelfieSelection(e) {
+            let file = e.target.files[0];
             if (file) {
+                if (!file.type.startsWith('image/')) {
+                    showAlert('Format non supporté', 'error');
+                    return;
+                }
+                const COMPRESS_THRESHOLD = 3 * 1024 * 1024;
+                if (file.size > COMPRESS_THRESHOLD) {
+                    try {
+                        file = await compressImage(file);
+                    } catch (err) {
+                        console.error('Compression failed, using original:', err);
+                    }
+                }
                 selfieFile = file;
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = function(ev) {
                     const preview = document.getElementById('selfiePreview');
-                    preview.src = e.target.result;
+                    preview.src = ev.target.result;
                     preview.style.display = 'block';
-                    
-                    // Valider le selfie
                     validateSelfie(file);
                 };
                 reader.readAsDataURL(file);
@@ -747,14 +781,13 @@
             validation.style.display = 'none';
             registerBtn.disabled = true;
 
-            // Validation locale légère (taille fichier)
             const fileSizeMB = file.size / (1024 * 1024);
-            if (fileSizeMB > 5) {
+            if (fileSizeMB > 15) {
                 loading.style.display = 'none';
                 validation.style.display = 'block';
                 validation.className = 'selfie-validation error';
                 validationIcon.textContent = '❌';
-                validationMessage.textContent = 'Le fichier est trop volumineux (max 5MB)';
+                validationMessage.textContent = 'Le fichier est trop volumineux (max 15MB)';
                 selfieValidated = false;
                 return;
             }

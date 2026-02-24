@@ -2499,16 +2499,16 @@ async def register(
             detail="Le fichier doit +�tre une image"
         )
     
-    # V+�rifier la taille du fichier (max 5MB)
+    # Vérifier la taille du fichier (max 15MB)
     file_size = 0
     file_data = b""
     for chunk in selfie.file:
         file_data += chunk
         file_size += len(chunk)
-        if file_size > 5 * 1024 * 1024:  # 5MB
+        if file_size > 15 * 1024 * 1024:  # 15MB
             raise HTTPException(
                 status_code=400,
-                detail="Le fichier est trop volumineux (maximum 5MB)"
+                detail=f"Le fichier est trop volumineux ({file_size // (1024*1024)}MB, maximum 15MB)"
             )
     
     # Vérifier le selfie avec la reconnaissance faciale (qualité stricte)
@@ -2859,8 +2859,8 @@ async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = F
     if not file or not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     file_bytes = await file.read()
-    if len(file_bytes) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Le fichier est trop volumineux (maximum 5MB)")
+    if len(file_bytes) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"Le fichier est trop volumineux ({len(file_bytes) // (1024*1024)}MB, maximum 15MB)")
 
     try:
         validate_selfie_image(file_bytes)
@@ -3304,8 +3304,8 @@ async def upload_selfie(
     logger.info(f"[PERF][upload-selfie] req_id={req_id} read file took {time.time() - _t_read:.3f}s size={len(file_data)}")
     
     # Validation rapide : taille maximale
-    if len(file_data) > 10 * 1024 * 1024:  # 10MB max
-        raise HTTPException(status_code=400, detail="Image trop volumineuse (maximum 10MB)")
+    if len(file_data) > 15 * 1024 * 1024:  # 15MB max
+        raise HTTPException(status_code=400, detail=f"Image trop volumineuse ({len(file_data) // (1024*1024)}MB, maximum 15MB)")
     
     # Validation rapide : format d'image valide
     try:
