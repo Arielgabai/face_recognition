@@ -1918,92 +1918,175 @@ def compress_selfie_for_storage(image_bytes: bytes, max_size_kb: int = 200) -> b
     return compressed
 
 
-def validate_selfie_image(image_bytes: bytes) -> None:
-    """Valide qu'un selfie contient exactement un visage exploitable.
+def _selfie_iou(a, b) -> float:
+    """IoU entre deux faces (top, right, bottom, left)."""
+    ay1, ax2, ay2, ax1 = a
+    by1, bx2, by2, bx1 = b
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
 
-    Utilise uniquement OpenCV/Haar Cascade (pas de dépendance à face_recognition/dlib).
-    
-    - Rejette si aucun visage n'est détecté
-    - Rejette si plusieurs visages sont détectés
-    - Rejette si le visage détecté est trop petit (qualité insuffisante)
+
+def _selfie_merge_faces(face_locations):
+    """Supprime doublons Haar et petits faux positifs via IoU.
+
+    - Garde la face principale (plus grande aire).
+    - Élimine si IoU avec principale > 0.30 (doublon même visage).
+    - Élimine si aire < 0.30 * aire_principale (petit faux positif).
+    - Retourne la liste nettoyée.
+    """
+    if not face_locations:
+        return []
+    areas = [(f, max(0, f[1] - f[3]) * max(0, f[2] - f[0])) for f in face_locations]
+    areas.sort(key=lambda x: -x[1])
+    main_face, main_area = areas[0]
+    if len(areas) == 1:
+        return [main_face]
+    kept = [main_face]
+    for face, area in areas[1:]:
+        if area < 0.30 * main_area:
+            continue  # petit faux positif
+        if _selfie_iou(face, main_face) > 0.30:
+            continue  # doublon du visage principal
+        kept.append(face)
+    return kept
+
+
+def validate_selfie_image(image_bytes: bytes) -> dict:
+    """Valide qu'un selfie contient un visage principal exploitable.
+
+    Retourne un dict de métriques (ignorable par les appelants existants).
+    Lève HTTPException 400 si rejeté.
+
+    Règles :
+    - Aucun visage => 400
+    - Après merge IoU, ≥2 faces significatives => 400 (plusieurs personnes)
+    - Visage trop petit (< 0.8% image, < 44px) => 400
+    - Trop flou (Laplacian variance < SELFIE_MIN_SHARPNESS, défaut 40) => 400
+    - Trop sombre / surexposé / contraste nul => warning log uniquement
     """
     try:
-        # Forcer conversion bytes
         if not isinstance(image_bytes, (bytes, bytearray)):
             image_bytes = bytes(image_bytes)
 
-        # Charger via PIL et réduire pour limiter la RAM
         from PIL import Image, ImageOps
         import io as _io
         import numpy as _np
         import cv2 as _cv2
-        
+
         pil_img = Image.open(_io.BytesIO(image_bytes))
         pil_img = ImageOps.exif_transpose(pil_img)
-        if pil_img.mode not in ("RGB", "L"):
+        if pil_img.mode != "RGB":
             pil_img = pil_img.convert("RGB")
-        
-        # Réduction à 800px pour performance
+
+        # Réduction à 800px
         max_dim = 800
         w, h = pil_img.size
         scale = min(1.0, max_dim / float(max(w, h)))
         if scale < 1.0:
             pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
 
-        # Vers numpy
         np_img = _np.array(pil_img)
-        img_h, img_w = (np_img.shape[0], np_img.shape[1])
+        img_h, img_w = np_img.shape[0], np_img.shape[1]
 
-        # Détection avec OpenCV Haar Cascade uniquement
+        # Preprocessing : équalisation histogramme pour stabiliser Haar
         gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
+        gray_eq = _cv2.equalizeHist(gray)
+
+        # minSize relatif (~12% du petit côté, plancher 60px)
+        min_side_detect = max(60, int(min(img_h, img_w) * 0.12))
         cascade = _cv2.CascadeClassifier(_cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        
-        # Détection multi-scale
-        rects = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
-        
-        # Convertir au format (top, right, bottom, left) pour compatibilité
-        face_locations = [(int(y), int(x+fw), int(y+fh), int(x)) for (x, y, fw, fh) in rects]
-        
-        print(f"[SelfieValidation] faces_detected={len(face_locations)} img_w={img_w} img_h={img_h}")
+        rects = cascade.detectMultiScale(
+            gray_eq, scaleFactor=1.1, minNeighbors=7,
+            minSize=(min_side_detect, min_side_detect)
+        )
 
-        if not face_locations or len(face_locations) == 0:
-            raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image. Veuillez envoyer un selfie clair de votre visage.")
-        
-        # Tolérance: si plusieurs visages mais un est très petit (< 15% du plus grand), ignorer
-        if len(face_locations) > 1:
-            areas = []
-            for (t, r, b, l) in face_locations:
-                w_ = max(0, r - l)
-                h_ = max(0, b - t)
-                areas.append(w_ * h_)
-            if areas:
-                max_area = max(areas)
-                filtered = [f for f, a in zip(face_locations, areas) if a >= 0.15 * max_area]
-                face_locations = filtered
-        
-        if len(face_locations) > 1:
-            raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Essayez de recadrer votre visage ou de vous isoler en arrière-plan.")
+        raw_count = int(len(rects)) if hasattr(rects, '__len__') else 0
+        face_locations = [(int(y), int(x + fw), int(y + fh), int(x)) for (x, y, fw, fh) in rects] if raw_count > 0 else []
 
-        # Taille minimale
-        top, right, bottom, left = face_locations[0]
+        print(f"[SelfieValidation] raw_rects={raw_count} img={img_w}x{img_h} min_side_detect={min_side_detect}")
+
+        if not face_locations:
+            raise HTTPException(status_code=400, detail="Aucun visage détecté. Veuillez envoyer un selfie clair de votre visage.")
+
+        # Merge IoU : supprimer doublons et petits faux positifs
+        merged = _selfie_merge_faces(face_locations)
+        merged_count = len(merged)
+
+        # Rejet multi-visage uniquement si ≥2 faces significatives après merge
+        if merged_count >= 2:
+            raise HTTPException(status_code=400, detail="Plusieurs visages détectés. Assurez-vous d'être seul sur le selfie.")
+
+        top, right, bottom, left = merged[0]
         face_width = max(0, right - left)
         face_height = max(0, bottom - top)
         face_area = face_width * face_height
+        img_area = img_h * img_w
+        face_ratio = face_area / img_area if img_area > 0 else 0.0
 
         min_abs_area = 5000
-        min_rel_ratio = 0.008  # 0.8%
-        min_face_area = max(min_abs_area, int((img_h * img_w) * min_rel_ratio))
-        min_side = 44
-        print(f"[SelfieValidation] face_w={face_width} face_h={face_height} face_area={face_area} thresholds: min_area={min_face_area} min_side={min_side}")
-        
-        if face_area < min_face_area or face_width < min_side or face_height < min_side:
-            raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil et assurez-vous que le visage est net.")
+        min_rel_ratio = 0.008
+        min_face_area = max(min_abs_area, int(img_area * min_rel_ratio))
+        min_face_side = 44
+
+        print(f"[SelfieValidation] merged={merged_count} face={face_width}x{face_height} area={face_area} ratio={face_ratio:.3f} min_area={min_face_area}")
+
+        if face_area < min_face_area or face_width < min_face_side or face_height < min_face_side:
+            raise HTTPException(status_code=400, detail="Visage trop petit. Approchez-vous de l'appareil.")
+
+        # Qualité : netteté Laplacian sur ROI visage
+        sharpness = None
+        brightness = None
+        contrast = None
+        quality_warnings = []
+
+        roi = gray[top:bottom, left:right]
+        if roi.size > 0 and face_width >= 32 and face_height >= 32:
+            sharpness = round(float(_cv2.Laplacian(roi, _cv2.CV_64F).var()), 1)
+            min_sharpness = float(os.environ.get("SELFIE_MIN_SHARPNESS", "40"))
+            if sharpness < min_sharpness:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Selfie trop flou (netteté={sharpness:.0f}). Veuillez prendre une photo plus nette."
+                )
+            # Luminosité / contraste — seuils souples, log seulement
+            brightness = round(float(roi.mean()), 1)
+            contrast = round(float(roi.std()), 1)
+            if brightness < float(os.environ.get("SELFIE_MIN_BRIGHTNESS", "30")):
+                quality_warnings.append("image trop sombre")
+            if brightness > float(os.environ.get("SELFIE_MAX_BRIGHTNESS", "225")):
+                quality_warnings.append("image surexposée")
+            if contrast < float(os.environ.get("SELFIE_MIN_CONTRAST", "18")):
+                quality_warnings.append("contraste faible")
+            if quality_warnings:
+                print(f"[SelfieValidation] quality warnings: {quality_warnings}")
+
+        metrics = {
+            "img_w": img_w,
+            "img_h": img_h,
+            "raw_rects": raw_count,
+            "merged_faces": merged_count,
+            "face_area": face_area,
+            "face_ratio": round(face_ratio, 4),
+            "sharpness": sharpness,
+            "brightness": brightness,
+            "contrast": contrast,
+            "quality_warnings": quality_warnings,
+        }
+        return metrics
+
     except HTTPException:
         raise
     except Exception:
-            import traceback as _tb
-            print("[SelfieValidation] Unexpected error:\n" + _tb.format_exc())
-            raise HTTPException(status_code=400, detail="Erreur lors de la vérification du selfie. Veuillez réessayer avec une photo plus claire.")
+        import traceback as _tb
+        print("[SelfieValidation] Unexpected error:\n" + _tb.format_exc())
+        raise HTTPException(status_code=400, detail="Erreur lors de la vérification du selfie. Veuillez réessayer avec une photo plus claire.")
 
 def parse_user_type(user_type_str: str) -> UserType:
     """Convertit une chaîne quelconque (USER/user/Photographer...) vers UserType de manière sûre."""
@@ -2863,54 +2946,50 @@ async def validate_selfie_endpoint(file: UploadFile = File(...), debug: bool = F
         raise HTTPException(status_code=400, detail=f"Le fichier est trop volumineux ({len(file_bytes) // (1024*1024)}MB, maximum 15MB)")
 
     try:
-        validate_selfie_image(file_bytes)
+        metrics = validate_selfie_image(file_bytes)
         if not debug:
             return {"valid": True}
-        # En mode debug, renvoyer quelques métriques simples
-        from PIL import Image, ImageOps as _ImageOps
-        import io as _io
-        import numpy as _np
-        import cv2 as _cv2
-
-        pil_img = Image.open(_io.BytesIO(file_bytes))
-        pil_img = _ImageOps.exif_transpose(pil_img)
-        if pil_img.mode not in ("RGB", "L"):
-            pil_img = pil_img.convert("RGB")
-        np_img = _np.array(pil_img)
-        img_h, img_w = (np_img.shape[0], np_img.shape[1])
-        
-        # Détection uniquement avec OpenCV/Haar
-        gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
-        cascade_path = _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        rects = _cv2.CascadeClassifier(cascade_path).detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
-        faces_haar = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
-        return {"valid": True, "debug": {"img_w": img_w, "img_h": img_h, "faces_haar": len(faces_haar), "faces_total": len(faces_haar)}}
+        return {"valid": True, "debug": metrics}
     except HTTPException as e:
         if not debug:
             raise
-        # En mode debug, tenter d'expliquer pourquoi
+        # En mode debug : renvoyer le détail de l'erreur + métriques partielles
+        import json as _json
+        from fastapi.responses import JSONResponse
+        debug_info: dict = {"error": e.detail}
         try:
             from PIL import Image, ImageOps as _ImageOps
             import io as _io
             import numpy as _np
             import cv2 as _cv2
-            
             pil_img = Image.open(_io.BytesIO(file_bytes))
             pil_img = _ImageOps.exif_transpose(pil_img)
-            if pil_img.mode not in ("RGB", "L"):
+            if pil_img.mode != "RGB":
                 pil_img = pil_img.convert("RGB")
+            max_dim = 800
+            w2, h2 = pil_img.size
+            scale = min(1.0, max_dim / float(max(w2, h2)))
+            if scale < 1.0:
+                pil_img = pil_img.resize((int(w2 * scale), int(h2 * scale)), Image.Resampling.BILINEAR)
             np_img = _np.array(pil_img)
-            img_h, img_w = (np_img.shape[0], np_img.shape[1])
-            
-            # Détection uniquement avec OpenCV/Haar
+            img_h, img_w = np_img.shape[0], np_img.shape[1]
             gray = _cv2.cvtColor(np_img, _cv2.COLOR_RGB2GRAY)
-            cascade_path = _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-            rects = _cv2.CascadeClassifier(cascade_path).detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(36, 36))
-            faces_haar = [(int(y), int(x+w), int(y+h), int(x)) for (x, y, w, h) in rects]
-            return Response(status_code=400, content=_io.BytesIO(_np.array([])).getvalue(), media_type="application/json", headers={
+            gray_eq = _cv2.equalizeHist(gray)
+            min_side_detect = max(60, int(min(img_h, img_w) * 0.12))
+            rects = _cv2.CascadeClassifier(
+                _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            ).detectMultiScale(gray_eq, scaleFactor=1.1, minNeighbors=7, minSize=(min_side_detect, min_side_detect))
+            raw_count = int(len(rects)) if hasattr(rects, '__len__') else 0
+            face_locations = [(int(y), int(x+fw), int(y+fh), int(x)) for (x, y, fw, fh) in rects] if raw_count > 0 else []
+            merged = _selfie_merge_faces(face_locations)
+            debug_info.update({
+                "img_w": img_w, "img_h": img_h,
+                "raw_rects": raw_count,
+                "merged_faces": len(merged),
             })
         except Exception:
-            raise e
+            pass
+        return JSONResponse(status_code=400, content={"valid": False, "debug": debug_info})
 
 @app.delete("/api/my-selfie")
 async def delete_my_selfie(
