@@ -34,7 +34,7 @@ import os
 import shutil
 import uuid
 from datetime import timedelta, datetime, timezone
-from sqlalchemy.exc import NoResultFound
+from sqlalchemy.exc import NoResultFound, IntegrityError
 import qrcode
 from io import BytesIO
 from fastapi import Request
@@ -6293,12 +6293,34 @@ async def register_with_event_code(
         selfie_status="pending",
     )
     db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    try:
+        db.commit()
+        db.refresh(db_user)
+    except IntegrityError as exc:
+        db.rollback()
+        exc_str = str(exc.orig).lower() if exc.orig else str(exc).lower()
+        if "users_email_event_unique" in exc_str or ("email" in exc_str and "unique" in exc_str):
+            conflict_detail = "Email déjà utilisé pour cet événement."
+        elif "users_username_event_unique" in exc_str or ("username" in exc_str and "unique" in exc_str):
+            conflict_detail = "Nom d'utilisateur déjà pris pour cet événement."
+        else:
+            conflict_detail = "Cet email ou ce nom d'utilisateur est déjà utilisé pour cet événement."
+        logger.warning(
+            "[register_with_event_code] IntegrityError (race condition) event=%s user=%s : %s",
+            event_code, user_data.username, exc,
+        )
+        raise HTTPException(status_code=409, detail=conflict_detail)
 
-    user_event = UserEvent(user_id=db_user.id, event_id=event.id)
-    db.add(user_event)
-    db.commit()
+    try:
+        user_event = UserEvent(user_id=db_user.id, event_id=event.id)
+        db.add(user_event)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning(
+            "[register_with_event_code] IntegrityError on UserEvent (non-bloquant) user_id=%s event=%s : %s",
+            db_user.id, event_code, exc,
+        )
 
     print(f"[PERF][register] total took {time.time() - _t_total:.3f}s")
     return db_user

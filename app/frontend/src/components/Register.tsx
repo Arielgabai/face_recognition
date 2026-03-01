@@ -87,21 +87,23 @@ const Register: React.FC = () => {
       hasError = true;
     }
 
-    // Vérifier validité du code événement
+    // Vérifier validité du code événement (pre-flight UX uniquement – la DB reste source de vérité)
     try {
       const { valid } = await validationService.checkEventCode(formData.eventCode);
       if (!valid) {
         setEventCodeError('Code événement invalide');
         hasError = true;
       }
-    } catch {}
+    } catch {
+      // Erreur réseau sur le pre-flight : on laisse l'appel principal trancher
+    }
 
     // Vérifier disponibilité username/email même si d'autres erreurs existent, pour tout afficher d'un coup
     try {
       const availability = await validationService.checkUserAvailability({
         username: formData.username,
         email: formData.email,
-        event_code: formData.eventCode, // Vérifier pour cet événement spécifique
+        event_code: formData.eventCode,
       });
       if (availability?.username_taken) {
         setUsernameError("Nom d'utilisateur déjà pris pour cet événement");
@@ -112,7 +114,7 @@ const Register: React.FC = () => {
         hasError = true;
       }
     } catch {
-      // Ignore l'erreur réseau ici; l'API d'inscription confirmera au pire
+      // Erreur réseau sur le pre-flight : on laisse l'appel principal trancher
     }
 
     if (hasError) {
@@ -133,27 +135,44 @@ const Register: React.FC = () => {
       );
       navigate('/login');
     } catch (err: any) {
-      const msg: string = err?.response?.data?.detail || 'Erreur lors de l\'inscription';
-      const lower = msg.toLowerCase();
-      let mapped = false;
-      if (lower.includes('mot de passe') || lower.includes('password')) {
-        setPasswordError(msg);
-        mapped = true;
-      }
-      if (msg.includes("Nom d'utilisateur") || lower.includes('utilisateur')) {
-        setUsernameError(msg);
-        mapped = true;
-      }
-      if (lower.includes('email')) {
-        setEmailError(msg);
-        mapped = true;
-      }
-      if (lower.includes('code')) {
-        setEventCodeError(msg);
-        mapped = true;
-      }
-      if (!mapped) {
-        setError(msg);
+      const status: number | undefined = err?.response?.status;
+      const detail: string = err?.response?.data?.detail || '';
+      const lower = detail.toLowerCase();
+
+      if (status === 409) {
+        // Conflit confirmé par la DB (race condition ou doublon)
+        if (lower.includes('email')) {
+          setEmailError(detail || 'Email déjà utilisé pour cet événement.');
+        } else if (lower.includes('utilisateur')) {
+          setUsernameError(detail || "Nom d'utilisateur déjà pris pour cet événement.");
+        } else {
+          setError(detail || "Cet email ou ce nom d'utilisateur est déjà utilisé pour cet événement.");
+        }
+      } else if (status === 400 && detail) {
+        // Erreurs de validation agrégées renvoyées par le backend
+        let mapped = false;
+        if (lower.includes('mot de passe') || lower.includes('password')) {
+          setPasswordError(detail);
+          mapped = true;
+        }
+        if (detail.includes("Nom d'utilisateur") || lower.includes('utilisateur')) {
+          setUsernameError(detail);
+          mapped = true;
+        }
+        if (lower.includes('email')) {
+          setEmailError(detail);
+          mapped = true;
+        }
+        if (lower.includes('code')) {
+          setEventCodeError(detail);
+          mapped = true;
+        }
+        if (!mapped) {
+          setError(detail);
+        }
+      } else {
+        // Erreur 500, réseau ou autre erreur inattendue
+        setError("Une erreur technique s'est produite. Merci de réessayer dans quelques instants.");
       }
     } finally {
       setIsLoading(false);
