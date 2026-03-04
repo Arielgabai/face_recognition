@@ -94,11 +94,14 @@ class RegisterUser(HttpUser):
         # Generate unique identifiers
         rand = uuid4().hex[:8]
         username = f"user_{rand}"
-        email = f"{username}@test.com"
+        emails = [f"ariel.gabai@hotmail.fr", f"anaellegabai@gmail.com", f"gabai.raphael@gmail.com"
+        , f"gabaijudith@gmail.com", f"gabaisamuel2@gmail.com", f"gabaidaniel0@gmail.com", f"rubengabai@hotmail.fr"]
         password = "Secret.000"
 
         # Sélectionner une photo aléatoire
         selected_photo = random.choice(SELFIE_PHOTOS)
+        email = emails[0]
+        emails = emails[1:]
         print(f"[Locust] Utilisateur {username} utilisera la photo: {selected_photo.name}")
 
         # Step 1: check event code

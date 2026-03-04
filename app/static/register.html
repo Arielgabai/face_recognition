@@ -616,6 +616,7 @@
         let selfieValidated = false;
         let validationSeq = 0;
         let currentValidationController = null;
+        let isRegistering = false;
 
         // Préremplir et verrouiller le code événement depuis l'URL ou injection serveur
         document.addEventListener('DOMContentLoaded', function() {
@@ -836,10 +837,12 @@
         }
 
         async function validateAndRegister() {
+            if (isRegistering) return;
             if (!selfieFile || !selfieValidated) {
                 showAlert('Veuillez sélectionner et valider un selfie', 'error');
                 return;
             }
+            isRegistering = true;
 
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
@@ -1011,6 +1014,7 @@
                 showAlert(err.message || 'Erreur lors de la création du compte', 'error');
             })
             .finally(() => {
+                isRegistering = false;
                 document.body.style.pointerEvents = '';
                 overlay.style.display = 'none';
             });

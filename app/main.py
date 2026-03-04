@@ -2493,11 +2493,11 @@ async def check_user_availability(
     
     if username:
         if event:
-            # Vérifier pour cet événement spécifique (EXISTS)
+            # Vérifier pour cet événement spécifique (EXISTS) — uniquement les comptes actifs
             _t_username = time.time()
             result["username_taken"] = db.query(
                 exists().where(
-                    (User.username == username) & (User.event_id == event.id)
+                    (User.username == username) & (User.event_id == event.id) & (User.is_active == True)
                 )
             ).scalar()
             print(f"[PERF][availability] username lookup took {time.time() - _t_username:.3f}s")
@@ -2507,25 +2507,25 @@ async def check_user_availability(
                 _t_username_other = time.time()
                 result["username_exists_other_events"] = db.query(
                     exists().where(
-                        (User.username == username) & (User.event_id != event.id)
+                        (User.username == username) & (User.event_id != event.id) & (User.is_active == True)
                     )
                 ).scalar()
                 print(f"[PERF][availability] username other-events lookup took {time.time() - _t_username_other:.3f}s")
         else:
-            # Vérifier globalement (EXISTS)
+            # Vérifier globalement (EXISTS) — uniquement les comptes actifs
             _t_username = time.time()
             result["username_taken"] = db.query(
-                exists().where(User.username == username)
+                exists().where((User.username == username) & (User.is_active == True))
             ).scalar()
             print(f"[PERF][availability] username lookup took {time.time() - _t_username:.3f}s")
     
     if email:
         if event:
-            # Vérifier pour cet événement spécifique (EXISTS)
+            # Vérifier pour cet événement spécifique (EXISTS) — uniquement les comptes actifs
             _t_email = time.time()
             result["email_taken"] = db.query(
                 exists().where(
-                    (User.email == email) & (User.event_id == event.id)
+                    (User.email == email) & (User.event_id == event.id) & (User.is_active == True)
                 )
             ).scalar()
             print(f"[PERF][availability] email lookup took {time.time() - _t_email:.3f}s")
@@ -2535,15 +2535,15 @@ async def check_user_availability(
                 _t_email_other = time.time()
                 result["email_exists_other_events"] = db.query(
                     exists().where(
-                        (User.email == email) & (User.event_id != event.id)
+                        (User.email == email) & (User.event_id != event.id) & (User.is_active == True)
                     )
                 ).scalar()
                 print(f"[PERF][availability] email other-events lookup took {time.time() - _t_email_other:.3f}s")
         else:
-            # Vérifier globalement (EXISTS)
+            # Vérifier globalement (EXISTS) — uniquement les comptes actifs
             _t_email = time.time()
             result["email_taken"] = db.query(
-                exists().where(User.email == email)
+                exists().where((User.email == email) & (User.is_active == True))
             ).scalar()
             print(f"[PERF][availability] email lookup took {time.time() - _t_email:.3f}s")
             
@@ -2629,7 +2629,8 @@ async def register(
     
     # V+�rifier si l'utilisateur existe d+�j+�
     existing_user = db.query(User).filter(
-        (User.username == username) | (User.email == email)
+        ((User.username == username) | (User.email == email)) &
+        (User.is_active == True)
     ).first()
     
     if existing_user:
@@ -2710,10 +2711,11 @@ async def register_invite(
     if not event:
         raise HTTPException(status_code=404, detail="event_code invalide")
     
-    # V+�rifier si l'utilisateur existe d+�j+� POUR CET ÉVÉNEMENT
+    # V+�rifier si l'utilisateur existe d+�j+� POUR CET ÉVÉNEMENT (comptes actifs uniquement)
     existing_user = db.query(User).filter(
         ((User.username == user_data.username) | (User.email == user_data.email)) &
-        (User.event_id == event.id)
+        (User.event_id == event.id) &
+        (User.is_active == True)
     ).first()
     if existing_user:
         # Message précis selon le conflit
@@ -2773,11 +2775,12 @@ async def register_invite_with_selfie(
     # Validation stricte du selfie (1 visage, taille minimale)
     validate_selfie_image(selfie_bytes)
 
-    # Vérifier collision username/email POUR CET ÉVÉNEMENT SPÉCIFIQUE
+    # Vérifier collision username/email POUR CET ÉVÉNEMENT SPÉCIFIQUE (comptes actifs uniquement)
     # Permet le même email/username pour des événements différents
     existing_user = db.query(User).filter(
         ((User.username == username) | (User.email == email)) &
-        (User.event_id == event.id)
+        (User.event_id == event.id) &
+        (User.is_active == True)
     ).first()
     if existing_user:
         if existing_user.username == username:
@@ -5201,6 +5204,10 @@ async def admin_delete_user(
         # Supprimer les tokens de réinitialisation de mot de passe
         db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user_id).delete()
 
+        # Nullifier les références FK dans Photos pour éviter la violation de contrainte
+        db.query(Photo).filter(Photo.user_id == user_id).update({"user_id": None}, synchronize_session="fetch")
+        db.query(Photo).filter(Photo.photographer_id == user_id).update({"photographer_id": None}, synchronize_session="fetch")
+
         # Supprimer l'utilisateur
         db.delete(user)
         db.commit()
@@ -6251,11 +6258,12 @@ async def register_with_event_code(
         # Si pas d'event, impossible de vérifier l'unicité par événement
         raise HTTPException(status_code=400, detail="; ".join(errors))
 
-    # Vérifier disponibilité username/email POUR CET ÉVÉNEMENT (agrégé)
+    # Vérifier disponibilité username/email POUR CET ÉVÉNEMENT (agrégé, comptes actifs uniquement)
     _t_existing = time.time()
     existing_user = db.query(User).filter(
         ((User.username == user_data.username) | (User.email == user_data.email)) &
-        (User.event_id == event.id)
+        (User.event_id == event.id) &
+        (User.is_active == True)
     ).first()
     print(f"[PERF][register] existing user lookup took {time.time() - _t_existing:.3f}s")
     if existing_user:
