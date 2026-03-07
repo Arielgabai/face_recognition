@@ -439,6 +439,31 @@
             box-shadow: var(--shadow-purple);
         }
 
+        /* Bandeau de reprise selfie */
+        .selfie-resume-banner {
+            display: none;
+            background: rgba(250, 204, 21, 0.08);
+            border: 1px solid rgba(250, 204, 21, 0.4);
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            color: #fde68a;
+            font-size: 0.9rem;
+        }
+        .selfie-resume-banner.visible { display: flex; align-items: center; gap: 12px; }
+        .selfie-resume-banner button {
+            margin-left: auto;
+            flex-shrink: 0;
+            padding: 6px 14px;
+            font-size: 0.85rem;
+            border-radius: 8px;
+            border: 1px solid rgba(250, 204, 21, 0.5);
+            background: transparent;
+            color: #fde68a;
+            cursor: pointer;
+        }
+        .selfie-resume-banner button:hover { background: rgba(250, 204, 21, 0.1); }
+
         /* Global submit overlay */
         .submit-overlay {
             position: fixed;
@@ -494,6 +519,12 @@
             <div class="subtitle">Inscription</div>
         </div>
         
+        <!-- Bandeau affiché si une inscription précédente s'est arrêtée après la création du compte -->
+        <div id="selfieResumeBanner" class="selfie-resume-banner" role="alert">
+            <span>⚠️ Une inscription précédente est incomplète — votre selfie n'a pas été envoyé. Connectez-vous pour compléter votre profil.</span>
+            <button onclick="dismissResumeBanner()">Ignorer</button>
+        </div>
+
         <div class="register-container">
             <div class="progress-steps">
                 <div class="step active" id="step1">
@@ -618,7 +649,9 @@
         let currentValidationController = null;
         let isRegistering = false;
 
-        // Préremplir et verrouiller le code événement depuis l'URL ou injection serveur
+        // Préremplir et verrouiller le code événement depuis l'URL ou injection serveur.
+        // Détecte aussi un token orphelin laissé par une inscription interrompue entre
+        // le login et l'upload-selfie (flow legacy uniquement – register-complete est atomique).
         document.addEventListener('DOMContentLoaded', function() {
             const injected = '{{EVENT_CODE}}';
             const fromQuery = new URLSearchParams(window.location.search).get('event_code') || '';
@@ -626,14 +659,28 @@
             if (resolved) {
                 const ec = document.getElementById('eventCode');
                 ec.value = resolved;
-                // Si l'utilisateur arrive via QR code / lien avec code, ne pas permettre la modification
                 try {
                     ec.readOnly = true;
                     ec.setAttribute('aria-readonly', 'true');
                     ec.title = 'Code événement défini par le QR code';
                 } catch {}
             }
+
+            // Token orphelin : inscription précédente terminée à register mais selfie non envoyé
+            try {
+                const orphanToken = localStorage.getItem('_reg_token');
+                if (orphanToken) {
+                    const banner = document.getElementById('selfieResumeBanner');
+                    if (banner) banner.classList.add('visible');
+                }
+            } catch {}
         });
+
+        function dismissResumeBanner() {
+            try { localStorage.removeItem('_reg_token'); } catch {}
+            const banner = document.getElementById('selfieResumeBanner');
+            if (banner) banner.classList.remove('visible');
+        }
 
         async function nextStep() {
             // Valider les informations de base
@@ -836,188 +883,134 @@
               });
         }
 
+        // ─── validateAndRegister ─────────────────────────────────────────────────
+        // Flow: register-complete (atomic: user + selfie) → polling → redirect
+        // Un seul try/catch/finally garantit que isRegistering et registerBtn
+        // reviennent toujours à leur état initial, quel que soit le chemin d'exécution.
         async function validateAndRegister() {
-            if (isRegistering) return;
+            const reqId = `reg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            console.log(`[${reqId}] submit click`);
+
+            // ── Guard double-submit ────────────────────────────────────────────
+            if (isRegistering) {
+                console.log(`[${reqId}] blocked – already registering`);
+                return;
+            }
             if (!selfieFile || !selfieValidated) {
                 showAlert('Veuillez sélectionner et valider un selfie', 'error');
                 return;
             }
-            isRegistering = true;
 
-            const username = document.getElementById('username').value;
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
+            // ── Lecture des valeurs AVANT tout await ──────────────────────────
+            const username  = document.getElementById('username').value.trim();
+            const email     = document.getElementById('email').value.trim();
+            const password  = document.getElementById('password').value;
             const eventCode = document.getElementById('eventCode').value.trim();
+
+            // ── Lock UI immédiatement ──────────────────────────────────────────
+            isRegistering = true;
+            const registerBtn = document.getElementById('registerBtn');
+            const overlay     = document.getElementById('submitOverlay');
+            const overlayText = document.getElementById('submitOverlayText');
+            registerBtn.disabled = true;
+            overlay.style.display = 'flex';
+            document.body.style.pointerEvents = 'none';
+
+            // Refs erreurs champs
             const uErr = document.getElementById('usernameError');
             const eErr = document.getElementById('emailError');
             const pErr = document.getElementById('passwordError');
             const cErr = document.getElementById('eventCodeError');
-            
-            // Réinitialiser les erreurs (dernière passe avant l'appel API)
-            [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
+            [uErr, eErr, pErr, cErr].forEach(el => { el.textContent = ''; el.style.display = 'none'; });
 
-            // Validation mot de passe côté client
-            const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
-            let hasError = false;
-            if (!strongPw.test(password)) { pErr.textContent = "Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial"; pErr.style.display = 'block'; hasError = true; }
-            if (!eventCode) { cErr.textContent = 'Le code événement est obligatoire'; cErr.style.display='block'; hasError = true; }
-            if (!username) { uErr.textContent = "Le nom d'utilisateur est obligatoire"; uErr.style.display='block'; hasError = true; }
-            if (!email) { eErr.textContent = "L'email est obligatoire"; eErr.style.display='block'; hasError = true; }
-            // Ne pas retourner tout de suite: on veut aussi afficher username/email pris
-            // Vérifier la validité du code événement côté serveur (comme pour username/email)
             try {
-                const resp = await fetch('/api/check-event-code', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ event_code: eventCode })
-                });
-                const data = await resp.json().catch(() => ({}));
-                if (!data.valid) { cErr.textContent='Code événement invalide'; cErr.style.display='block'; hasError = true; }
-            } catch {}
+                // ── ÉTAPE 1 : Inscription atomique (user + selfie) ─────────────
+                // L'endpoint /api/register-complete valide le selfie AVANT de
+                // créer le compte → impossible d'avoir un compte sans selfie.
+                overlayText.textContent = 'Création du compte en cours…';
+                console.log(`[${reqId}] register-complete start`);
 
-            // Vérifier disponibilité username/email AVANT l'appel API pour afficher plusieurs erreurs simultanément
-            try {
-                const avail = await fetch('/api/check-user-availability', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, email, event_code: eventCode })
-                }).then(r => r.json()).catch(() => ({}));
-                let taken = false;
-                if (avail && avail.username_taken) { uErr.textContent = "Nom d'utilisateur déjà pris pour cet événement"; uErr.style.display='block'; taken = true; }
-                if (avail && avail.email_taken) { eErr.textContent = "Email déjà utilisé pour cet événement"; eErr.style.display='block'; taken = true; }
-                if (taken) hasError = true;
-            } catch {}
-            if (hasError) return;
+                const form = new FormData();
+                form.append('username',   username);
+                form.append('email',      email);
+                form.append('password',   password);
+                form.append('event_code', eventCode);
+                form.append('selfie',     selfieFile, selfieFile.name);
 
-            // Activer l'overlay et griser l'UI
-            const overlay = document.getElementById('submitOverlay');
-            const overlayText = document.getElementById('submitOverlayText');
-            try { overlayText.textContent = 'Création du compte en cours...'; } catch {}
-            overlay.style.display = 'flex';
-            document.body.style.pointerEvents = 'none';
+                let registerResp, registerData;
+                try {
+                    registerResp = await fetch('/api/register-complete', {
+                        method: 'POST',
+                        body: form
+                    });
+                    registerData = await registerResp.json().catch(() => ({}));
+                } catch (netErr) {
+                    console.warn(`[${reqId}] register-complete network error:`, netErr.message);
+                    throw new Error('Erreur réseau lors de la création du compte. Vérifiez votre connexion et réessayez.');
+                }
 
-            // Tous les comptes créés ici sont des utilisateurs (pas de champ userType dans le formulaire)
-            // 1) Créer l'utilisateur et l'associer à l'événement
-            fetch('/api/register-with-event-code', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_data: { username, email, password, user_type: 'user' },
-                    event_code: eventCode
-                })
-            })
-            .then(async (resp) => {
-                const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) {
-                    // Messages précis renvoyés par l'API
-                    const msg = (data && data.detail) ? String(data.detail) : 'Erreur lors de l\'inscription';
+                if (!registerResp.ok) {
+                    const msg = (registerData && registerData.detail)
+                        ? String(registerData.detail)
+                        : "Erreur lors de l'inscription";
+                    console.warn(`[${reqId}] register-complete fail – ${msg}`);
+                    // Dispatch des messages d'erreur dans les bons champs
                     let flagged = false;
-                    if (msg.toLowerCase().includes('mot de passe')) { pErr.textContent = msg; pErr.style.display='block'; flagged = true; }
-                    if (msg.includes('Nom d\'utilisateur')) { uErr.textContent = msg; uErr.style.display='block'; flagged = true; }
-                    if (msg.includes('Email')) { eErr.textContent = msg; eErr.style.display='block'; flagged = true; }
-                    if (msg.toLowerCase().includes('code')) { cErr.textContent = msg; cErr.style.display='block'; flagged = true; }
-                    if (!flagged) { showAlert(msg, 'error'); }
+                    if (msg.toLowerCase().includes('mot de passe'))   { pErr.textContent = msg; pErr.style.display = 'block'; flagged = true; }
+                    if (msg.includes("Nom d'utilisateur"))            { uErr.textContent = msg; uErr.style.display = 'block'; flagged = true; }
+                    if (msg.includes('Email'))                        { eErr.textContent = msg; eErr.style.display = 'block'; flagged = true; }
+                    if (msg.toLowerCase().includes('code'))           { cErr.textContent = msg; cErr.style.display = 'block'; flagged = true; }
+                    if (!flagged) showAlert(msg, 'error');
                     throw new Error(msg);
                 }
-                return data;
-            })
-            // 2) Se connecter pour obtenir un token
-            .then(() => fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            }))
-            .then(async (resp) => {
-                const data = await resp.json().catch(() => ({}));
-                if (!resp.ok || !data.access_token) {
-                    throw new Error(data.detail || 'Connexion échouée après inscription');
+
+                const token = registerData.access_token;
+                if (!token) {
+                    throw new Error("Réponse serveur inattendue après inscription (token manquant).");
                 }
-                return data.access_token;
-            })
-            // 3) Uploader le selfie avec le token (avec timeout + retry réseau)
-            .then(async (token) => {
-                try { overlayText.textContent = 'Validation du selfie...'; } catch {}
-                const form = new FormData();
-                form.append('file', selfieFile);
-                const maxRetries = 2;
-                let lastError = null;
-                for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                console.log(`[${reqId}] register-complete success – user_id=${registerData.user_id ?? '?'}`);
+
+                // Persister le token dès maintenant (avant le polling)
+                localStorage.setItem('token', token);
+
+                // ── ÉTAPE 2 : Polling /api/my-photos ──────────────────────────
+                // Attend que le matching asynchrone soit visible côté client,
+                // sans bloquer indéfiniment (max ~24 s).
+                console.log(`[${reqId}] polling start`);
+                overlayText.textContent = 'Préparation de vos photos…';
+                const MAX_POLLS = 12;
+                for (let i = 0; i < MAX_POLLS; i++) {
                     try {
-                        const controller = new AbortController();
-                        const timeout = setTimeout(() => controller.abort(), 30000);
-                        const resp = await fetch('/api/upload-selfie', {
-                            method: 'POST',
-                            headers: { 'Authorization': `Bearer ${token}` },
-                            body: form,
-                            signal: controller.signal
+                        const r = await fetch('/api/my-photos', {
+                            headers: { Authorization: `Bearer ${token}` }
                         });
-                        clearTimeout(timeout);
-                        const data = await resp.json().catch(() => ({}));
-                        if (resp.status === 400) {
-                            // Validation échouée (selfie invalide) : ne pas retry
-                            throw new Error(data.detail || 'Selfie invalide. Veuillez réessayer avec une photo plus nette de votre visage.');
+                        if (r.ok) {
+                            const photos = await r.json().catch(() => []);
+                            if (Array.isArray(photos) && (photos.length > 0 || i >= 5)) break;
                         }
-                        if (!resp.ok) {
-                            throw new Error(data.detail || 'Erreur lors de l\'upload du selfie');
-                        }
-                        localStorage.setItem('token', token);
-                        return true;
-                    } catch (err) {
-                        lastError = err;
-                        // Ne pas retry pour les erreurs de validation (400)
-                        if (err.message && !err.message.includes('aborted') && !err.name?.includes('Abort') && !err.message.includes('Failed to fetch')) {
-                            throw err;
-                        }
-                        if (attempt < maxRetries) {
-                            try { overlayText.textContent = 'Connexion instable, nouvelle tentative...'; } catch {}
-                            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-                        }
-                    }
-                }
-                throw lastError || new Error('Échec de l\'upload du selfie après plusieurs tentatives');
-            })
-            // 3.5) Lancer le polling pour charger "Vos Photos" immédiatement
-            .then(async () => {
-                try { overlayText.textContent = 'Préparation de vos photos...'; } catch {}
-                const token = localStorage.getItem('token');
-                let attempts = 0;
-                const maxAttempts = 12; // ~24s
-                let lastCount = -1;
-                while (attempts < maxAttempts) {
-                    try {
-                        const resp = await fetch('/api/my-photos', {
-                            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-                        });
-                        if (resp.ok) {
-                            const photos = await resp.json();
-                            if (Array.isArray(photos)) {
-                                if (photos.length !== lastCount) {
-                                    lastCount = photos.length;
-                                    if (photos.length > 0 || attempts > 5) {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    } catch {}
-                    attempts++;
+                    } catch { /* réseau instable : on continue à poller */ }
                     await new Promise(r => setTimeout(r, 2000));
                 }
-                return true;
-            })
-            // 4) Succès total: lancer un rafraîchissement des photos après création et upload
-            .then(() => {
-                try { overlayText.textContent = 'Compte créé avec succès !'; } catch {}
-                setTimeout(() => { window.location.href = '/'; }, 800);
-            })
-            .catch((err) => {
-                showAlert(err.message || 'Erreur lors de la création du compte', 'error');
-            })
-            .finally(() => {
+                console.log(`[${reqId}] polling done`);
+
+                // ── ÉTAPE 3 : Redirection ──────────────────────────────────────
+                overlayText.textContent = 'Compte créé avec succès !';
+                console.log(`[${reqId}] redirect /`);
+                await new Promise(r => setTimeout(r, 800));
+                window.location.href = '/';
+
+            } catch (err) {
+                console.error(`[${reqId}] fatal error:`, err.message);
+                // showAlert déjà appelé pour les erreurs champ ; éviter les doublons
+                if (!err._displayed) showAlert(err.message || 'Erreur lors de la création du compte', 'error');
+            } finally {
+                // Toujours libérer le verrou, quel que soit le chemin emprunté
                 isRegistering = false;
+                registerBtn.disabled = !selfieValidated;
                 document.body.style.pointerEvents = '';
                 overlay.style.display = 'none';
-            });
+                console.log(`[${reqId}] flow end – isRegistering reset`);
+            }
         }
 
         function showAlert(message, type = 'success') {

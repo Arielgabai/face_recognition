@@ -1,4 +1,4 @@
-from locust import HttpUser, task, between
+from locust import HttpUser, task, between, events
 from uuid import uuid4
 import os
 import time
@@ -7,6 +7,34 @@ from pathlib import Path
 import json
 from urllib.parse import urlparse
 import gevent  # 👈 ajouté pour pouvoir endormir le user très longtemps
+
+# Liste des emails cibles — chaque RegisterUser prend le suivant dans l'ordre
+TARGET_EMAILS = [
+    "ariel.gabai@hotmail.fr",
+    "anaellegabai@gmail.com",
+    "gabai.raphael@gmail.com",
+    "gabaijudith@gmail.com",
+    "gabaisamuel2@gmail.com",
+    "gabaidaniel0@gmail.com",
+    "rubengabai@hotmail.fr",
+]
+_email_index = 0  # index partagé entre toutes les instances (gevent = coopératif, pas de vrai lock nécessaire)
+
+@events.test_start.add_listener
+def reset_email_index(environment, **kwargs):
+    """Réinitialise l'index emails à chaque nouveau run Locust."""
+    global _email_index
+    _email_index = 0
+    print(f"[Locust] Index emails réinitialisé — {len(TARGET_EMAILS)} comptes à créer.")
+
+def _next_email():
+    """Retourne le prochain email de la liste, ou None si tous ont été consommés."""
+    global _email_index
+    if _email_index >= len(TARGET_EMAILS):
+        return None
+    email = TARGET_EMAILS[_email_index]
+    _email_index += 1
+    return email
 
 # Charger les photos au démarrage du module
 SELFIE_DIR = Path(__file__).parent / "photos_selfies_exemple"
@@ -71,9 +99,14 @@ class RegisterUser(HttpUser):
     def on_start(self):
         """
         Appelé au démarrage du user.
-        On ajoute un flag pour savoir si ce user a déjà fait son scénario.
+        On réserve ici l'email assigné à cette instance. Si tous les emails
+        ont déjà été pris, ce user se met en veille immédiatement.
         """
+        self.assigned_email = _next_email()
         self.has_run = False
+        if self.assigned_email is None:
+            print("[Locust] Tous les emails ont déjà été assignés — user en veille.")
+            self.has_run = True
 
     @task
     def create_account(self):
@@ -91,18 +124,15 @@ class RegisterUser(HttpUser):
             gevent.sleep(999999)
             return
 
-        # Generate unique identifiers
+        # Email réservé pour cette instance dans on_start
+        email = self.assigned_email
         rand = uuid4().hex[:8]
         username = f"user_{rand}"
-        emails = [f"ariel.gabai@hotmail.fr", f"anaellegabai@gmail.com", f"gabai.raphael@gmail.com"
-        , f"gabaijudith@gmail.com", f"gabaisamuel2@gmail.com", f"gabaidaniel0@gmail.com", f"rubengabai@hotmail.fr"]
         password = "Secret.000"
 
         # Sélectionner une photo aléatoire
         selected_photo = random.choice(SELFIE_PHOTOS)
-        email = emails[0]
-        emails = emails[1:]
-        print(f"[Locust] Utilisateur {username} utilisera la photo: {selected_photo.name}")
+        print(f"[Locust] [{email}] username={username}, photo={selected_photo.name}")
 
         # Step 1: check event code
         self.client.post(

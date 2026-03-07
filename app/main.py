@@ -6333,6 +6333,157 @@ async def register_with_event_code(
     print(f"[PERF][register] total took {time.time() - _t_total:.3f}s")
     return db_user
 
+
+@app.post("/api/register-complete")
+async def register_complete(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    event_code: str = Form(...),
+    selfie: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Endpoint atomique d'inscription : valide le selfie AVANT de créer le compte.
+
+    Garantit qu'aucun compte n'est créé sans selfie valide, ce qui élimine les
+    comptes orphelins observés lors de tests simultanés.
+
+    Retourne directement un access_token pour éviter un round-trip /api/login.
+    """
+    _t_total = time.time()
+    req_id = getattr(request.state, "request_id", "?")
+    logger.info(f"[register-complete] req_id={req_id} username={username}")
+
+    errors: list[str] = []
+
+    # ── 1. Vérification du code événement ─────────────────────────────────────
+    event = find_event_by_code(db, event_code)
+    if not event:
+        raise HTTPException(status_code=400, detail="Code événement invalide")
+
+    # ── 2. Unicité username / email pour cet événement (comptes actifs) ────────
+    existing = db.query(User).filter(
+        ((User.username == username) | (User.email == email)) &
+        (User.event_id == event.id) &
+        (User.is_active == True)
+    ).first()
+    if existing:
+        if existing.username == username:
+            errors.append("Nom d'utilisateur déjà pris pour cet événement")
+        if existing.email == email:
+            errors.append("Email déjà utilisé pour cet événement")
+
+    # ── 3. Force du mot de passe ───────────────────────────────────────────────
+    try:
+        assert_password_valid(password)
+    except HTTPException as e:
+        errors.append(str(e.detail) if hasattr(e, "detail") else "Mot de passe invalide")
+
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+
+    # ── 4. Lecture et validation du selfie AVANT la création du compte ─────────
+    # Si le selfie est invalide, on s'arrête ici : aucune trace en base.
+    if not selfie.content_type or not selfie.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Le fichier selfie doit être une image")
+
+    file_data = await selfie.read()
+    if len(file_data) > 15 * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image trop volumineuse ({len(file_data) // (1024 * 1024)} MB, maximum 15 MB)"
+        )
+
+    try:
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(file_data))
+        img.verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Format d'image invalide")
+
+    try:
+        validate_selfie_image(file_data)
+    except HTTPException as ve:
+        raise HTTPException(status_code=400, detail=ve.detail)
+    except Exception as ve:
+        raise HTTPException(status_code=400, detail="Erreur de validation du selfie. Veuillez réessayer.")
+
+    # Compression avant stockage
+    compressed_data = compress_selfie_for_storage(file_data, max_size_kb=200)
+
+    # ── 5. Création du compte (selfie déjà validé → selfie_status="valid") ─────
+    hashed_password = get_password_hash(password)
+    db_user = User(
+        username=username,
+        email=email,
+        hashed_password=hashed_password,
+        user_type=UserType.USER,
+        event_id=event.id,
+        selfie_status="valid",
+        selfie_data=compressed_data,
+        selfie_content_type="image/jpeg",
+        selfie_error=None,
+    )
+    db.add(db_user)
+    try:
+        db.commit()
+        db.refresh(db_user)
+    except IntegrityError as exc:
+        db.rollback()
+        exc_str = str(exc.orig).lower() if exc.orig else str(exc).lower()
+        if "email" in exc_str and "unique" in exc_str:
+            conflict_detail = "Email déjà utilisé pour cet événement."
+        elif "username" in exc_str and "unique" in exc_str:
+            conflict_detail = "Nom d'utilisateur déjà pris pour cet événement."
+        else:
+            conflict_detail = "Cet email ou ce nom d'utilisateur est déjà utilisé pour cet événement."
+        logger.warning(
+            "[register-complete] IntegrityError (race condition) event=%s user=%s : %s",
+            event_code, username, exc,
+        )
+        raise HTTPException(status_code=409, detail=conflict_detail)
+
+    # ── 6. Association user_events ─────────────────────────────────────────────
+    try:
+        user_event = UserEvent(user_id=db_user.id, event_id=event.id)
+        db.add(user_event)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning(
+            "[register-complete] IntegrityError on UserEvent (non-bloquant) user_id=%s event=%s : %s",
+            db_user.id, event_code, exc,
+        )
+
+    # ── 7. Génération du token JWT (évite un round-trip /api/login) ───────────
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": db_user.username, "user_id": db_user.id},
+        expires_delta=access_token_expires,
+    )
+
+    # ── 8. Lancement du matching asynchrone en arrière-plan ───────────────────
+    try:
+        _MATCHING_THREAD_POOL.submit(_rematch_selfie_background_only, db_user.id, compressed_data)
+        logger.info(f"[register-complete] req_id={req_id} matching scheduled for user_id={db_user.id}")
+    except Exception as e:
+        logger.warning(f"[register-complete] req_id={req_id} could not schedule matching: {e}")
+        # Non bloquant : le matching peut être relancé ultérieurement
+
+    logger.info(
+        f"[register-complete] req_id={req_id} success user_id={db_user.id} "
+        f"total={time.time() - _t_total:.3f}s"
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": db_user.id,
+        "selfie_status": "valid",
+    }
+
+
 @app.post("/api/join-event")
 async def join_event(
     event_code: str = Body(...),
