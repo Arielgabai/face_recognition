@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -44,6 +44,8 @@ const Gallery: React.FC<GalleryProps> = ({
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<number | null>(null);
   const [imageLoaded, setImageLoaded] = useState<{ [key: number]: boolean }>({});
+  const touchStartXRef = useRef<number | null>(null);
+  const touchEndXRef = useRef<number | null>(null);
 
   const handleImageLoad = (photoId: number) => {
     setImageLoaded(prev => ({ ...prev, [photoId]: true }));
@@ -67,6 +69,40 @@ const Gallery: React.FC<GalleryProps> = ({
     if (selectedPhoto !== null && selectedPhoto < photos.length - 1) {
       setSelectedPhoto(selectedPhoto + 1);
     }
+  };
+
+  // Préchargement des images voisines dans la lightbox pour une navigation fluide
+  useEffect(() => {
+    if (selectedPhoto === null) return;
+    const preload = (index: number) => {
+      if (index < 0 || index >= photos.length) return;
+      const url = getImageUrl(photos[index]);
+      const img = new Image();
+      img.src = url;
+    };
+    preload(selectedPhoto - 1);
+    preload(selectedPhoto + 1);
+  }, [selectedPhoto, photos, getImageUrl]);
+
+  // Gestion du swipe sur mobile dans la lightbox
+  const handleTouchStart: React.TouchEventHandler = (e) => {
+    touchStartXRef.current = e.changedTouches[0].screenX;
+  };
+
+  const handleTouchEnd: React.TouchEventHandler = (e) => {
+    touchEndXRef.current = e.changedTouches[0].screenX;
+    if (touchStartXRef.current === null || touchEndXRef.current === null) return;
+    const deltaX = touchEndXRef.current - touchStartXRef.current;
+    const threshold = 40; // px
+    if (Math.abs(deltaX) > threshold) {
+      if (deltaX < 0) {
+        goToNext();
+      } else {
+        goToPrevious();
+      }
+    }
+    touchStartXRef.current = null;
+    touchEndXRef.current = null;
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -178,12 +214,21 @@ const Gallery: React.FC<GalleryProps> = ({
                 cursor: 'pointer',
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider',
                 overflow: 'hidden',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                 position: 'relative',
+                '& .media': {
+                  transition: 'transform 0.4s ease',
+                  willChange: 'transform',
+                },
                 '&:hover': {
                   transform: 'translateY(-4px)',
                   boxShadow: '0 8px 25px rgba(0,0,0,0.2)',
+                  '& .media': {
+                    transform: 'scale(1.05)'
+                  },
                   '& .overlay': {
                     opacity: 1,
                   }
@@ -245,6 +290,7 @@ const Gallery: React.FC<GalleryProps> = ({
                 component="img"
                 image={imageUrl}
                 alt={photo.original_filename}
+                className="media"
                 onLoad={() => handleImageLoad(photo.id)}
                 sx={{
                   width: '100%',
@@ -254,6 +300,8 @@ const Gallery: React.FC<GalleryProps> = ({
                   opacity: isLoaded ? 1 : 0,
                   transition: 'opacity 0.3s ease',
                 }}
+                draggable={false}
+                loading="lazy"
               />
             </Card>
           );
@@ -289,6 +337,8 @@ const Gallery: React.FC<GalleryProps> = ({
             position: 'relative',
             backgroundColor: 'transparent',
           }}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
           {selectedPhoto !== null && (
             <>
@@ -364,6 +414,7 @@ const Gallery: React.FC<GalleryProps> = ({
                     objectFit: 'contain',
                     borderRadius: 1,
                   }}
+                  draggable={false}
                 />
               </Fade>
 
