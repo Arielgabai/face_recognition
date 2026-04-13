@@ -453,6 +453,10 @@
 let selectedPhotoIds = [];
 let currentPhotos = [];
 let filterMode = 'all';
+let photoGridRefreshTimer = null;
+let photoGridRefreshRunId = 0;
+const PHOTO_GRID_REFRESH_INTERVAL_MS = 2500;
+const PHOTO_GRID_REFRESH_MAX_ATTEMPTS = 12;
 
         if (token) {
             loadDashboard();
@@ -748,6 +752,109 @@ function getFilteredPhotos() {
     return currentPhotos;
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getPhotoPlaceholderHtml(photoId, title, detail) {
+    const safeTitle = escapeHtml(title);
+    const safeDetail = escapeHtml(detail || '');
+    return `
+        <div
+            onclick="togglePhotoSelect(${photoId})"
+            style="width:100%;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f5f5f5;color:#666;padding:16px;text-align:center;cursor:pointer;"
+        >
+            <div style="font-weight:bold;margin-bottom:8px;">${safeTitle}</div>
+            ${safeDetail ? `<div style="font-size:13px;line-height:1.4;">${safeDetail}</div>` : ''}
+        </div>
+    `;
+}
+
+function getPhotoVisualHtml(photo) {
+    const status = typeof photo.processing_status === 'string' ? photo.processing_status.toUpperCase() : '';
+    if (status === 'DONE') {
+        return `<img src="/api/photo/${photo.id}" alt="Photo" onclick="togglePhotoSelect(${photo.id})" onerror="handlePhotoImageError(this)">`;
+    }
+    if (status === 'PENDING') {
+        return getPhotoPlaceholderHtml(photo.id, 'Upload accepté', 'En attente de traitement');
+    }
+    if (status === 'PROCESSING') {
+        return getPhotoPlaceholderHtml(photo.id, 'Traitement en cours', 'La photo sera affichée dès qu’elle sera prête');
+    }
+    if (status === 'FAILED') {
+        const shortError = photo.error_message
+            ? String(photo.error_message).slice(0, 120)
+            : 'Une erreur est survenue pendant le traitement';
+        return getPhotoPlaceholderHtml(photo.id, 'Erreur de traitement', shortError);
+    }
+    return getPhotoPlaceholderHtml(photo.id, 'Photo temporairement indisponible', 'Réessayez dans quelques instants');
+}
+
+function handlePhotoImageError(imgEl) {
+    if (!imgEl || imgEl.dataset.fallbackApplied === '1') return;
+    imgEl.dataset.fallbackApplied = '1';
+
+    const fallback = document.createElement('div');
+    fallback.setAttribute('onclick', imgEl.getAttribute('onclick') || '');
+    fallback.setAttribute(
+        'style',
+        'width:100%;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f5f5f5;color:#666;padding:16px;text-align:center;cursor:pointer;'
+    );
+    fallback.innerHTML = '<div style="font-weight:bold;margin-bottom:8px;">Photo temporairement indisponible</div><div style="font-size:13px;line-height:1.4;">Le visuel n’a pas pu être chargé pour le moment</div>';
+    imgEl.replaceWith(fallback);
+}
+
+function stopPhotoGridRefresh() {
+    if (photoGridRefreshTimer) {
+        clearTimeout(photoGridRefreshTimer);
+        photoGridRefreshTimer = null;
+    }
+}
+
+function startPhotoGridRefresh() {
+    if (!currentEvent || !currentEvent.id) return;
+
+    stopPhotoGridRefresh();
+    photoGridRefreshRunId += 1;
+
+    const runId = photoGridRefreshRunId;
+    const eventId = currentEvent.id;
+    let attempts = 0;
+
+    const tick = async () => {
+        if (runId !== photoGridRefreshRunId) return;
+        if (!currentEvent || currentEvent.id !== eventId) {
+            stopPhotoGridRefresh();
+            return;
+        }
+
+        attempts += 1;
+        await loadMyPhotos();
+
+        if (runId !== photoGridRefreshRunId) return;
+
+        const visiblePhotos = getFilteredPhotos();
+        const hasPendingVisiblePhoto = visiblePhotos.some(photo => {
+            const status = typeof photo.processing_status === 'string' ? photo.processing_status.toUpperCase() : '';
+            return status === 'PENDING' || status === 'PROCESSING';
+        });
+
+        if (!hasPendingVisiblePhoto || attempts >= PHOTO_GRID_REFRESH_MAX_ATTEMPTS) {
+            stopPhotoGridRefresh();
+            return;
+        }
+
+        photoGridRefreshTimer = setTimeout(tick, PHOTO_GRID_REFRESH_INTERVAL_MS);
+    };
+
+    photoGridRefreshTimer = setTimeout(tick, PHOTO_GRID_REFRESH_INTERVAL_MS);
+}
+
 function renderPhotoGrid() {
     const container = document.getElementById('myPhotosList');
     if (!container) return;
@@ -793,7 +900,7 @@ function renderPhotoGrid() {
                     <div class="toggle-general-btn" onclick="toggleGeneralStatus(${photo.id}, ${photo.show_in_general === true ? 'false' : 'true'})" title="${toggleTitle}">
                         ${toggleIcon}
                     </div>
-                    <img src="/api/photo/${photo.id}" alt="Photo" onclick="togglePhotoSelect(${photo.id})">
+                    ${getPhotoVisualHtml(photo)}
                     <div class="photo-actions">
                         <button onclick="deletePhoto(${photo.id})" class="danger">🗑️</button>
                         <button onclick="togglePhotoSelect(${photo.id})">${isSelected ? 'Retirer' : 'Sélectionner'}</button>
@@ -1255,9 +1362,11 @@ async function hideVisibleInGeneral() {
             if (totalEl) totalEl.textContent = String(files.length);
             let uploadedCount = 0;
             let failedCount = 0;
+            let hasAsyncWorkflow = false;
+            let lastError = null;
 
             async function sendBatch(batch) {
-                if (!batch || batch.length === 0) return { ok: true, count: 0 };
+                if (!batch || batch.length === 0) return { ok: true, count: 0, workflow: null, error: null };
                 const formData = new FormData();
                 batch.forEach(file => formData.append('files', file));
                 let resp, data;
@@ -1268,18 +1377,30 @@ async function hideVisibleInGeneral() {
                         body: formData
                     });
                 } catch (e) {
-                    return { ok: false, count: 0, error: 'Réseau indisponible' };
+                    return { ok: false, count: 0, workflow: null, error: 'Réseau indisponible' };
                 }
                 try { data = await resp.json(); } catch { data = null; }
                 if (!resp.ok) {
                     const status = resp.status;
                     if (status === 413) {
-                        return { ok: false, count: 0, error: 'Requête trop volumineuse (413). Réduisez la taille ou le nombre de fichiers.' };
+                        return { ok: false, count: 0, workflow: null, error: 'Requête trop volumineuse (413). Réduisez la taille ou le nombre de fichiers.' };
                     }
-                    return { ok: false, count: 0, error: (data && data.detail) || `Erreur HTTP ${status}` };
+                    return { ok: false, count: 0, workflow: (data && data.workflow) || null, error: (data && data.detail) || `Erreur HTTP ${status}` };
                 }
-                const count = (data && Array.isArray(data.uploaded_photos)) ? data.uploaded_photos.length : 0;
-                return { ok: true, count };
+                let count = 0;
+                if (data && Array.isArray(data.uploaded_photos)) {
+                    count = data.uploaded_photos.length;
+                } else if (data && typeof data.enqueued === 'number') {
+                    count = data.enqueued;
+                } else if (data && Array.isArray(data.jobs)) {
+                    count = data.jobs.length;
+                }
+                return {
+                    ok: true,
+                    count,
+                    workflow: (data && data.workflow) || null,
+                    error: (data && data.error) || null,
+                };
             }
 
             // Découper en batchs par taille et par nombre
@@ -1289,7 +1410,14 @@ async function hideVisibleInGeneral() {
                 // Si un fichier dépasse seul la limite, l'envoyer isolément
                 if (file.size >= MAX_BATCH_BYTES) {
                     const r = await sendBatch([file]);
-                    if (r.ok) uploadedCount += r.count; else failedCount += 1;
+                    if (r.ok) {
+                        uploadedCount += r.count;
+                        failedCount += Math.max(0, 1 - r.count);
+                        hasAsyncWorkflow = hasAsyncWorkflow || r.workflow === 's3_sqs';
+                    } else {
+                        failedCount += 1;
+                        lastError = r.error || lastError;
+                    }
                     // Petite pause pour ne pas saturer le backend
                     await new Promise(r => setTimeout(r, 150));
                     if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
@@ -1298,7 +1426,14 @@ async function hideVisibleInGeneral() {
                 const wouldExceed = (currentBatch.length + 1 > MAX_FILES_PER_BATCH) || (currentBytes + file.size > MAX_BATCH_BYTES);
                 if (wouldExceed) {
                     const r = await sendBatch(currentBatch);
-                    if (r.ok) uploadedCount += r.count; else failedCount += currentBatch.length;
+                    if (r.ok) {
+                        uploadedCount += r.count;
+                        failedCount += Math.max(0, currentBatch.length - r.count);
+                        hasAsyncWorkflow = hasAsyncWorkflow || r.workflow === 's3_sqs';
+                    } else {
+                        failedCount += currentBatch.length;
+                        lastError = r.error || lastError;
+                    }
                     currentBatch = [];
                     currentBytes = 0;
                     // Petite pause pour laisser le serveur respirer
@@ -1311,17 +1446,39 @@ async function hideVisibleInGeneral() {
             // Dernier batch
             if (currentBatch.length) {
                 const r = await sendBatch(currentBatch);
-                if (r.ok) uploadedCount += r.count; else failedCount += currentBatch.length;
+                if (r.ok) {
+                    uploadedCount += r.count;
+                    failedCount += Math.max(0, currentBatch.length - r.count);
+                    hasAsyncWorkflow = hasAsyncWorkflow || r.workflow === 's3_sqs';
+                } else {
+                    failedCount += currentBatch.length;
+                    lastError = r.error || lastError;
+                }
                 if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
             }
 
             if (uploadedCount > 0) {
-                showAlert(`${uploadedCount} photo(s) téléchargée(s) avec succès${failedCount ? `, ${failedCount} en échec` : ''}.`, failedCount ? 'warning' : 'success');
+                let successMessage;
+                let successType;
+                if (hasAsyncWorkflow) {
+                    successMessage = `${uploadedCount} photo(s) acceptée(s) pour upload. Traitement en cours${failedCount ? `, ${failedCount} en échec` : ''}.`;
+                    successType = failedCount ? 'warning' : 'success';
+                } else if (failedCount > 0) {
+                    successMessage = `${uploadedCount} photo(s) téléchargée(s) avec succès, ${failedCount} en échec.`;
+                    successType = 'warning';
+                } else {
+                    successMessage = `${uploadedCount} photo(s) téléchargée(s) avec succès.`;
+                    successType = 'success';
+                }
+                showAlert(successMessage, successType);
                 cancelUpload();
                 loadMyPhotos();
                 loadStats();
+                if (hasAsyncWorkflow) {
+                    startPhotoGridRefresh();
+                }
             } else {
-                showAlert('Aucune photo n\'a pu être téléchargée. Réduisez le nombre/taille et réessayez.', 'error');
+                showAlert(lastError || 'Aucune photo n\'a pu être téléchargée. Réduisez le nombre/taille et réessayez.', 'error');
             }
 
             document.getElementById('uploadLoading').style.display = 'none';
