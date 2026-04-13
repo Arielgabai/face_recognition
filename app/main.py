@@ -651,7 +651,16 @@ def _startup_photo_queue():
     # Démarrer le worker de suppression SQS si configuré
     try:
         from settings import settings
-        if settings.is_delete_sqs_configured:
+        delete_queue_url = (settings.DELETE_SQS_QUEUE_URL or "").strip()
+        photo_queue_url = (settings.PHOTO_SQS_QUEUE_URL or "").strip()
+        if not delete_queue_url:
+            print("[Startup] Delete worker NOT started: DELETE_SQS_QUEUE_URL is empty. Bulk deletions will be synchronous (limited).")
+        elif delete_queue_url == photo_queue_url:
+            print(
+                "[Startup] Delete worker NOT started: DELETE_SQS_QUEUE_URL matches PHOTO_SQS_QUEUE_URL. "
+                "A dedicated delete queue is required to avoid consuming photo-processing messages."
+            )
+        elif settings.is_delete_sqs_configured:
             from delete_worker_sqs import start_delete_worker
             start_delete_worker()
             print(f"[Startup] SQS Delete worker started (queue={settings.delete_sqs_queue_url})")

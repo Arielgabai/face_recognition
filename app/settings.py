@@ -141,13 +141,13 @@ class Settings(BaseSettings):
     
     @property
     def delete_sqs_queue_url(self) -> str:
-        """Retourne l'URL de la queue de suppression (ou la queue photo par défaut)."""
-        return self.DELETE_SQS_QUEUE_URL or self.PHOTO_SQS_QUEUE_URL
+        """Retourne l'URL dédiée de la queue de suppression."""
+        return self.DELETE_SQS_QUEUE_URL
     
     @property
     def is_delete_sqs_configured(self) -> bool:
         """Vérifie si SQS est configuré pour les suppressions asynchrones."""
-        return bool(self.delete_sqs_queue_url)
+        return bool(self.DELETE_SQS_QUEUE_URL)
 
 
 @lru_cache()
