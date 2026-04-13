@@ -211,30 +211,35 @@ class PhotoWorkerSQS:
                 self._delete_message(receipt_handle)
                 return
             
-            print(f"[PhotoWorkerSQS] Processing photo_id={photo_id} event_id={event_id} s3_key={s3_key}")
-            
+            _t0 = time.perf_counter()
+            print(f"[PhotoWorkerSQS] photo_id={photo_id} event_id={event_id} START s3_key={s3_key}")
+
             # Mettre à jour le statut en DB: PROCESSING
             self._update_photo_status(photo_id, "PROCESSING")
-            
+            _t_status = time.perf_counter()
+
             # Récupérer l'image depuis S3
             image_bytes = self._download_from_s3(s3_key)
-            
+            _t_s3_dl = time.perf_counter()
+
             if not image_bytes:
                 raise ValueError(f"Failed to download image from S3: {s3_key}")
-            
-            print(f"[PhotoWorkerSQS] Downloaded {len(image_bytes)} bytes from S3")
-            
+
+            print(f"[PhotoWorkerSQS] photo_id={photo_id} s3_downloaded size_bytes={len(image_bytes)} t_s3_dl_ms={int((_t_s3_dl - _t_status) * 1000)}")
+
             # Traiter la photo avec reconnaissance faciale
             self._process_photo(photo_id, event_id, image_bytes)
-            
+            _t_process = time.perf_counter()
+
             # Succès: mettre à jour le statut et supprimer le message SQS
             self._update_photo_status(photo_id, "DONE")
             self._delete_message(receipt_handle)
-            
+            _t_done = time.perf_counter()
+
             with self._stats_lock:
                 self._stats["total_processed"] += 1
-            
-            print(f"[PhotoWorkerSQS] Successfully processed photo_id={photo_id}")
+
+            print(f"[PhotoWorkerSQS] photo_id={photo_id} DONE t_rekognition_ms={int((_t_process - _t_s3_dl) * 1000)} t_total_ms={int((_t_done - _t0) * 1000)}")
         
         except PhotoNotFoundError as e:
             # Cas logique: la photo n'existe plus en DB (suppression async, rollback, etc.)

@@ -5520,17 +5520,24 @@ async def upload_photos_to_event(
         
         enqueued_jobs = []
         failed_uploads = []
-        
+
+        batch_id = str(uuid.uuid4())[:8]
+        _batch_start = time.perf_counter()
+        _total_size_bytes = 0
+        print(f"[UPLOAD] batch={batch_id} event={event_id} files_received={len(files)} workflow=s3_sqs photographer={effective_photographer_id}")
+
         for file in files:
             if not file.content_type.startswith("image/"):
                 continue
-            
+
             photo = None
             s3_key = None
-            
+
             try:
+                _t0 = time.perf_counter()
                 # 1. Lire les bytes de l'image (pas de fichier temp persistant)
                 image_bytes = await file.read()
+                _t_read = time.perf_counter()
                 
                 if not image_bytes:
                     failed_uploads.append({
@@ -5538,7 +5545,11 @@ async def upload_photos_to_event(
                         "error": "Empty file"
                     })
                     continue
-                
+
+                _file_size = len(image_bytes)
+                _total_size_bytes += _file_size
+                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} size_bytes={_file_size} t_read_ms={int((_t_read - _t0) * 1000)}")
+
                 # 2. Créer l'entrée Photo en DB avec status=PENDING
                 unique_filename = f"{uuid.uuid4()}.jpg"
                 photo = Photo(
@@ -5553,9 +5564,9 @@ async def upload_photos_to_event(
                 db.add(photo)
                 db.commit()
                 db.refresh(photo)
-                
-                print(f"[UploadEvent] Created photo_id={photo.id} event_id={event_id} filename={file.filename}")
-                
+                _t_db = time.perf_counter()
+                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_db_write_ms={int((_t_db - _t_read) * 1000)}")
+
                 # 3. Upload vers S3
                 extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
                 s3_key = s3_service.upload_photo(
@@ -5565,18 +5576,23 @@ async def upload_photos_to_event(
                     content_type=file.content_type or "image/jpeg",
                     extension=extension
                 )
-                
+                _t_s3 = time.perf_counter()
+                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_s3_upload_ms={int((_t_s3 - _t_db) * 1000)}")
+
                 # 4. Mettre à jour la photo avec la clé S3
                 photo.s3_key = s3_key
                 db.commit()
-                
+                _t_s3_commit = time.perf_counter()
+
                 # 5. Envoyer le message SQS
                 message_id = sqs_service.send_photo_job(
                     photo_id=photo.id,
                     event_id=event_id,
                     s3_key=s3_key
                 )
-                
+                _t_sqs = time.perf_counter()
+                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_sqs_ms={int((_t_sqs - _t_s3_commit) * 1000)} t_file_total_ms={int((_t_sqs - _t0) * 1000)}")
+
                 enqueued_jobs.append({
                     "photo_id": photo.id,
                     "filename": file.filename,
@@ -5585,10 +5601,8 @@ async def upload_photos_to_event(
                     "status": "queued"
                 })
                 
-                print(f"[UploadEvent] Enqueued photo_id={photo.id} s3_key={s3_key} message_id={message_id}")
-                
             except Exception as e:
-                print(f"[UploadEvent] Error processing file {file.filename}: {e}")
+                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR {type(e).__name__}: {e}")
                 import traceback
                 traceback.print_exc()
                 
@@ -5609,6 +5623,9 @@ async def upload_photos_to_event(
                         except Exception:
                             pass
         
+        _batch_elapsed_ms = int((time.perf_counter() - _batch_start) * 1000)
+        print(f"[UPLOAD] batch={batch_id} event={event_id} SUMMARY enqueued={len(enqueued_jobs)} failed={len(failed_uploads)} total_size_bytes={_total_size_bytes} t_batch_ms={_batch_elapsed_ms}")
+
         response = {
             "message": f"{len(enqueued_jobs)} photos en queue pour traitement (S3+SQS)",
             "workflow": "s3_sqs",
@@ -5626,13 +5643,18 @@ async def upload_photos_to_event(
         # ========== FALLBACK: ANCIEN WORKFLOW QUEUE EN MÉMOIRE ==========
         # Utilisé si PHOTO_BUCKET_NAME ou PHOTO_SQS_QUEUE_URL ne sont pas configurés
         print("[UploadEvent] Using legacy in-memory queue (S3+SQS not configured)")
-        
+
         from photo_queue import get_photo_queue, PhotoJob
         photo_queue = get_photo_queue()
-        
+
         enqueued_jobs = []
         failed_uploads = []
-        
+
+        batch_id = str(uuid.uuid4())[:8]
+        _batch_start = time.perf_counter()
+        _total_size_bytes = 0
+        print(f"[UPLOAD] batch={batch_id} event={event_id} files_received={len(files)} workflow=memory_queue photographer={effective_photographer_id}")
+
         # Préparation de la collection (rapide, une seule fois)
         try:
             if hasattr(face_recognizer, 'prepare_event_for_batch'):
@@ -5646,11 +5668,16 @@ async def upload_photos_to_event(
                 continue
             
             try:
+                _t0 = time.perf_counter()
                 # Sauvegarder temporairement le fichier (méthode stable)
                 temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
                 with open(temp_path, "wb") as buffer:
                     shutil.copyfileobj(file.file, buffer)
-                
+                _t_write = time.perf_counter()
+                _file_size = os.path.getsize(temp_path)
+                _total_size_bytes += _file_size
+                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} size_bytes={_file_size} t_write_ms={int((_t_write - _t0) * 1000)}")
+
                 # Créer un job et l'enqueuer
                 job_id = str(uuid.uuid4())
                 job = PhotoJob(
@@ -5662,8 +5689,10 @@ async def upload_photos_to_event(
                     original_filename=file.filename,
                     watcher_id=watcher_id,
                 )
-                
+
                 if photo_queue.enqueue(job):
+                    _t_enqueue = time.perf_counter()
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} job_id={job_id} t_enqueue_ms={int((_t_enqueue - _t_write) * 1000)} t_file_total_ms={int((_t_enqueue - _t0) * 1000)}")
                     enqueued_jobs.append({
                         "job_id": job_id,
                         "filename": file.filename,
@@ -5673,13 +5702,14 @@ async def upload_photos_to_event(
                     # Queue pleine, nettoyer le fichier temp
                     if os.path.exists(temp_path):
                         os.remove(temp_path)
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR QUEUE_FULL")
                     failed_uploads.append({
                         "filename": file.filename,
                         "error": "Queue is full, try again later"
                     })
                     
             except Exception as e:
-                print(f"[UploadEvent] Error saving file {file.filename}: {e}")
+                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR {type(e).__name__}: {e}")
                 failed_uploads.append({
                     "filename": file.filename,
                     "error": str(e)
@@ -5691,6 +5721,9 @@ async def upload_photos_to_event(
                     except:
                         pass
         
+        _batch_elapsed_ms = int((time.perf_counter() - _batch_start) * 1000)
+        print(f"[UPLOAD] batch={batch_id} event={event_id} SUMMARY enqueued={len(enqueued_jobs)} failed={len(failed_uploads)} total_size_bytes={_total_size_bytes} t_batch_ms={_batch_elapsed_ms}")
+
         response = {
             "message": f"{len(enqueued_jobs)} photos en queue pour traitement (legacy)",
             "workflow": "in_memory_queue",

@@ -198,23 +198,26 @@ class PhotoQueue:
     
     def _process_job(self, job: PhotoJob):
         """Traite un job de photo."""
-        print(f"[{threading.current_thread().name}] Processing job {job.job_id}: {job.original_filename}")
-        
+        _t0 = time.perf_counter()
+        _file_size = os.path.getsize(job.temp_path) if os.path.exists(job.temp_path) else 0
+        print(f"[PhotoQueue] job_id={job.job_id} START file={job.original_filename!r} size_bytes={_file_size} event_id={job.event_id} attempt={job.attempts + 1}")
+
         # Mettre à jour le statut
         job.status = "processing"
         job.attempts += 1
-        
+
         db = None
         try:
             # Créer une session DB pour ce worker
             db = SessionLocal()
-            
+
             # Importer ici pour éviter les imports circulaires
             from recognizer_factory import get_face_recognizer
             from models import LocalIngestionLog
-            
+
             face_recognizer = get_face_recognizer()
-            
+            _t_process_start = time.perf_counter()
+
             # Traiter la photo
             photo = face_recognizer.process_and_save_photo_for_event(
                 job.temp_path,
@@ -223,6 +226,7 @@ class PhotoQueue:
                 job.event_id,
                 db
             )
+            _t_process_end = time.perf_counter()
             
             # Logger l'ingestion si watcher_id présent
             if job.watcher_id is not None:
@@ -239,11 +243,12 @@ class PhotoQueue:
             
             # Succès
             job.status = "completed"
-            
+
             with self._stats_lock:
                 self._stats["total_processed"] += 1
-            
-            print(f"[{threading.current_thread().name}] Job {job.job_id} completed: {photo.filename}")
+
+            _t_done = time.perf_counter()
+            print(f"[PhotoQueue] job_id={job.job_id} DONE photo_id={photo.id if photo else 'N/A'} t_processing_ms={int((_t_process_end - _t_process_start) * 1000)} t_total_ms={int((_t_done - _t0) * 1000)}")
             
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
