@@ -5464,7 +5464,9 @@ async def get_event_photos(
             "photographer_id": photo.photographer_id,
             "uploaded_at": photo.uploaded_at,
             "event_id": photo.event_id,
-            "show_in_general": photo.show_in_general
+            "show_in_general": photo.show_in_general,
+            "processing_status": photo.processing_status,
+            "error_message": photo.error_message,
         })
     
     return photo_list
