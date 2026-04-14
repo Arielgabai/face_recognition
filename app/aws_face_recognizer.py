@@ -10,6 +10,7 @@ from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 from database import SessionLocal
+from settings import settings
 
 from models import User, Photo, FaceMatch, Event, UserEvent, PhotoFace
 from aws_metrics import aws_metrics
@@ -173,6 +174,26 @@ class AwsFaceRecognizer:
                 session.close()
             except Exception:
                 pass
+
+    def _photo_processing_bulk_index_users_enabled(self) -> bool:
+        """Feature flag pour conserver ou non la bulk réindexation users dans le chemin photo."""
+        try:
+            return bool(settings.PHOTO_PROCESSING_BULK_INDEX_USERS)
+        except Exception:
+            return str(os.environ.get("PHOTO_PROCESSING_BULK_INDEX_USERS", "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _maybe_ensure_event_users_indexed_for_photo(self, event_id: int, photo_id: Optional[int], db: Session) -> bool:
+        enabled = self._photo_processing_bulk_index_users_enabled()
+        called = False
+        if enabled:
+            self.ensure_event_users_indexed(event_id, db)
+            called = True
+        print(
+            f"[PHOTO-PIPELINE] photo_id={photo_id if photo_id is not None else 'N/A'} "
+            f"event_id={event_id} bulk_user_indexing_enabled={str(enabled).lower()} "
+            f"ensure_event_users_indexed_called={str(called).lower()}"
+        )
+        return called
 
     def _collection_id(self, event_id: int) -> str:
         return f"{COLL_PREFIX}{event_id}"
@@ -498,7 +519,7 @@ class AwsFaceRecognizer:
             self._maybe_purge_collection(event_id, db)
         except Exception:
             pass
-        self.ensure_event_users_indexed(event_id, db)
+        self._maybe_ensure_event_users_indexed_for_photo(event_id, None, db)
 
     def _get_allowed_event_user_ids(self, event_id: int, db: Session) -> set[int]:
         """Renvoie l'ensemble des user_id associés à l'événement et existant dans la table users."""
@@ -752,7 +773,7 @@ class AwsFaceRecognizer:
         Retourne une liste dédupliquée par user_id avec le meilleur score par photo.
         """
         self.ensure_collection(event_id)
-        self.ensure_event_users_indexed(event_id, db)
+        self._maybe_ensure_event_users_indexed_for_photo(event_id, None, db)
 
         # Normaliser et sécuriser l'image
         image_bytes = self._prepare_image_bytes(photo_input)
@@ -799,7 +820,9 @@ class AwsFaceRecognizer:
                     continue
                 if (user_id not in user_best) or (similarity > user_best[user_id]):
                     user_best[user_id] = similarity
-            return [{"user_id": uid, "confidence_score": int(round(sim))} for uid, sim in user_best.items()]
+            results = [{"user_id": uid, "confidence_score": int(round(sim))} for uid, sim in user_best.items()]
+            print(f"[PHOTO-PIPELINE] photo_id=N/A event_id={event_id} face_ids_count=0 matched_user_ids_count={len(results)}")
+            return results
 
         # 3) Recadrer et rechercher pour chaque visage détecté
         crops = self._crop_face_regions(image_bytes, faces)
@@ -835,6 +858,7 @@ class AwsFaceRecognizer:
                             user_best[user_id] = similarity
 
         results: List[Dict] = [{"user_id": uid, "confidence_score": int(round(sim))} for uid, sim in user_best.items()]
+        print(f"[PHOTO-PIPELINE] photo_id=N/A event_id={event_id} face_ids_count={len(crops)} matched_user_ids_count={len(results)}")
         return results
 
     
@@ -1052,8 +1076,9 @@ class AwsFaceRecognizer:
                 self._maybe_purge_collection(event_id, db)
             except Exception:
                 pass
-            self.ensure_event_users_indexed(event_id, db)
+            self._maybe_ensure_event_users_indexed_for_photo(event_id, photo.id, db)
             face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+            print(f"[PHOTO-PIPELINE] photo_id={photo.id} event_id={event_id} face_ids_count={len(face_ids)}")
             try:
                 photo.is_indexed = True
                 db.add(photo)
@@ -1089,6 +1114,8 @@ class AwsFaceRecognizer:
                     if prev is None or sim > prev:
                         user_best[uid] = sim
             allowed_user_ids = self._get_allowed_event_user_ids(event_id, db)
+            matched_user_ids = [uid for uid in user_best.keys() if uid in allowed_user_ids]
+            print(f"[PHOTO-PIPELINE] photo_id={photo.id} event_id={event_id} matched_user_ids_count={len(matched_user_ids)}")
             for uid, score in user_best.items():
                 if uid in allowed_user_ids:
                     try:
@@ -1153,8 +1180,9 @@ class AwsFaceRecognizer:
         except Exception:
             pass
         # IMPORTANT: indexer aussi les selfies des users de l'événement avant de matcher
-        self.ensure_event_users_indexed(event_id, db)
+        self._maybe_ensure_event_users_indexed_for_photo(event_id, photo.id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, image_bytes)
+        print(f"[PHOTO-PIPELINE] photo_id={photo.id} event_id={event_id} face_ids_count={len(face_ids)}")
         try:
             photo.is_indexed = True
             db.add(photo)
@@ -1305,6 +1333,7 @@ class AwsFaceRecognizer:
                 print(f"[AWS-MATCH][photo->{photo.id}] kept_user_ids={kept_user_ids}")
             except Exception:
                 pass
+        print(f"[PHOTO-PIPELINE] photo_id={photo.id} event_id={event_id} matched_user_ids_count={len(kept_user_ids)}")
         # Nettoyage: supprimer les FaceMatch non retenus pour cette photo
         try:
             from sqlalchemy import not_ as _not
@@ -1404,8 +1433,9 @@ class AwsFaceRecognizer:
             pass
         
         # Indexer les selfies des users de l'événement avant de matcher
-        self.ensure_event_users_indexed(event_id, db)
+        self._maybe_ensure_event_users_indexed_for_photo(event_id, photo.id, db)
         face_ids = self._index_photo_faces_and_get_ids(event_id, photo.id, prepared_bytes)
+        print(f"[PHOTO-PIPELINE] photo_id={photo.id} event_id={event_id} face_ids_count={len(face_ids)}")
         
         try:
             photo.is_indexed = True
@@ -1516,6 +1546,7 @@ class AwsFaceRecognizer:
         
         if _debug:
             print(f"[AWS-MATCH][photo->{photo.id}] kept_user_ids={kept_user_ids}")
+        print(f"[PHOTO-PIPELINE] photo_id={photo.id} event_id={event_id} matched_user_ids_count={len(kept_user_ids)}")
         
         # Nettoyage: supprimer les FaceMatch non retenus pour cette photo
         try:

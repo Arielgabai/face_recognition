@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     PHOTO_WORKER_COUNT: int = 1
     # Délai entre les polls SQS en secondes (si aucun message)
     PHOTO_WORKER_POLL_INTERVAL: float = 1.0
+    # Active/désactive la bulk réindexation des users dans le chemin nominal de traitement photo
+    PHOTO_PROCESSING_BULK_INDEX_USERS: bool = True
     
     # ========== Delete Worker ==========
     # Active/désactive le worker de suppression des photos
