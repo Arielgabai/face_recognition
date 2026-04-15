@@ -101,6 +101,7 @@ class Photo(Base):
     photographer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     event_id = Column(Integer, ForeignKey("events.id"), nullable=True)
+    upload_batch_id = Column(String, nullable=True, index=True)
     
     # ========== Nouveaux champs pour workflow S3+SQS asynchrone ==========
     # Clé S3 de l'image brute uploadée (format: raw/event_{event_id}/{photo_id}.jpg)
@@ -136,6 +137,34 @@ class Photo(Base):
     photographer = relationship("User", back_populates="uploaded_photos", foreign_keys=[photographer_id])
     face_matches = relationship("FaceMatch", back_populates="photo")
     event = relationship("Event", back_populates="photos")
+
+
+class PhotographerUploadBatch(Base):
+    """Lot d'upload photographe pour suivre un traitement asynchrone multi-photos."""
+    __tablename__ = "photographer_upload_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    upload_batch_id = Column(String, unique=True, index=True, nullable=False)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    photographer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    total_photos = Column(Integer, nullable=False, default=0)
+    processed_count = Column(Integer, nullable=False, default=0)
+    success_count = Column(Integer, nullable=False, default=0)
+    error_count = Column(Integer, nullable=False, default=0)
+    status = Column(String, nullable=False, default="PENDING", index=True)
+    email_sent_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index('idx_upload_batches_event', 'event_id'),
+        Index('idx_upload_batches_photographer', 'photographer_id'),
+        Index('idx_upload_batches_status', 'status'),
+        Index('idx_upload_batches_created', 'created_at'),
+    )
+
+    event = relationship("Event")
+    photographer = relationship("User")
 
 class FaceMatch(Base):
     __tablename__ = "face_matches"

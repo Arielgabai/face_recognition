@@ -80,7 +80,7 @@ def serve_react_frontend():
 from database import get_db, create_tables
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher, LocalIngestionLog
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog, PasswordResetToken
-from models import DeleteJob, DeleteJobStatus
+from models import DeleteJob, DeleteJobStatus, PhotographerUploadBatch
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
@@ -5484,6 +5484,8 @@ async def get_event_photos(
 async def upload_photos_to_event(
     event_id: int,
     files: List[UploadFile] = File(...),
+    upload_batch_id: str | None = Form(None),
+    total_photos: str | None = Form(None),
     watcher_id: int | None = Body(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -5516,6 +5518,40 @@ async def upload_photos_to_event(
     if current_user.user_type == UserType.PHOTOGRAPHER and event.photographer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Vous n'êtes pas propriétaire de cet événement")
     effective_photographer_id = current_user.id if current_user.user_type == UserType.PHOTOGRAPHER else int(event.photographer_id)
+
+    effective_upload_batch_id = (upload_batch_id or "").strip() or None
+    parsed_total_photos = 0
+    if total_photos is not None and str(total_photos).strip():
+        try:
+            parsed_total_photos = max(0, int(str(total_photos).strip()))
+        except Exception:
+            parsed_total_photos = 0
+
+    if effective_upload_batch_id:
+        upload_batch = (
+            db.query(PhotographerUploadBatch)
+            .filter(PhotographerUploadBatch.upload_batch_id == effective_upload_batch_id)
+            .first()
+        )
+        if not upload_batch:
+            try:
+                upload_batch = PhotographerUploadBatch(
+                    upload_batch_id=effective_upload_batch_id,
+                    event_id=event_id,
+                    photographer_id=effective_photographer_id,
+                    total_photos=parsed_total_photos,
+                    status="PROCESSING",
+                )
+                db.add(upload_batch)
+                db.commit()
+                db.refresh(upload_batch)
+            except IntegrityError:
+                db.rollback()
+                upload_batch = (
+                    db.query(PhotographerUploadBatch)
+                    .filter(PhotographerUploadBatch.upload_batch_id == effective_upload_batch_id)
+                    .first()
+                )
     
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
@@ -5570,6 +5606,7 @@ async def upload_photos_to_event(
                     photo_type="uploaded",
                     photographer_id=effective_photographer_id,
                     event_id=event_id,
+                    upload_batch_id=effective_upload_batch_id,
                     processing_status=PhotoProcessingStatus.PENDING.value,
                 )
                 db.add(photo)

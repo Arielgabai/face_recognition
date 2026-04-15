@@ -399,6 +399,11 @@
                             Traitement: <span id="processedCount">0</span>/<span id="totalCount">0</span>
                         </p>
                     </div>
+                    <div id="uploadStatusCard" style="display:none; margin-top: 16px; padding: 16px; border-radius: 8px; background: #f5f7fb; border: 1px solid #d8e1f0;">
+                        <div id="uploadStatusTitle" style="font-weight: bold; margin-bottom: 8px;">Envoi des photos en cours</div>
+                        <div id="uploadStatusMessage" style="color: #444; line-height: 1.5;">Ne fermez pas votre ordinateur pendant cette étape.</div>
+                        <div id="uploadStatusProgress" style="margin-top: 8px; color: #666;">0 / 0 photos envoyées</div>
+                    </div>
                 </div>
             </div>
 
@@ -1298,6 +1303,7 @@ async function hideVisibleInGeneral() {
                     showAlert('Veuillez sélectionner un événement avant d\'uploader des photos', 'error');
                     return;
                 }
+                resetUploadStatusCard();
                 document.getElementById('uploadPreview').style.display = 'block';
                 displayPreview(files);
             }
@@ -1325,10 +1331,41 @@ async function hideVisibleInGeneral() {
             });
         }
 
-        function cancelUpload() {
+        function cancelUpload(preserveStatusCard = false) {
             document.getElementById('uploadPreview').style.display = 'none';
             document.getElementById('photoFiles').value = '';
             document.getElementById('previewGrid').innerHTML = '';
+            if (!preserveStatusCard) {
+                resetUploadStatusCard();
+            }
+        }
+
+        function generateUploadBatchId() {
+            try {
+                if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                    return window.crypto.randomUUID();
+                }
+            } catch (e) {}
+            return `upload-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        }
+
+        function setUploadStatusCard(title, message, progressText) {
+            const card = document.getElementById('uploadStatusCard');
+            const titleEl = document.getElementById('uploadStatusTitle');
+            const messageEl = document.getElementById('uploadStatusMessage');
+            const progressEl = document.getElementById('uploadStatusProgress');
+            if (!card || !titleEl || !messageEl || !progressEl) return;
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+            progressEl.textContent = progressText || '';
+            card.style.display = 'block';
+        }
+
+        function resetUploadStatusCard() {
+            const card = document.getElementById('uploadStatusCard');
+            const progressEl = document.getElementById('uploadStatusProgress');
+            if (progressEl) progressEl.textContent = '0 / 0 photos envoyées';
+            if (card) card.style.display = 'none';
         }
 
         async function uploadPhotos() {
@@ -1359,16 +1396,25 @@ async function hideVisibleInGeneral() {
             const MAX_BATCH_BYTES = 20 * 1024 * 1024; // ~20MB par requête
 
             const files = Array.from(fileList).filter(f => f && f.size > 0);
+            const uploadBatchId = generateUploadBatchId();
+            const totalPhotos = files.length;
             if (totalEl) totalEl.textContent = String(files.length);
             let uploadedCount = 0;
             let failedCount = 0;
             let hasAsyncWorkflow = false;
             let lastError = null;
+            setUploadStatusCard(
+                'Envoi des photos en cours',
+                'Ne fermez pas votre ordinateur pendant cette étape.',
+                `0 / ${totalPhotos} photos envoyées`
+            );
 
             async function sendBatch(batch) {
                 if (!batch || batch.length === 0) return { ok: true, count: 0, workflow: null, error: null };
                 const formData = new FormData();
                 batch.forEach(file => formData.append('files', file));
+                formData.append('upload_batch_id', uploadBatchId);
+                formData.append('total_photos', String(totalPhotos));
                 let resp, data;
                 try {
                     resp = await fetch(`/api/photographer/events/${currentEvent.id}/upload-photos`, {
@@ -1420,7 +1466,12 @@ async function hideVisibleInGeneral() {
                     }
                     // Petite pause pour ne pas saturer le backend
                     await new Promise(r => setTimeout(r, 150));
-                    if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
+                    if (processedEl) processedEl.textContent = String(uploadedCount);
+                    setUploadStatusCard(
+                        'Envoi des photos en cours',
+                        'Ne fermez pas votre ordinateur pendant cette étape.',
+                        `${uploadedCount} / ${totalPhotos} photos envoyées`
+                    );
                     continue;
                 }
                 const wouldExceed = (currentBatch.length + 1 > MAX_FILES_PER_BATCH) || (currentBytes + file.size > MAX_BATCH_BYTES);
@@ -1438,7 +1489,12 @@ async function hideVisibleInGeneral() {
                     currentBytes = 0;
                     // Petite pause pour laisser le serveur respirer
                     await new Promise(r => setTimeout(r, 150));
-                    if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
+                    if (processedEl) processedEl.textContent = String(uploadedCount);
+                    setUploadStatusCard(
+                        'Envoi des photos en cours',
+                        'Ne fermez pas votre ordinateur pendant cette étape.',
+                        `${uploadedCount} / ${totalPhotos} photos envoyées`
+                    );
                 }
                 currentBatch.push(file);
                 currentBytes += file.size;
@@ -1454,7 +1510,12 @@ async function hideVisibleInGeneral() {
                     failedCount += currentBatch.length;
                     lastError = r.error || lastError;
                 }
-                if (processedEl) processedEl.textContent = String(uploadedCount + failedCount);
+                if (processedEl) processedEl.textContent = String(uploadedCount);
+                setUploadStatusCard(
+                    'Envoi des photos en cours',
+                    'Ne fermez pas votre ordinateur pendant cette étape.',
+                    `${uploadedCount} / ${totalPhotos} photos envoyées`
+                );
             }
 
             if (uploadedCount > 0) {
@@ -1471,7 +1532,16 @@ async function hideVisibleInGeneral() {
                     successType = 'success';
                 }
                 showAlert(successMessage, successType);
-                cancelUpload();
+                if (hasAsyncWorkflow) {
+                    setUploadStatusCard(
+                        'Transfert terminé',
+                        'Vous pouvez fermer votre ordinateur. Le traitement continue côté serveur. Vous recevrez un email quand tout sera prêt.',
+                        `${uploadedCount} / ${totalPhotos} photos envoyées`
+                    );
+                } else {
+                    resetUploadStatusCard();
+                }
+                cancelUpload(hasAsyncWorkflow);
                 loadMyPhotos();
                 loadStats();
                 if (hasAsyncWorkflow) {
@@ -1479,6 +1549,7 @@ async function hideVisibleInGeneral() {
                 }
             } else {
                 showAlert(lastError || 'Aucune photo n\'a pu être téléchargée. Réduisez le nombre/taille et réessayez.', 'error');
+                resetUploadStatusCard();
             }
 
             document.getElementById('uploadLoading').style.display = 'none';

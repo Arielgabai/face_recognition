@@ -35,6 +35,7 @@ import json
 import time
 import threading
 import traceback
+from datetime import datetime
 from typing import Optional, Dict, Any
 
 import boto3
@@ -233,6 +234,7 @@ class PhotoWorkerSQS:
 
             # Succès: mettre à jour le statut et supprimer le message SQS
             self._update_photo_status(photo_id, "DONE")
+            self._recalculate_upload_batch_for_photo(photo_id)
             self._delete_message(receipt_handle)
             _t_done = time.perf_counter()
 
@@ -269,6 +271,7 @@ class PhotoWorkerSQS:
             if photo_id:
                 try:
                     self._update_photo_status(photo_id, "FAILED", error_msg)
+                    self._recalculate_upload_batch_for_photo(photo_id)
                 except Exception:
                     pass
             
@@ -307,6 +310,88 @@ class PhotoWorkerSQS:
                 event_id=event_id,
                 db=db
             )
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    def _recalculate_upload_batch_for_photo(self, photo_id: int) -> Dict[str, Any] | None:
+        """Recalcule l'état d'un lot d'upload à partir des photos déjà persistées."""
+        from database import SessionLocal
+        from models import Photo, PhotographerUploadBatch, PhotoProcessingStatus
+
+        db = SessionLocal()
+        try:
+            photo = db.query(Photo).filter(Photo.id == photo_id).first()
+            if not photo or not getattr(photo, "upload_batch_id", None):
+                print(f"[UPLOAD-BATCH] skipped no_batch photo_id={photo_id}")
+                return None
+
+            batch_id = str(photo.upload_batch_id).strip()
+            batch = db.query(PhotographerUploadBatch).filter(
+                PhotographerUploadBatch.upload_batch_id == batch_id
+            ).first()
+            if not batch:
+                return None
+
+            lot_photos = db.query(Photo).filter(Photo.upload_batch_id == batch_id)
+            actual_total = lot_photos.count()
+            processed_count = lot_photos.filter(
+                Photo.processing_status.in_([
+                    PhotoProcessingStatus.DONE.value,
+                    PhotoProcessingStatus.FAILED.value,
+                ])
+            ).count()
+            success_count = lot_photos.filter(
+                Photo.processing_status == PhotoProcessingStatus.DONE.value
+            ).count()
+            error_count = lot_photos.filter(
+                Photo.processing_status == PhotoProcessingStatus.FAILED.value
+            ).count()
+
+            total_photos = max(int(batch.total_photos or 0), int(actual_total or 0))
+            batch.total_photos = total_photos
+            batch.processed_count = processed_count
+            batch.success_count = success_count
+            batch.error_count = error_count
+
+            is_completed = total_photos > 0 and processed_count >= total_photos
+            if is_completed and error_count == 0:
+                batch.status = "DONE"
+            elif is_completed and error_count > 0 and success_count > 0:
+                batch.status = "PARTIAL"
+            elif is_completed and success_count == 0 and error_count > 0:
+                batch.status = "FAILED"
+            else:
+                batch.status = "PENDING" if processed_count == 0 else "PROCESSING"
+
+            batch.completed_at = datetime.utcnow() if is_completed else None
+            db.commit()
+
+            print(
+                f"[UPLOAD-BATCH] progress batch_id={batch_id} total={total_photos} "
+                f"processed={processed_count} success={success_count} error={error_count} status={batch.status}"
+            )
+            if is_completed:
+                print(f"[UPLOAD-BATCH] completed batch_id={batch_id} status={batch.status}")
+
+            return {
+                "batch_id": batch_id,
+                "total_photos": total_photos,
+                "processed_count": processed_count,
+                "success_count": success_count,
+                "error_count": error_count,
+                "status": batch.status,
+                "completed": is_completed,
+            }
+        except Exception as e:
+            print(f"[UPLOAD-BATCH] error photo_id={photo_id}: {type(e).__name__}: {e}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return None
         finally:
             try:
                 db.close()
