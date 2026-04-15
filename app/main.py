@@ -5461,7 +5461,7 @@ async def get_event_photos(
     photos = db.query(Photo).options(
         defer(Photo.photo_data),
         joinedload(Photo.event)
-    ).filter(Photo.event_id == event_id).all()
+    ).filter(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc(), Photo.id.desc()).all()
     
     # Retourner seulement les m+�tadonn+�es, pas les donn+�es binaires
     photo_list = []
