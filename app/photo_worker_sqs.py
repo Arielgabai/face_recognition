@@ -234,7 +234,9 @@ class PhotoWorkerSQS:
 
             # Succès: mettre à jour le statut et supprimer le message SQS
             self._update_photo_status(photo_id, "DONE")
-            self._recalculate_upload_batch_for_photo(photo_id)
+            batch_state = self._recalculate_upload_batch_for_photo(photo_id)
+            if batch_state:
+                self._send_upload_batch_completion_email_if_needed(batch_state.get("batch_id", ""))
             self._delete_message(receipt_handle)
             _t_done = time.perf_counter()
 
@@ -271,7 +273,9 @@ class PhotoWorkerSQS:
             if photo_id:
                 try:
                     self._update_photo_status(photo_id, "FAILED", error_msg)
-                    self._recalculate_upload_batch_for_photo(photo_id)
+                    batch_state = self._recalculate_upload_batch_for_photo(photo_id)
+                    if batch_state:
+                        self._send_upload_batch_completion_email_if_needed(batch_state.get("batch_id", ""))
                 except Exception:
                     pass
             
@@ -392,6 +396,117 @@ class PhotoWorkerSQS:
             except Exception:
                 pass
             return None
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    def _send_upload_batch_completion_email_if_needed(self, batch_id: str) -> bool:
+        """Envoie une notification email au photographe si le lot est terminé et non encore notifié."""
+        from database import SessionLocal
+        from models import PhotographerUploadBatch, Event, User
+
+        if not batch_id:
+            return False
+
+        db = SessionLocal()
+        try:
+            batch = db.query(PhotographerUploadBatch).filter(
+                PhotographerUploadBatch.upload_batch_id == batch_id
+            ).first()
+            if not batch:
+                return False
+
+            is_complete = (
+                int(batch.total_photos or 0) > 0
+                and int(batch.processed_count or 0) >= int(batch.total_photos or 0)
+                and str(batch.status or "") in {"DONE", "PARTIAL", "FAILED"}
+            )
+            if not is_complete:
+                print(f"[UPLOAD-BATCH] email skipped batch_not_complete batch_id={batch_id}")
+                return False
+
+            if batch.email_sent_at is not None:
+                print(f"[UPLOAD-BATCH] email skipped already_sent batch_id={batch_id}")
+                return False
+
+            email_sent_at = datetime.utcnow()
+            updated_rows = (
+                db.query(PhotographerUploadBatch)
+                .filter(
+                    PhotographerUploadBatch.upload_batch_id == batch_id,
+                    PhotographerUploadBatch.email_sent_at.is_(None),
+                )
+                .update({"email_sent_at": email_sent_at}, synchronize_session=False)
+            )
+            db.commit()
+
+            if updated_rows == 0:
+                print(f"[UPLOAD-BATCH] email skipped already_sent batch_id={batch_id}")
+                return False
+
+            batch = db.query(PhotographerUploadBatch).filter(
+                PhotographerUploadBatch.upload_batch_id == batch_id
+            ).first()
+            if not batch:
+                return False
+
+            event = db.query(Event).filter(Event.id == batch.event_id).first()
+            photographer = db.query(User).filter(User.id == batch.photographer_id).first()
+            if not photographer or not (photographer.email or "").strip():
+                print(f"[UPLOAD-BATCH] email error batch_id={batch_id} error=photographer_email_missing")
+                return False
+
+            from main import send_email, SITE_BASE_URL
+
+            event_name = getattr(event, "name", None) or f"Événement #{batch.event_id}"
+            link = f"{SITE_BASE_URL}/photographer"
+            subject = f"Traitement terminé - {event_name}"
+            text_body = (
+                f"Bonjour,\n\n"
+                f"Le traitement de votre lot est terminé.\n\n"
+                f"Événement : {event_name}\n"
+                f"Total photos : {int(batch.total_photos or 0)}\n"
+                f"Succès : {int(batch.success_count or 0)}\n"
+                f"Erreurs : {int(batch.error_count or 0)}\n\n"
+                f"Accéder à l'interface photographe : {link}\n"
+            )
+            html_body = (
+                f"<p>Bonjour,</p>"
+                f"<p>Le traitement de votre lot est terminé.</p>"
+                f"<ul>"
+                f"<li><strong>Événement :</strong> {event_name}</li>"
+                f"<li><strong>Total photos :</strong> {int(batch.total_photos or 0)}</li>"
+                f"<li><strong>Succès :</strong> {int(batch.success_count or 0)}</li>"
+                f"{f'<li><strong>Erreurs :</strong> {int(batch.error_count or 0)}</li>' if int(batch.error_count or 0) > 0 else ''}"
+                f"</ul>"
+                f"<p><a href=\"{link}\" target=\"_blank\" rel=\"noopener\">Accéder à l'interface photographe</a></p>"
+            )
+
+            sent = send_email(
+                to_email=photographer.email,
+                subject=subject,
+                html_content=html_body,
+                text_content=text_body,
+            )
+            if not sent:
+                print(f"[UPLOAD-BATCH] email error batch_id={batch_id} error=send_email_failed")
+                return False
+
+            print(
+                f"[UPLOAD-BATCH] email sent batch_id={batch_id} photographer_id={batch.photographer_id} "
+                f"total={int(batch.total_photos or 0)} success={int(batch.success_count or 0)} "
+                f"error={int(batch.error_count or 0)} status={batch.status}"
+            )
+            return True
+        except Exception as e:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            print(f"[UPLOAD-BATCH] email error batch_id={batch_id} error={type(e).__name__}: {e}")
+            return False
         finally:
             try:
                 db.close()
