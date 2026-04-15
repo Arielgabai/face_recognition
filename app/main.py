@@ -301,6 +301,10 @@ def _startup_create_tables():
         from add_delete_jobs_table import run_migration as add_delete_jobs_table
         add_delete_jobs_table()
 
+        # Créer la table photographer_upload_batches et ajouter photos.upload_batch_id
+        from add_photographer_upload_batches_table import run_migration as add_photographer_upload_batches_table
+        add_photographer_upload_batches_table()
+
         # Ajouter les colonnes selfie_status / selfie_error / selfie_content_type
         from add_selfie_status_columns import add_selfie_status_columns
         add_selfie_status_columns()
