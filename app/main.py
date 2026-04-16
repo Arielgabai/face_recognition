@@ -325,6 +325,19 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)
 templates = Jinja2Templates(directory="templates")
 
+@app.on_event("startup")
+def _startup_log_delete_job_routes():
+    try:
+        delete_job_routes = []
+        for route in app.routes:
+            path = getattr(route, "path", None)
+            methods = sorted(list(getattr(route, "methods", []) or []))
+            if path and "delete-jobs" in path:
+                delete_job_routes.append({"path": path, "methods": methods})
+        logger.info("[DELETE-JOB-STATUS-DIAG] startup_registered_routes=%s", delete_job_routes)
+    except Exception:
+        logger.exception("[DELETE-JOB-STATUS-DIAG] startup_registered_routes_failed")
+
 # Garde-fous pour éviter de rejouer les migrations légères à chaque requête
 _SCHEMA_READY = {
     "local_watchers": False,
@@ -7508,9 +7521,21 @@ async def get_delete_job_status(
     }
     """
     import json
+
+    logger.info(
+        "[DELETE-JOB-STATUS-DIAG] handler_entered requested_job_id=%s current_user_id=%s",
+        job_id,
+        getattr(current_user, "id", None),
+    )
     
     # Autoriser photographes et admins
     if current_user.user_type not in [UserType.ADMIN, UserType.PHOTOGRAPHER]:
+        logger.info(
+            "[DELETE-JOB-STATUS-DIAG] returned_403_forbidden requested_job_id=%s current_user_id=%s reason=invalid_user_type user_type=%s",
+            job_id,
+            getattr(current_user, "id", None),
+            getattr(current_user, "user_type", None),
+        )
         raise HTTPException(status_code=403, detail="Accès non autorisé")
 
     diag = get_db_diagnostic_snapshot(db)
@@ -7523,6 +7548,8 @@ async def get_delete_job_status(
         diag.get("current_schema"),
         diag.get("safe_url"),
     )
+
+    logger.info("[DELETE-JOB-STATUS-DIAG] lookup_requested job_id=%s", job_id)
     
     job = db.query(DeleteJob).filter(DeleteJob.job_id == job_id).first()
 
@@ -7534,12 +7561,27 @@ async def get_delete_job_status(
         getattr(job, "photographer_id", None),
         getattr(job, "status", None),
     )
+    logger.info(
+        "[DELETE-JOB-STATUS-DIAG] lookup_found=%s internal_id=%s job_id=%s photographer_id=%s status=%s",
+        job is not None,
+        getattr(job, "id", None),
+        getattr(job, "job_id", None),
+        getattr(job, "photographer_id", None),
+        getattr(job, "status", None),
+    )
     
     if not job:
+        logger.info("[DELETE-JOB-STATUS-DIAG] returned_404_job_not_found requested_job_id=%s", job_id)
         raise HTTPException(status_code=404, detail="Job non trouvé")
     
     # Vérifier que le photographe a accès à son propre job
     if current_user.user_type == UserType.PHOTOGRAPHER and job.photographer_id != current_user.id:
+        logger.info(
+            "[DELETE-JOB-STATUS-DIAG] returned_403_forbidden requested_job_id=%s current_user_id=%s job_photographer_id=%s reason=photographer_mismatch",
+            job_id,
+            getattr(current_user, "id", None),
+            getattr(job, "photographer_id", None),
+        )
         raise HTTPException(status_code=403, detail="Accès non autorisé à ce job")
     
     errors = []
@@ -7548,8 +7590,8 @@ async def get_delete_job_status(
             errors = json.loads(job.errors_json)
         except Exception:
             errors = []
-    
-    return {
+
+    response_payload = {
         "job_id": job.job_id,
         "status": job.status,
         "total": job.total_photos,
@@ -7562,6 +7604,15 @@ async def get_delete_job_status(
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "duration_seconds": job.duration_seconds,
     }
+    logger.info(
+        "[DELETE-JOB-STATUS-DIAG] returned_200_ok requested_job_id=%s internal_id=%s photographer_id=%s status=%s",
+        job_id,
+        getattr(job, "id", None),
+        getattr(job, "photographer_id", None),
+        getattr(job, "status", None),
+    )
+    
+    return response_payload
 
 
 @app.get("/api/admin/delete-worker/stats")
