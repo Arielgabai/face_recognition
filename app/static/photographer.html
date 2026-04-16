@@ -830,30 +830,48 @@ let photographerLightbox = null;
         }
 
         function logout() {
+            try { stopPhotoGridRefresh(); } catch (e) {}
+            try { resetDeleteStatusCard(); } catch (e) {}
+
             // Nettoyer complètement le localStorage
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            localStorage.removeItem('currentUser');
+            try {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                localStorage.removeItem('currentUser');
+                localStorage.removeItem(getPhotographerEventStorageKey());
+            } catch (e) {}
             
             // Réinitialiser les variables
             token = null;
             currentUser = null;
             currentEvent = null;
             userEvents = [];
+            currentPhotos = [];
+            selectedPhotoIds = [];
             
             // Nettoyer les formulaires
-            document.getElementById('loginForm').reset();
+            const loginForm = document.getElementById('loginForm');
+            if (loginForm && typeof loginForm.reset === 'function') {
+                loginForm.reset();
+            }
             
             // Masquer le dashboard et afficher le formulaire de connexion
-            document.getElementById('loginForm').style.display = 'block';
-            document.getElementById('dashboard').style.display = 'none';
+            if (loginForm) loginForm.style.display = 'block';
+            const dashboard = document.getElementById('dashboard');
+            if (dashboard) dashboard.style.display = 'none';
             
-            // Nettoyer l'affichage
-            document.getElementById('myPhotos').innerHTML = '';
-            document.getElementById('eventInfo').innerHTML = '';
+            // Nettoyer l'affichage sans dépendre d'IDs inexistants
+            const myPhotosList = document.getElementById('myPhotosList');
+            if (myPhotosList) myPhotosList.innerHTML = '<p style="color: #666;">Déconnecté</p>';
+            const eventInfo = document.getElementById('eventInfo');
+            if (eventInfo) eventInfo.innerHTML = '<p style="color: #666;">Déconnecté</p>';
+            const stats = document.getElementById('stats');
+            if (stats) stats.innerHTML = '';
+            const currentEventInfo = document.getElementById('currentEventInfo');
+            if (currentEventInfo) currentEventInfo.style.display = 'none';
             
-            // Rediriger vers la page d'accueil pour éviter les problèmes de cache
-            window.location.href = '/';
+            // Rediriger en remplaçant l'entrée d'historique pour éviter un état visuel obsolète
+            window.location.replace('/');
             
             console.log('Déconnexion effectuée - session nettoyée');
         }

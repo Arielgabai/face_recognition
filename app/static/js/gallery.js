@@ -36,6 +36,7 @@ class ModernGallery {
         this.galleryGrid = null;
         this.renderToken = 0;
         this.isDestroyed = false;
+        this.boundKeydownHandler = null;
 
         // Gestes tactiles
         this.touchStartX = 0;
@@ -428,6 +429,9 @@ class ModernGallery {
     createLightbox() {
         const lightbox = document.createElement('div');
         lightbox.className = 'gallery-lightbox';
+        lightbox.setAttribute('tabindex', '-1');
+        lightbox.setAttribute('role', 'dialog');
+        lightbox.setAttribute('aria-modal', 'true');
         lightbox.innerHTML = `
             <span class="gallery-lightbox-close" title="Fermer">&times;</span>
             <div class="gallery-lightbox-nav gallery-lightbox-prev" title="Précédente">‹</div>
@@ -677,7 +681,11 @@ class ModernGallery {
             this.resetZoomOnImageChange();
         }
 
-        this.lightboxElement.focus();
+        try {
+            this.lightboxElement.focus({ preventScroll: true });
+        } catch (e) {
+            this.lightboxElement.focus();
+        }
     }
 
     closeLightbox() {
@@ -793,21 +801,30 @@ class ModernGallery {
     /* ------------------------------------------------------------------ */
 
     setupKeyboardNavigation() {
-        document.addEventListener('keydown', (e) => {
+        if (this.boundKeydownHandler) {
+            document.removeEventListener('keydown', this.boundKeydownHandler);
+        }
+
+        this.boundKeydownHandler = (e) => {
             if (!this.lightboxElement?.classList.contains('active')) return;
 
             switch (e.key) {
                 case 'Escape':
+                    e.preventDefault();
                     this.closeLightbox();
                     break;
                 case 'ArrowLeft':
+                    e.preventDefault();
                     this.previousImage();
                     break;
                 case 'ArrowRight':
+                    e.preventDefault();
                     this.nextImage();
                     break;
             }
-        });
+        };
+
+        document.addEventListener('keydown', this.boundKeydownHandler);
     }
 
     /* ------------------------------------------------------------------ */
@@ -869,6 +886,11 @@ class ModernGallery {
         if (this.resizeRaf) {
             cancelAnimationFrame(this.resizeRaf);
             this.resizeRaf = null;
+        }
+
+        if (this.boundKeydownHandler) {
+            document.removeEventListener('keydown', this.boundKeydownHandler);
+            this.boundKeydownHandler = null;
         }
     }
 }
