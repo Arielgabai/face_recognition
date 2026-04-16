@@ -433,6 +433,8 @@
             user-select: none;
             background: rgba(0, 0, 0, 0.5);
             transition: background 0.2s ease;
+            z-index: 2001;
+            pointer-events: auto;
         }
         .gallery-lightbox-nav:hover {
             background: rgba(0, 0, 0, 0.8);
@@ -870,8 +872,8 @@ let photographerLightbox = null;
             const currentEventInfo = document.getElementById('currentEventInfo');
             if (currentEventInfo) currentEventInfo.style.display = 'none';
             
-            // Rediriger en remplaçant l'entrée d'historique pour éviter un état visuel obsolète
-            window.location.replace('/');
+            // Rediriger vers la page photographe en remplaçant l'historique
+            window.location.replace('/photographer');
             
             console.log('Déconnexion effectuée - session nettoyée');
         }

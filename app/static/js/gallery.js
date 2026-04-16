@@ -460,9 +460,27 @@ class ModernGallery {
         const nextBtn = lightbox.querySelector('.gallery-lightbox-next');
         const downloadBtn = lightbox.querySelector('.gallery-download-btn');
 
-        closeBtn.addEventListener('click', () => this.closeLightbox());
-        prevBtn.addEventListener('click', () => this.previousImage());
-        nextBtn.addEventListener('click', () => this.nextImage());
+        const stopLightboxControlEvent = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
+
+        closeBtn.addEventListener('click', (e) => {
+            stopLightboxControlEvent(e);
+            this.closeLightbox();
+        });
+        prevBtn.addEventListener('click', (e) => {
+            stopLightboxControlEvent(e);
+            this.previousImage();
+        });
+        nextBtn.addEventListener('click', (e) => {
+            stopLightboxControlEvent(e);
+            this.nextImage();
+        });
+        [closeBtn, prevBtn, nextBtn].forEach((btn) => {
+            btn.addEventListener('mousedown', stopLightboxControlEvent);
+            btn.addEventListener('pointerdown', stopLightboxControlEvent);
+        });
 
         lightbox.addEventListener('click', (e) => {
             if (e.target === lightbox) this.closeLightbox();
@@ -615,7 +633,8 @@ class ModernGallery {
         // Pointer events (mouse / trackpad)
         let pointerDown = false;
         lightbox.addEventListener('pointerdown', (e) => {
-            // Only handle pointer on nav buttons, not on image
+            // Ignore controls; only handle swipe interactions on the backdrop area
+            if (e.target.closest('.gallery-lightbox-nav, .gallery-lightbox-close, .gallery-download-btn')) return;
             if (e.target === img || e.target === imgWrapper) return;
             pointerDown = true;
             onTouchStart(e.clientX, e.clientY, 1, e);
