@@ -709,13 +709,13 @@ let currentPhotos = [];
 let filterMode = 'all';
 let photoGridRefreshTimer = null;
 let photoGridRefreshRunId = 0;
-let deleteJobUiState = { active: false, jobId: null, total: 0 };
+let deleteJobUiState = { active: false, targetPhotoIds: [], total: 0 };
 let deleteJobPollTimer = null;
 let deleteJobPollRunId = 0;
 const PHOTO_GRID_REFRESH_INTERVAL_MS = 2500;
 const PHOTO_GRID_REFRESH_MAX_ATTEMPTS = 12;
 const DELETE_JOB_POLL_INTERVAL_MS = 2000;
-const DELETE_JOB_POLL_MAX_ATTEMPTS = 90;
+const DELETE_JOB_POLL_MAX_ATTEMPTS = 60;
 let photographerLightbox = null;
 
         function buildPhotographerLightbox(photos) {
@@ -1493,7 +1493,7 @@ async function hideVisibleInGeneral() {
             const messageEl = document.getElementById('deleteStatusMessage');
             const progressEl = document.getElementById('deleteStatusProgress');
             stopDeleteJobPolling();
-            deleteJobUiState = { active: false, jobId: null, total: 0 };
+            deleteJobUiState = { active: false, targetPhotoIds: [], total: 0 };
             if (card) {
                 card.style.background = '#eef5ff';
                 card.style.borderColor = '#bcd3f6';
@@ -1507,7 +1507,7 @@ async function hideVisibleInGeneral() {
         }
 
         function releaseDeleteJobUiState() {
-            deleteJobUiState = { active: false, jobId: null, total: 0 };
+            deleteJobUiState = { active: false, targetPhotoIds: [], total: 0 };
             updateBulkDeleteButtonState();
         }
 
@@ -1530,13 +1530,6 @@ async function hideVisibleInGeneral() {
             }
         }
 
-        function normalizeDeleteJobId(rawValue) {
-            if (rawValue === null || rawValue === undefined) return '';
-            const textValue = String(rawValue).trim().replace(/^"+|"+$/g, '').trim();
-            const uuidMatch = textValue.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
-            return uuidMatch ? uuidMatch[0] : textValue;
-        }
-
         async function refreshAfterDeleteJobFinalState() {
             await Promise.allSettled([
                 loadMyPhotos(),
@@ -1544,22 +1537,24 @@ async function hideVisibleInGeneral() {
             ]);
         }
 
-        function startDeleteJobPolling(jobId, expectedTotal) {
-            if (!jobId) return;
+        function startDeleteJobPolling(targetPhotoIds) {
+            if (!Array.isArray(targetPhotoIds) || targetPhotoIds.length === 0) return;
 
             stopDeleteJobPolling();
             deleteJobPollRunId += 1;
 
             const runId = deleteJobPollRunId;
             let attempts = 0;
+            const trackedIds = [...new Set(targetPhotoIds.map(id => parseInt(id, 10)).filter(id => Number.isInteger(id)))];
+            const total = trackedIds.length;
 
-            const finishWithUnavailableStatus = async (message) => {
+            const finishWithIncompleteStatus = async (remainingCount) => {
                 stopDeleteJobPolling();
                 if (runId !== deleteJobPollRunId) return;
                 setDeleteStatusCard(
-                    'Suivi de suppression indisponible',
-                    message || 'Le suivi détaillé de la suppression est indisponible. Actualisez la page pour vérifier l’état final.',
-                    '',
+                    'Suppression incomplète',
+                    'Certaines photos semblent toujours présentes. Actualisez la page ou réessayez.',
+                    `${remainingCount} / ${total} photos restantes`,
                     'warning'
                 );
                 await refreshAfterDeleteJobFinalState();
@@ -1571,66 +1566,23 @@ async function hideVisibleInGeneral() {
                 if (runId !== deleteJobPollRunId) return;
 
                 attempts += 1;
-                const pollingUrl = `/api/admin/delete-jobs/${encodeURIComponent(jobId)}`;
 
                 try {
-                    const response = await fetch(pollingUrl, {
-                        headers: { 'Authorization': `Bearer ${token}` },
-                    });
-
-                    if (response.status === 404) {
-                        await finishWithUnavailableStatus('Le suivi détaillé de la suppression est indisponible. Actualisez la page pour vérifier l’état final.');
-                        return;
-                    }
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-
-                    const data = await response.json().catch(() => ({}));
+                    await loadMyPhotos();
                     if (runId !== deleteJobPollRunId) return;
-                    const status = typeof data.status === 'string' ? data.status.toUpperCase() : '';
-                    const total = Number.isFinite(Number(data.total)) ? Number(data.total) : expectedTotal;
-                    const processed = Number.isFinite(Number(data.processed)) ? Number(data.processed) : 0;
-                    const success = Number.isFinite(Number(data.success)) ? Number(data.success) : 0;
-                    const errorCount = Number.isFinite(Number(data.error_count)) ? Number(data.error_count) : 0;
-                    const progressText = `${processed} / ${total} photos traitées • Succès : ${success} • Erreurs : ${errorCount}`;
+                    const visibleIds = new Set((currentPhotos || []).map(photo => photo.id));
+                    const remainingIds = trackedIds.filter(id => visibleIds.has(id));
+                    const remainingCount = remainingIds.length;
+                    const deletedCount = total - remainingCount;
+                    const progressText = `${deletedCount} / ${total} photos supprimées • ${remainingCount} restantes`;
 
-                    if (status === 'DONE') {
+                    if (remainingCount === 0) {
                         stopDeleteJobPolling();
                         setDeleteStatusCard(
                             'Suppression terminée',
                             'Toutes les photos sélectionnées ont été supprimées.',
                             progressText,
                             'success'
-                        );
-                        await refreshAfterDeleteJobFinalState();
-                        if (runId !== deleteJobPollRunId) return;
-                        releaseDeleteJobUiState();
-                        return;
-                    }
-
-                    if (status === 'PARTIAL') {
-                        stopDeleteJobPolling();
-                        setDeleteStatusCard(
-                            'Suppression terminée avec erreurs',
-                            'Certaines photos n’ont pas pu être supprimées.',
-                            progressText,
-                            'warning'
-                        );
-                        await refreshAfterDeleteJobFinalState();
-                        if (runId !== deleteJobPollRunId) return;
-                        releaseDeleteJobUiState();
-                        return;
-                    }
-
-                    if (status === 'FAILED') {
-                        stopDeleteJobPolling();
-                        setDeleteStatusCard(
-                            'Suppression échouée',
-                            'La suppression n’a pas pu être menée à son terme.',
-                            progressText,
-                            'error'
                         );
                         await refreshAfterDeleteJobFinalState();
                         if (runId !== deleteJobPollRunId) return;
@@ -1646,14 +1598,18 @@ async function hideVisibleInGeneral() {
                     );
                 } catch (e) {
                     if (attempts >= DELETE_JOB_POLL_MAX_ATTEMPTS) {
-                        await finishWithUnavailableStatus('Le suivi détaillé de la suppression est indisponible. Actualisez la page pour vérifier l’état final.');
+                        const visibleIds = new Set((currentPhotos || []).map(photo => photo.id));
+                        const remainingCount = trackedIds.filter(id => visibleIds.has(id)).length;
+                        await finishWithIncompleteStatus(remainingCount);
                         return;
                     }
                 }
 
                 if (runId !== deleteJobPollRunId) return;
                 if (attempts >= DELETE_JOB_POLL_MAX_ATTEMPTS) {
-                    await finishWithUnavailableStatus('Le suivi détaillé de la suppression est indisponible. Actualisez la page pour vérifier l’état final.');
+                    const visibleIds = new Set((currentPhotos || []).map(photo => photo.id));
+                    const remainingCount = trackedIds.filter(id => visibleIds.has(id)).length;
+                    await finishWithIncompleteStatus(remainingCount);
                     return;
                 }
 
@@ -1714,6 +1670,7 @@ async function hideVisibleInGeneral() {
             if (!selectedPhotoIds || selectedPhotoIds.length === 0) return;
             if (!confirm(`Supprimer ${selectedPhotoIds.length} photo(s) ?`)) return;
             try {
+                const targetPhotoIds = [...selectedPhotoIds];
                 const resp = await fetch(`/api/photos?photo_ids=${selectedPhotoIds.join(',')}`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${token}` },
@@ -1721,28 +1678,27 @@ async function hideVisibleInGeneral() {
                 const data = await resp.json().catch(() => ({}));
                 if (resp.ok) {
                     if (resp.status === 202) {
-                        const jobId = normalizeDeleteJobId(data.job_id);
-                        const totalPhotos = Number.isFinite(Number(data.total_photos)) ? Number(data.total_photos) : selectedPhotoIds.length;
+                        const totalPhotos = targetPhotoIds.length;
                         clearSelection();
-                        if (jobId) {
-                            deleteJobUiState = { active: true, jobId, total: totalPhotos };
+                        if (totalPhotos > 0) {
+                            deleteJobUiState = { active: true, targetPhotoIds: targetPhotoIds, total: totalPhotos };
                             setDeleteStatusCard(
                                 'Suppression en cours',
                                 'Les photos sont en cours de suppression côté serveur.',
-                                `0 / ${totalPhotos} photos traitées`,
+                                `0 / ${totalPhotos} photos supprimées • ${totalPhotos} restantes`,
                                 'info'
                             );
                             updateBulkDeleteButtonState();
                             showAlert(data.message || 'Suppression lancée. Le traitement continue côté serveur.', 'info');
-                            startDeleteJobPolling(jobId, totalPhotos);
+                            startDeleteJobPolling(targetPhotoIds);
                         } else {
                             setDeleteStatusCard(
                                 'Suppression en cours',
-                                'La suppression a été acceptée par le serveur, mais le suivi détaillé est indisponible pour le moment.',
-                                totalPhotos > 0 ? `0 / ${totalPhotos} photos traitées` : 'Suivi indisponible',
+                                'La suppression a été acceptée par le serveur, mais aucune photo à suivre n’a été identifiée localement.',
+                                'Suivi indisponible',
                                 'warning'
                             );
-                            showAlert('Suppression acceptée par le serveur, mais le suivi détaillé est indisponible.', 'info');
+                            showAlert('Suppression acceptée par le serveur, mais aucune photo à suivre n’a été identifiée localement.', 'info');
                         }
                     } else {
                         resetDeleteStatusCard();
