@@ -287,15 +287,24 @@ class DeleteWorkerSQS:
     
     def _process_delete_job(self, job_id: str):
         """Traite un job de suppression complet."""
-        from database import SessionLocal
+        from database import SessionLocal, get_db_diagnostic_snapshot
         from models import DeleteJob, DeleteJobStatus, Photo, FaceMatch
         
         start_time = time.time()
         db = SessionLocal()
         
         try:
+            diag = get_db_diagnostic_snapshot(db)
             # Récupérer le job
             job = db.query(DeleteJob).filter(DeleteJob.job_id == job_id).first()
+            print(
+                f"[DELETE-JOB-DIAG] worker job_id={job_id} "
+                f"dialect={diag.get('dialect')} "
+                f"current_database={diag.get('current_database') or diag.get('database')} "
+                f"current_schema={diag.get('current_schema')} "
+                f"safe_url={diag.get('safe_url')} "
+                f"lookup_found={job is not None}"
+            )
             if not job:
                 print(f"[DeleteWorkerSQS] Job not found: {job_id}")
                 return

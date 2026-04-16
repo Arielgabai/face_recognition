@@ -77,7 +77,7 @@ def serve_react_frontend():
     with open(REACT_BUILD_PATH, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
-from database import get_db, create_tables
+from database import get_db, create_tables, get_db_diagnostic_snapshot
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher, LocalIngestionLog
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog, PasswordResetToken
 from models import DeleteJob, DeleteJobStatus, PhotographerUploadBatch
@@ -4647,6 +4647,40 @@ async def delete_multiple_photos(
             )
             db.add(delete_job)
             db.commit()
+
+            diag_same_session = get_db_diagnostic_snapshot(db)
+            reread_same_session = db.query(DeleteJob).filter(DeleteJob.job_id == job_id).first()
+
+            reread_new_session_found = False
+            diag_new_session = {}
+            _diag_db = SessionLocal()
+            try:
+                diag_new_session = get_db_diagnostic_snapshot(_diag_db)
+                reread_new_session = _diag_db.query(DeleteJob).filter(DeleteJob.job_id == job_id).first()
+                reread_new_session_found = reread_new_session is not None
+            finally:
+                try:
+                    _diag_db.close()
+                except Exception:
+                    pass
+
+            logger.info(
+                "[DELETE-JOB-DIAG] create job_id=%s photographer_id=%s dialect=%s current_database=%s current_schema=%s "
+                "safe_url=%s reread_same_session_found=%s reread_new_session_found=%s new_session_dialect=%s "
+                "new_session_current_database=%s new_session_current_schema=%s new_session_safe_url=%s",
+                job_id,
+                current_user.id,
+                diag_same_session.get("dialect"),
+                diag_same_session.get("current_database") or diag_same_session.get("database"),
+                diag_same_session.get("current_schema"),
+                diag_same_session.get("safe_url"),
+                reread_same_session is not None,
+                reread_new_session_found,
+                diag_new_session.get("dialect"),
+                diag_new_session.get("current_database") or diag_new_session.get("database"),
+                diag_new_session.get("current_schema"),
+                diag_new_session.get("safe_url"),
+            )
             
             # Envoyer dans SQS
             from s3_service import get_sqs_service
@@ -7478,8 +7512,28 @@ async def get_delete_job_status(
     # Autoriser photographes et admins
     if current_user.user_type not in [UserType.ADMIN, UserType.PHOTOGRAPHER]:
         raise HTTPException(status_code=403, detail="Accès non autorisé")
+
+    diag = get_db_diagnostic_snapshot(db)
+    logger.info(
+        "[DELETE-JOB-DIAG] get requested_job_id=%s current_user_id=%s dialect=%s current_database=%s current_schema=%s safe_url=%s",
+        job_id,
+        getattr(current_user, "id", None),
+        diag.get("dialect"),
+        diag.get("current_database") or diag.get("database"),
+        diag.get("current_schema"),
+        diag.get("safe_url"),
+    )
     
     job = db.query(DeleteJob).filter(DeleteJob.job_id == job_id).first()
+
+    logger.info(
+        "[DELETE-JOB-DIAG] get requested_job_id=%s lookup_found=%s internal_id=%s photographer_id=%s status=%s",
+        job_id,
+        job is not None,
+        getattr(job, "id", None),
+        getattr(job, "photographer_id", None),
+        getattr(job, "status", None),
+    )
     
     if not job:
         raise HTTPException(status_code=404, detail="Job non trouvé")

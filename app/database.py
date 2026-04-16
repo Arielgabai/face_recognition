@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -45,6 +45,54 @@ except Exception as e:
     print(f"[DB] Could not introspect SQLAlchemy pool config: {e}")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
+def get_db_diagnostic_snapshot(session=None):
+    """Retourne un snapshot best-effort du contexte DB pour logs de diagnostic."""
+    safe_url = None
+    try:
+        safe_url = engine.url.render_as_string(hide_password=True)
+    except Exception:
+        safe_url = str(engine.url)
+
+    snapshot = {
+        "dialect": getattr(engine.url, "drivername", "unknown"),
+        "safe_url": safe_url,
+        "database": getattr(engine.url, "database", None),
+        "current_database": None,
+        "current_schema": None,
+    }
+
+    own_session = None
+    db = session
+    try:
+        if db is None:
+            own_session = SessionLocal()
+            db = own_session
+
+        dialect = (snapshot["dialect"] or "").lower()
+        if "postgresql" in dialect:
+            try:
+                snapshot["current_database"] = db.execute(text("SELECT current_database()")).scalar()
+            except Exception:
+                snapshot["current_database"] = None
+            try:
+                snapshot["current_schema"] = db.execute(text("SELECT current_schema()")).scalar()
+            except Exception:
+                snapshot["current_schema"] = None
+        elif "sqlite" in dialect:
+            snapshot["current_database"] = snapshot["database"]
+            snapshot["current_schema"] = "main"
+    except Exception:
+        pass
+    finally:
+        if own_session is not None:
+            try:
+                own_session.close()
+            except Exception:
+                pass
+
+    return snapshot
 
 # Fonction pour créer toutes les tables
 def create_tables():
