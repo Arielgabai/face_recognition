@@ -1530,6 +1530,13 @@ async function hideVisibleInGeneral() {
             }
         }
 
+        function normalizeDeleteJobId(rawValue) {
+            if (rawValue === null || rawValue === undefined) return '';
+            const textValue = String(rawValue).trim().replace(/^"+|"+$/g, '').trim();
+            const uuidMatch = textValue.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+            return uuidMatch ? uuidMatch[0] : textValue;
+        }
+
         async function refreshAfterDeleteJobFinalState() {
             await Promise.allSettled([
                 loadMyPhotos(),
@@ -1546,12 +1553,12 @@ async function hideVisibleInGeneral() {
             const runId = deleteJobPollRunId;
             let attempts = 0;
 
-            const finishWithUnavailableStatus = async () => {
+            const finishWithUnavailableStatus = async (message) => {
                 stopDeleteJobPolling();
                 if (runId !== deleteJobPollRunId) return;
                 setDeleteStatusCard(
                     'Suivi de suppression indisponible',
-                    'Le suivi détaillé de la suppression n’est plus disponible. Actualisez la page pour vérifier l’état final.',
+                    message || 'Le suivi détaillé de la suppression est indisponible. Actualisez la page pour vérifier l’état final.',
                     '',
                     'warning'
                 );
@@ -1564,11 +1571,17 @@ async function hideVisibleInGeneral() {
                 if (runId !== deleteJobPollRunId) return;
 
                 attempts += 1;
+                const pollingUrl = `/api/admin/delete-jobs/${encodeURIComponent(jobId)}`;
 
                 try {
-                    const response = await fetch(`/api/admin/delete-jobs/${encodeURIComponent(jobId)}`, {
+                    const response = await fetch(pollingUrl, {
                         headers: { 'Authorization': `Bearer ${token}` },
                     });
+
+                    if (response.status === 404) {
+                        await finishWithUnavailableStatus('Le suivi détaillé de la suppression est indisponible. Actualisez la page pour vérifier l’état final.');
+                        return;
+                    }
 
                     if (!response.ok) {
                         throw new Error(`HTTP ${response.status}`);
@@ -1633,14 +1646,14 @@ async function hideVisibleInGeneral() {
                     );
                 } catch (e) {
                     if (attempts >= DELETE_JOB_POLL_MAX_ATTEMPTS) {
-                        await finishWithUnavailableStatus();
+                        await finishWithUnavailableStatus('Le suivi détaillé de la suppression est indisponible. Actualisez la page pour vérifier l’état final.');
                         return;
                     }
                 }
 
                 if (runId !== deleteJobPollRunId) return;
                 if (attempts >= DELETE_JOB_POLL_MAX_ATTEMPTS) {
-                    await finishWithUnavailableStatus();
+                    await finishWithUnavailableStatus('Le suivi détaillé de la suppression est indisponible. Actualisez la page pour vérifier l’état final.');
                     return;
                 }
 
@@ -1708,7 +1721,7 @@ async function hideVisibleInGeneral() {
                 const data = await resp.json().catch(() => ({}));
                 if (resp.ok) {
                     if (resp.status === 202) {
-                        const jobId = typeof data.job_id === 'string' ? data.job_id.trim() : '';
+                        const jobId = normalizeDeleteJobId(data.job_id);
                         const totalPhotos = Number.isFinite(Number(data.total_photos)) ? Number(data.total_photos) : selectedPhotoIds.length;
                         clearSelection();
                         if (jobId) {
