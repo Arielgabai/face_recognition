@@ -906,6 +906,29 @@ let photographerLightbox = null;
             `;
         }
 
+        function getPhotographerEventStorageKey() {
+            const userId = currentUser && currentUser.id ? currentUser.id : 'unknown';
+            return `photographerSelectedEvent:${userId}`;
+        }
+
+        function getStoredPhotographerEventId() {
+            try {
+                return localStorage.getItem(getPhotographerEventStorageKey());
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function storePhotographerEventId(eventId) {
+            try {
+                if (!eventId) {
+                    localStorage.removeItem(getPhotographerEventStorageKey());
+                    return;
+                }
+                localStorage.setItem(getPhotographerEventStorageKey(), String(eventId));
+            } catch (e) {}
+        }
+
         async function loadPhotographerEvents() {
             try {
                 const response = await fetch('/api/photographer/events', {
@@ -916,12 +939,19 @@ let photographerLightbox = null;
                     userEvents = await response.json();
                     populateEventSelector();
                     
-                    // Sélectionner le premier événement par défaut
+                    const storedEventId = getStoredPhotographerEventId();
+                    const preferredEvent = storedEventId
+                        ? userEvents.find(event => String(event.id) === String(storedEventId))
+                        : null;
+
+                    // Restaurer l'événement mémorisé si possible, sinon prendre le premier
                     if (userEvents.length > 0) {
-                        currentEvent = userEvents[0];
+                        currentEvent = preferredEvent || userEvents[0];
                         document.getElementById('eventSelect').value = currentEvent.id;
+                        storePhotographerEventId(currentEvent.id);
                         switchEvent();
                     } else {
+                        storePhotographerEventId(null);
                         showAlert('Aucun événement assigné à ce photographe', 'error');
                     }
                 } else {
@@ -954,6 +984,7 @@ let photographerLightbox = null;
             const eventId = document.getElementById('eventSelect').value;
             if (!eventId) {
                 currentEvent = null;
+                storePhotographerEventId(null);
                 document.getElementById('currentEventInfo').style.display = 'none';
                 clearEventData();
                 return;
@@ -961,6 +992,7 @@ let photographerLightbox = null;
             
             currentEvent = userEvents.find(event => event.id == eventId);
             if (currentEvent) {
+                storePhotographerEventId(currentEvent.id);
                 displayCurrentEventInfo();
                 loadEventData();
             }
