@@ -5415,6 +5415,77 @@ async def create_photographer(
     db.refresh(db_user)
     return {"message": "Photographe cr+�+�", "user_id": db_user.id}
 
+@app.post("/api/photographer/events/create")
+async def photographer_create_event(
+    name: str = Body(...),
+    event_code: str = Body(...),
+    date: str = Body(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Créer un événement pour le photographe connecté.
+
+    Le champ photographer_id est forcé à l'identifiant du photographe connecté:
+    un photographe ne peut pas créer un événement pour un autre photographe.
+    """
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent créer un événement via cette route")
+
+    if not name or not event_code:
+        raise HTTPException(status_code=400, detail="Nom et code événement requis")
+
+    if db.query(Event).filter_by(event_code=event_code).first():
+        raise HTTPException(status_code=400, detail="event_code déjà utilisé")
+
+    from datetime import datetime as dt
+    try:
+        parsed_date = dt.fromisoformat(date) if date else None
+    except Exception:
+        raise HTTPException(status_code=400, detail="Date invalide")
+
+    event = Event(
+        name=name,
+        event_code=event_code,
+        date=parsed_date,
+        photographer_id=current_user.id,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return {
+        "message": "Événement créé",
+        "event_id": event.id,
+        "event_code": event.event_code,
+    }
+
+
+@app.get("/api/photographer/events/{event_code}/qr")
+async def photographer_generate_event_qr(
+    event_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Générer un QR code d'inscription pour un événement du photographe connecté.
+
+    Un photographe ne peut générer le QR code que pour un événement qui lui est assigné.
+    """
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent utiliser cette route")
+
+    event = db.query(Event).filter(Event.event_code == event_code).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+    if event.photographer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez générer de QR code que pour vos propres événements")
+
+    url = f"{SITE_BASE_URL}/register?event_code={event_code}"
+    img = qrcode.make(url)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+
 @app.get("/api/admin/event-qr/{event_code}")
 async def generate_event_qr(event_code: str, current_user: User = Depends(get_current_user)):
     """G+�n+�rer un QR code pour l'inscription +� un +�v+�nement (admin uniquement)"""

@@ -26,6 +26,15 @@
         .form-group {
             margin-bottom: 20px;
         }
+        .form-row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .form-row .form-group {
+            flex: 1 1 220px;
+            min-width: 220px;
+        }
         label {
             display: block;
             margin-bottom: 5px;
@@ -617,6 +626,8 @@
                 <button class="tab active" onclick="showTab('upload-photos')">📤 Ajouter des Photos</button>
                 <button class="tab" onclick="showTab('my-photos')">🖼️ Mes Photos</button>
                 <button class="tab" onclick="showTab('event-info')">📋 Informations Événement</button>
+                <button class="tab" onclick="showTab('create-event')">➕ Créer un Événement</button>
+                <button class="tab" onclick="showTab('qr-codes')">📱 QR Codes</button>
             </div>
 
             <div id="upload-photos" class="tab-content active">
@@ -695,6 +706,50 @@
                     <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
                         <button class="success" onclick="notifyPhotosAvailable()">📧 Notifier que les photos sont disponibles</button>
                     </div>
+                </div>
+            </div>
+
+            <div id="create-event" class="tab-content">
+                <h3>Créer un nouvel événement</h3>
+                <div class="card">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="createEventName">Nom de l'événement :</label>
+                            <input type="text" id="createEventName" placeholder="ex: Mariage de Marie et Paul" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="createEventCode">Code événement :</label>
+                            <input type="text" id="createEventCode" placeholder="ex: MARIAGE2024" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="createEventDate">Date :</label>
+                            <input type="date" id="createEventDate">
+                        </div>
+                        <div class="form-group">
+                            <label for="createEventPhotographer">Photographe assigné :</label>
+                            <input type="text" id="createEventPhotographer" readonly disabled
+                                   style="background:#f3f4f6; color:#555; cursor:not-allowed;">
+                            <small style="color:#666;">L'événement sera automatiquement rattaché à votre compte.</small>
+                        </div>
+                    </div>
+                    <button onclick="createPhotographerEvent()" class="success">Créer l'événement</button>
+                </div>
+            </div>
+
+            <div id="qr-codes" class="tab-content">
+                <h3>QR Codes</h3>
+                <div class="card">
+                    <h4>Générer un QR Code pour l'un de vos événements</h4>
+                    <div class="form-group">
+                        <label for="photographerQrEventCode">Événement :</label>
+                        <select id="photographerQrEventCode" required>
+                            <option value="">Sélectionner un événement</option>
+                        </select>
+                    </div>
+                    <button onclick="photographerGenerateQRCode()" class="success">Générer le QR Code</button>
+                    <div id="photographerQrCodeResult" style="margin-top: 16px;"></div>
                 </div>
             </div>
         </div>
@@ -924,6 +979,110 @@ let photographerLightbox = null;
                 <p><strong>Email:</strong> ${currentUser.email}</p>
                 <p><strong>Type:</strong> Photographe</p>
             `;
+
+            // Pré-remplir le champ photographe (verrouillé) du formulaire de création d'événement
+            const createEventPhotographer = document.getElementById('createEventPhotographer');
+            if (createEventPhotographer) {
+                createEventPhotographer.value = `${currentUser.username} (ID: ${currentUser.id})`;
+            }
+        }
+
+        function populatePhotographerQrEventSelect() {
+            const sel = document.getElementById('photographerQrEventCode');
+            if (!sel) return;
+            const previous = sel.value;
+            sel.innerHTML = '<option value="">Sélectionner un événement</option>';
+            (userEvents || []).forEach(event => {
+                const option = document.createElement('option');
+                option.value = event.event_code;
+                option.textContent = `${event.name} (${event.event_code})`;
+                sel.appendChild(option);
+            });
+            if (previous && (userEvents || []).some(e => e.event_code === previous)) {
+                sel.value = previous;
+            }
+        }
+
+        async function createPhotographerEvent() {
+            const name = (document.getElementById('createEventName').value || '').trim();
+            const eventCode = (document.getElementById('createEventCode').value || '').trim();
+            const date = document.getElementById('createEventDate').value;
+
+            if (!name || !eventCode) {
+                showAlert('Veuillez remplir le nom et le code événement', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/photographer/events/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        name,
+                        event_code: eventCode,
+                        date: date || null,
+                    }),
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (response.ok) {
+                    showAlert('Événement créé avec succès !', 'success');
+                    document.getElementById('createEventName').value = '';
+                    document.getElementById('createEventCode').value = '';
+                    document.getElementById('createEventDate').value = '';
+                    // Recharger la liste des événements et mettre à jour les sélecteurs
+                    await loadPhotographerEvents();
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la création de l\'événement', 'error');
+                }
+            } catch (e) {
+                console.error('Erreur lors de la création de l\'événement:', e);
+                showAlert('Erreur lors de la création de l\'événement', 'error');
+            }
+        }
+
+        async function photographerGenerateQRCode() {
+            const eventCode = document.getElementById('photographerQrEventCode').value;
+            const resultEl = document.getElementById('photographerQrCodeResult');
+            if (!resultEl) return;
+
+            if (!eventCode) {
+                showAlert('Veuillez sélectionner un événement', 'error');
+                return;
+            }
+
+            resultEl.innerHTML = '<p style="color:#666;">Génération du QR code...</p>';
+
+            try {
+                const response = await fetch(`/api/photographer/events/${encodeURIComponent(eventCode)}/qr`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const imageUrl = URL.createObjectURL(blob);
+                    resultEl.innerHTML = `
+                        <div class="qr-code" style="text-align:center; margin: 20px 0;">
+                            <h4>QR Code pour l'événement ${eventCode}</h4>
+                            <img src="${imageUrl}" alt="QR Code" style="max-width:240px;border:1px solid #ddd;border-radius:5px;">
+                            <p style="margin-top: 10px; color: #666;">
+                                Les invités peuvent scanner ce QR code pour s'inscrire à l'événement.
+                            </p>
+                        </div>
+                    `;
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    resultEl.innerHTML = '';
+                    showAlert(data.detail || 'Erreur lors de la génération du QR code', 'error');
+                }
+            } catch (e) {
+                resultEl.innerHTML = '';
+                console.error('Erreur QR:', e);
+                showAlert('Erreur lors de la génération du QR code', 'error');
+            }
         }
 
         function getPhotographerEventStorageKey() {
@@ -989,6 +1148,7 @@ let photographerLightbox = null;
             
             if (userEvents.length === 0) {
                 eventSelect.innerHTML = '<option value="">Aucun événement assigné</option>';
+                populatePhotographerQrEventSelect();
                 return;
             }
             
@@ -998,6 +1158,8 @@ let photographerLightbox = null;
                 option.textContent = `${event.name} (${event.event_code})`;
                 eventSelect.appendChild(option);
             });
+
+            populatePhotographerQrEventSelect();
         }
 
         function switchEvent() {
