@@ -677,12 +677,12 @@
                         <button onclick="showVisibleInGeneral()">✓ Afficher cette vue</button>
                         <button onclick="hideVisibleInGeneral()">✗ Masquer cette vue</button>
                     </div>
-                    <div id="myPhotosList">Chargement...</div>
-                    <div id="deleteStatusCard" style="display:none; margin-top: 16px; padding: 16px; border-radius: 8px; background: #f5f7fb; border: 1px solid #d8e1f0;">
+                    <div id="deleteStatusCard" style="display:none; position: sticky; top: 12px; z-index: 6; margin: 12px 0 16px 0; padding: 16px; border-radius: 8px; background: #eef5ff; border: 1px solid #bcd3f6; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);">
                         <div id="deleteStatusTitle" style="font-weight: bold; margin-bottom: 8px;">Suppression en cours</div>
                         <div id="deleteStatusMessage" style="color: #444; line-height: 1.5;">Les photos sont en cours de suppression côté serveur.</div>
                         <div id="deleteStatusProgress" style="margin-top: 8px; color: #666;">0 / 0 photos traitées</div>
                     </div>
+                    <div id="myPhotosList">Chargement...</div>
                 </div>
             </div>
 
@@ -996,8 +996,10 @@ let photographerLightbox = null;
             if (!currentEvent) return;
             
             try {
+                const refreshToken = Date.now();
                 const [photosResponse] = await Promise.all([
-                    fetch(`/api/photographer/events/${currentEvent.id}/photos`, {
+                    fetch(`/api/photographer/events/${currentEvent.id}/photos?cb=${refreshToken}`, {
+                        cache: 'no-store',
                         headers: { 'Authorization': `Bearer ${token}` },
                     })
                 ]);
@@ -1027,7 +1029,9 @@ let photographerLightbox = null;
             if (!currentEvent) return;
             
             try {
-                const response = await fetch(`/api/photographer/events/${currentEvent.id}/photos`, {
+                const refreshToken = Date.now();
+                const response = await fetch(`/api/photographer/events/${currentEvent.id}/photos?cb=${refreshToken}`, {
+                    cache: 'no-store',
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
 
@@ -1459,24 +1463,45 @@ async function hideVisibleInGeneral() {
     await updateShowInGeneralBulk(viewIds, false, 'Vue masquée de l\'onglet Général');
 }
 
-        function setDeleteStatusCard(title, message, progressText) {
+        function setDeleteStatusCard(title, message, progressText, tone = 'info') {
             const card = document.getElementById('deleteStatusCard');
             const titleEl = document.getElementById('deleteStatusTitle');
             const messageEl = document.getElementById('deleteStatusMessage');
             const progressEl = document.getElementById('deleteStatusProgress');
             if (!card || !titleEl || !messageEl || !progressEl) return;
+            const tones = {
+                info: { background: '#eef5ff', border: '#bcd3f6', title: '#1d4ed8', text: '#1f2937', progress: '#475569' },
+                success: { background: '#ecfdf3', border: '#a7f3d0', title: '#047857', text: '#14532d', progress: '#166534' },
+                warning: { background: '#fff7ed', border: '#fdba74', title: '#c2410c', text: '#7c2d12', progress: '#9a3412' },
+                error: { background: '#fef2f2', border: '#fca5a5', title: '#b91c1c', text: '#7f1d1d', progress: '#991b1b' },
+            };
+            const palette = tones[tone] || tones.info;
             titleEl.textContent = title;
             messageEl.textContent = message;
             progressEl.textContent = progressText || '';
+            card.style.background = palette.background;
+            card.style.borderColor = palette.border;
+            titleEl.style.color = palette.title;
+            messageEl.style.color = palette.text;
+            progressEl.style.color = palette.progress;
             card.style.display = 'block';
         }
 
         function resetDeleteStatusCard() {
             const card = document.getElementById('deleteStatusCard');
+            const titleEl = document.getElementById('deleteStatusTitle');
+            const messageEl = document.getElementById('deleteStatusMessage');
             const progressEl = document.getElementById('deleteStatusProgress');
             stopDeleteJobPolling();
             deleteJobUiState = { active: false, jobId: null, total: 0 };
+            if (card) {
+                card.style.background = '#eef5ff';
+                card.style.borderColor = '#bcd3f6';
+            }
+            if (titleEl) titleEl.style.color = '#1d4ed8';
+            if (messageEl) messageEl.style.color = '#444';
             if (progressEl) progressEl.textContent = '0 / 0 photos traitées';
+            if (progressEl) progressEl.style.color = '#666';
             if (card) card.style.display = 'none';
             updateBulkDeleteButtonState();
         }
@@ -1521,16 +1546,18 @@ async function hideVisibleInGeneral() {
             const runId = deleteJobPollRunId;
             let attempts = 0;
 
-            const finishWithUnavailableStatus = () => {
+            const finishWithUnavailableStatus = async () => {
                 stopDeleteJobPolling();
                 if (runId !== deleteJobPollRunId) return;
                 setDeleteStatusCard(
                     'Suivi de suppression indisponible',
                     'Le suivi détaillé de la suppression n’est plus disponible. Actualisez la page pour vérifier l’état final.',
-                    ''
+                    '',
+                    'warning'
                 );
+                await refreshAfterDeleteJobFinalState();
+                if (runId !== deleteJobPollRunId) return;
                 releaseDeleteJobUiState();
-                refreshAfterDeleteJobFinalState().catch(() => {});
             };
 
             const tick = async () => {
@@ -1560,11 +1587,13 @@ async function hideVisibleInGeneral() {
                         stopDeleteJobPolling();
                         setDeleteStatusCard(
                             'Suppression terminée',
-                            'Toutes les photos sélectionnées ont été supprimées côté serveur.',
-                            progressText
+                            'Toutes les photos sélectionnées ont été supprimées.',
+                            progressText,
+                            'success'
                         );
+                        await refreshAfterDeleteJobFinalState();
+                        if (runId !== deleteJobPollRunId) return;
                         releaseDeleteJobUiState();
-                        refreshAfterDeleteJobFinalState().catch(() => {});
                         return;
                     }
 
@@ -1572,11 +1601,13 @@ async function hideVisibleInGeneral() {
                         stopDeleteJobPolling();
                         setDeleteStatusCard(
                             'Suppression terminée avec erreurs',
-                            'Certaines photos n’ont pas pu être supprimées côté serveur.',
-                            progressText
+                            'Certaines photos n’ont pas pu être supprimées.',
+                            progressText,
+                            'warning'
                         );
+                        await refreshAfterDeleteJobFinalState();
+                        if (runId !== deleteJobPollRunId) return;
                         releaseDeleteJobUiState();
-                        refreshAfterDeleteJobFinalState().catch(() => {});
                         return;
                     }
 
@@ -1584,29 +1615,32 @@ async function hideVisibleInGeneral() {
                         stopDeleteJobPolling();
                         setDeleteStatusCard(
                             'Suppression échouée',
-                            'La suppression n’a pas pu être menée à son terme côté serveur.',
-                            progressText
+                            'La suppression n’a pas pu être menée à son terme.',
+                            progressText,
+                            'error'
                         );
+                        await refreshAfterDeleteJobFinalState();
+                        if (runId !== deleteJobPollRunId) return;
                         releaseDeleteJobUiState();
-                        refreshAfterDeleteJobFinalState().catch(() => {});
                         return;
                     }
 
                     setDeleteStatusCard(
                         'Suppression en cours',
                         'Les photos sont en cours de suppression côté serveur.',
-                        progressText
+                        progressText,
+                        'info'
                     );
                 } catch (e) {
                     if (attempts >= DELETE_JOB_POLL_MAX_ATTEMPTS) {
-                        finishWithUnavailableStatus();
+                        await finishWithUnavailableStatus();
                         return;
                     }
                 }
 
                 if (runId !== deleteJobPollRunId) return;
                 if (attempts >= DELETE_JOB_POLL_MAX_ATTEMPTS) {
-                    finishWithUnavailableStatus();
+                    await finishWithUnavailableStatus();
                     return;
                 }
 
@@ -1682,7 +1716,8 @@ async function hideVisibleInGeneral() {
                             setDeleteStatusCard(
                                 'Suppression en cours',
                                 'Les photos sont en cours de suppression côté serveur.',
-                                `0 / ${totalPhotos} photos traitées`
+                                `0 / ${totalPhotos} photos traitées`,
+                                'info'
                             );
                             updateBulkDeleteButtonState();
                             showAlert(data.message || 'Suppression lancée. Le traitement continue côté serveur.', 'info');
@@ -1691,7 +1726,8 @@ async function hideVisibleInGeneral() {
                             setDeleteStatusCard(
                                 'Suppression en cours',
                                 'La suppression a été acceptée par le serveur, mais le suivi détaillé est indisponible pour le moment.',
-                                totalPhotos > 0 ? `0 / ${totalPhotos} photos traitées` : 'Suivi indisponible'
+                                totalPhotos > 0 ? `0 / ${totalPhotos} photos traitées` : 'Suivi indisponible',
+                                'warning'
                             );
                             showAlert('Suppression acceptée par le serveur, mais le suivi détaillé est indisponible.', 'info');
                         }
