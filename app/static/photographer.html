@@ -659,7 +659,7 @@
                         <button onclick="clearSelection()">Désélectionner</button>
                         <button class="success" onclick="showInGeneral()">✓ Afficher dans Général (<span id="selCount">0</span>)</button>
                         <button style="background: #ff9800;" onclick="hideFromGeneral()">✗ Masquer de Général (<span id="selCount2">0</span>)</button>
-                        <button class="danger" onclick="deleteSelectedPhotos()">🗑 Supprimer (<span id="selCount3">0</span>)</button>
+                        <button id="bulkDeleteButton" class="danger" onclick="deleteSelectedPhotos()">🗑 Supprimer (<span id="selCount3">0</span>)</button>
                     </div>
                     <div class="filter-bar" id="filterBar">
                         <div class="filter-buttons">
@@ -678,6 +678,11 @@
                         <button onclick="hideVisibleInGeneral()">✗ Masquer cette vue</button>
                     </div>
                     <div id="myPhotosList">Chargement...</div>
+                    <div id="deleteStatusCard" style="display:none; margin-top: 16px; padding: 16px; border-radius: 8px; background: #f5f7fb; border: 1px solid #d8e1f0;">
+                        <div id="deleteStatusTitle" style="font-weight: bold; margin-bottom: 8px;">Suppression en cours</div>
+                        <div id="deleteStatusMessage" style="color: #444; line-height: 1.5;">Les photos sont en cours de suppression côté serveur.</div>
+                        <div id="deleteStatusProgress" style="margin-top: 8px; color: #666;">0 / 0 photos traitées</div>
+                    </div>
                 </div>
             </div>
 
@@ -704,8 +709,13 @@ let currentPhotos = [];
 let filterMode = 'all';
 let photoGridRefreshTimer = null;
 let photoGridRefreshRunId = 0;
+let deleteJobUiState = { active: false, jobId: null, total: 0 };
+let deleteJobPollTimer = null;
+let deleteJobPollRunId = 0;
 const PHOTO_GRID_REFRESH_INTERVAL_MS = 2500;
 const PHOTO_GRID_REFRESH_MAX_ATTEMPTS = 12;
+const DELETE_JOB_POLL_INTERVAL_MS = 2000;
+const DELETE_JOB_POLL_MAX_ATTEMPTS = 90;
 let photographerLightbox = null;
 
         function buildPhotographerLightbox(photos) {
@@ -1156,6 +1166,7 @@ function renderPhotoGrid() {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
         });
+        updateBulkDeleteButtonState();
         updateFilterStats();
         return;
     }
@@ -1448,6 +1459,163 @@ async function hideVisibleInGeneral() {
     await updateShowInGeneralBulk(viewIds, false, 'Vue masquée de l\'onglet Général');
 }
 
+        function setDeleteStatusCard(title, message, progressText) {
+            const card = document.getElementById('deleteStatusCard');
+            const titleEl = document.getElementById('deleteStatusTitle');
+            const messageEl = document.getElementById('deleteStatusMessage');
+            const progressEl = document.getElementById('deleteStatusProgress');
+            if (!card || !titleEl || !messageEl || !progressEl) return;
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+            progressEl.textContent = progressText || '';
+            card.style.display = 'block';
+        }
+
+        function resetDeleteStatusCard() {
+            const card = document.getElementById('deleteStatusCard');
+            const progressEl = document.getElementById('deleteStatusProgress');
+            stopDeleteJobPolling();
+            deleteJobUiState = { active: false, jobId: null, total: 0 };
+            if (progressEl) progressEl.textContent = '0 / 0 photos traitées';
+            if (card) card.style.display = 'none';
+            updateBulkDeleteButtonState();
+        }
+
+        function releaseDeleteJobUiState() {
+            deleteJobUiState = { active: false, jobId: null, total: 0 };
+            updateBulkDeleteButtonState();
+        }
+
+        function updateBulkDeleteButtonState() {
+            const button = document.getElementById('bulkDeleteButton');
+            if (!button) return;
+            const shouldDisable = deleteJobUiState.active || !selectedPhotoIds || selectedPhotoIds.length === 0;
+            button.disabled = shouldDisable;
+            button.style.opacity = shouldDisable ? '0.6' : '';
+            button.style.cursor = shouldDisable ? 'not-allowed' : '';
+            button.title = deleteJobUiState.active
+                ? 'Une suppression en masse est déjà en cours de suivi'
+                : '';
+        }
+
+        function stopDeleteJobPolling() {
+            if (deleteJobPollTimer) {
+                clearTimeout(deleteJobPollTimer);
+                deleteJobPollTimer = null;
+            }
+        }
+
+        async function refreshAfterDeleteJobFinalState() {
+            await Promise.allSettled([
+                loadMyPhotos(),
+                loadStats()
+            ]);
+        }
+
+        function startDeleteJobPolling(jobId, expectedTotal) {
+            if (!jobId) return;
+
+            stopDeleteJobPolling();
+            deleteJobPollRunId += 1;
+
+            const runId = deleteJobPollRunId;
+            let attempts = 0;
+
+            const finishWithUnavailableStatus = () => {
+                stopDeleteJobPolling();
+                if (runId !== deleteJobPollRunId) return;
+                setDeleteStatusCard(
+                    'Suivi de suppression indisponible',
+                    'Le suivi détaillé de la suppression n’est plus disponible. Actualisez la page pour vérifier l’état final.',
+                    ''
+                );
+                releaseDeleteJobUiState();
+                refreshAfterDeleteJobFinalState().catch(() => {});
+            };
+
+            const tick = async () => {
+                if (runId !== deleteJobPollRunId) return;
+
+                attempts += 1;
+
+                try {
+                    const response = await fetch(`/api/admin/delete-jobs/${encodeURIComponent(jobId)}`, {
+                        headers: { 'Authorization': `Bearer ${token}` },
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json().catch(() => ({}));
+                    if (runId !== deleteJobPollRunId) return;
+                    const status = typeof data.status === 'string' ? data.status.toUpperCase() : '';
+                    const total = Number.isFinite(Number(data.total)) ? Number(data.total) : expectedTotal;
+                    const processed = Number.isFinite(Number(data.processed)) ? Number(data.processed) : 0;
+                    const success = Number.isFinite(Number(data.success)) ? Number(data.success) : 0;
+                    const errorCount = Number.isFinite(Number(data.error_count)) ? Number(data.error_count) : 0;
+                    const progressText = `${processed} / ${total} photos traitées • Succès : ${success} • Erreurs : ${errorCount}`;
+
+                    if (status === 'DONE') {
+                        stopDeleteJobPolling();
+                        setDeleteStatusCard(
+                            'Suppression terminée',
+                            'Toutes les photos sélectionnées ont été supprimées côté serveur.',
+                            progressText
+                        );
+                        releaseDeleteJobUiState();
+                        refreshAfterDeleteJobFinalState().catch(() => {});
+                        return;
+                    }
+
+                    if (status === 'PARTIAL') {
+                        stopDeleteJobPolling();
+                        setDeleteStatusCard(
+                            'Suppression terminée avec erreurs',
+                            'Certaines photos n’ont pas pu être supprimées côté serveur.',
+                            progressText
+                        );
+                        releaseDeleteJobUiState();
+                        refreshAfterDeleteJobFinalState().catch(() => {});
+                        return;
+                    }
+
+                    if (status === 'FAILED') {
+                        stopDeleteJobPolling();
+                        setDeleteStatusCard(
+                            'Suppression échouée',
+                            'La suppression n’a pas pu être menée à son terme côté serveur.',
+                            progressText
+                        );
+                        releaseDeleteJobUiState();
+                        refreshAfterDeleteJobFinalState().catch(() => {});
+                        return;
+                    }
+
+                    setDeleteStatusCard(
+                        'Suppression en cours',
+                        'Les photos sont en cours de suppression côté serveur.',
+                        progressText
+                    );
+                } catch (e) {
+                    if (attempts >= DELETE_JOB_POLL_MAX_ATTEMPTS) {
+                        finishWithUnavailableStatus();
+                        return;
+                    }
+                }
+
+                if (runId !== deleteJobPollRunId) return;
+                if (attempts >= DELETE_JOB_POLL_MAX_ATTEMPTS) {
+                    finishWithUnavailableStatus();
+                    return;
+                }
+
+                deleteJobPollTimer = setTimeout(tick, DELETE_JOB_POLL_INTERVAL_MS);
+            };
+
+            deleteJobPollTimer = setTimeout(tick, DELETE_JOB_POLL_INTERVAL_MS);
+        }
+
         function updateSelectionCount() {
             const count = selectedPhotoIds.length;
             const el = document.getElementById('selCount');
@@ -1456,6 +1624,7 @@ async function hideVisibleInGeneral() {
             if (el) el.textContent = String(count);
             if (el2) el2.textContent = String(count);
             if (el3) el3.textContent = String(count);
+    updateBulkDeleteButtonState();
     updateFilterStats();
         }
 
@@ -1491,6 +1660,10 @@ async function hideVisibleInGeneral() {
         }
 
         async function deleteSelectedPhotos() {
+            if (deleteJobUiState.active) {
+                showAlert('Une suppression en masse est déjà en cours de suivi.', 'error');
+                return;
+            }
             if (!selectedPhotoIds || selectedPhotoIds.length === 0) return;
             if (!confirm(`Supprimer ${selectedPhotoIds.length} photo(s) ?`)) return;
             try {
@@ -1498,13 +1671,38 @@ async function hideVisibleInGeneral() {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
+                const data = await resp.json().catch(() => ({}));
                 if (resp.ok) {
-                    showAlert('Photos supprimées avec succès !', 'success');
-                    clearSelection();
-                    loadMyPhotos();
-                    loadStats();
+                    if (resp.status === 202) {
+                        const jobId = typeof data.job_id === 'string' ? data.job_id.trim() : '';
+                        const totalPhotos = Number.isFinite(Number(data.total_photos)) ? Number(data.total_photos) : selectedPhotoIds.length;
+                        clearSelection();
+                        if (jobId) {
+                            deleteJobUiState = { active: true, jobId, total: totalPhotos };
+                            setDeleteStatusCard(
+                                'Suppression en cours',
+                                'Les photos sont en cours de suppression côté serveur.',
+                                `0 / ${totalPhotos} photos traitées`
+                            );
+                            updateBulkDeleteButtonState();
+                            showAlert(data.message || 'Suppression lancée. Le traitement continue côté serveur.', 'info');
+                            startDeleteJobPolling(jobId, totalPhotos);
+                        } else {
+                            setDeleteStatusCard(
+                                'Suppression en cours',
+                                'La suppression a été acceptée par le serveur, mais le suivi détaillé est indisponible pour le moment.',
+                                totalPhotos > 0 ? `0 / ${totalPhotos} photos traitées` : 'Suivi indisponible'
+                            );
+                            showAlert('Suppression acceptée par le serveur, mais le suivi détaillé est indisponible.', 'info');
+                        }
+                    } else {
+                        resetDeleteStatusCard();
+                        showAlert(data.message || 'Photos supprimées avec succès !', 'success');
+                        clearSelection();
+                        loadMyPhotos();
+                        loadStats();
+                    }
                 } else {
-                    const data = await resp.json().catch(() => ({}));
                     showAlert(data.detail || 'Erreur lors de la suppression multiple', 'error');
                 }
             } catch (e) {
