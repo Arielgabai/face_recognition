@@ -335,14 +335,26 @@ def _startup_log_delete_job_routes():
             if path and "delete-jobs" in path:
                 found_any = True
                 logger.info(
-                    "[DELETE-JOB-STATUS-DIAG] registered_route path=%s methods=%s",
+                    "[DELETE-JOB-ROUTE-DIAG] registered path=%s methods=%s",
                     path,
                     ",".join(methods),
                 )
         if not found_any:
-            logger.info("[DELETE-JOB-STATUS-DIAG] registered_route path=<none> methods=<none>")
+            logger.info("[DELETE-JOB-ROUTE-DIAG] registered path=<none> methods=<none>")
     except Exception:
-        logger.exception("[DELETE-JOB-STATUS-DIAG] startup_registered_routes_failed")
+        logger.exception("[DELETE-JOB-ROUTE-DIAG] startup_registered_routes_failed")
+
+
+def _delete_job_status_diag_dependency(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    logger.info(
+        "[DELETE-JOB-STATUS-DIAG] dependency_entered route=/api/admin/delete-jobs/{job_id} requested_job_id=%s current_user_id=%s",
+        job_id,
+        getattr(current_user, "id", None),
+    )
+    return None
 
 # Garde-fous pour éviter de rejouer les migrations légères à chaque requête
 _SCHEMA_READY = {
@@ -7510,6 +7522,7 @@ async def list_delete_jobs(
 @app.get("/api/admin/delete-jobs/{job_id}")
 async def get_delete_job_status(
     job_id: str,
+    _diag: None = Depends(_delete_job_status_diag_dependency),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
