@@ -328,13 +328,19 @@ templates = Jinja2Templates(directory="templates")
 @app.on_event("startup")
 def _startup_log_delete_job_routes():
     try:
-        delete_job_routes = []
+        found_any = False
         for route in app.routes:
             path = getattr(route, "path", None)
             methods = sorted(list(getattr(route, "methods", []) or []))
             if path and "delete-jobs" in path:
-                delete_job_routes.append({"path": path, "methods": methods})
-        logger.info("[DELETE-JOB-STATUS-DIAG] startup_registered_routes=%s", delete_job_routes)
+                found_any = True
+                logger.info(
+                    "[DELETE-JOB-STATUS-DIAG] registered_route path=%s methods=%s",
+                    path,
+                    ",".join(methods),
+                )
+        if not found_any:
+            logger.info("[DELETE-JOB-STATUS-DIAG] registered_route path=<none> methods=<none>")
     except Exception:
         logger.exception("[DELETE-JOB-STATUS-DIAG] startup_registered_routes_failed")
 
