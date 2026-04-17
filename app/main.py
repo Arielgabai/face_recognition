@@ -312,6 +312,10 @@ def _startup_create_tables():
         # Ajouter des index de performance si nécessaires
         from add_perf_indexes import add_perf_indexes
         add_perf_indexes()
+
+        # Ajouter la colonne users.photos_remaining (quota photo photographe)
+        from add_photographer_photo_quota_column import add_photographer_photo_quota_column
+        add_photographer_photo_quota_column()
         
     except Exception as e:
         # Ne pas bloquer le démarrage si la DB est indisponible
@@ -324,6 +328,135 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 templates = Jinja2Templates(directory="templates")
+
+
+# ========== QUOTA PHOTO PHOTOGRAPHE ==========
+# Helpers internes pour la feature de quota photo.
+# Le comportement attendu est "all-or-nothing" sur un batch :
+#   - on réserve N photos en une seule opération SQL atomique;
+#   - si la réservation échoue (solde insuffisant), on refuse tout le batch;
+#   - en fin de traitement, on recrédite uniquement la partie non consommée.
+
+def _reserve_photographer_photo_quota(
+    db: Session, photographer_id: int, amount: int
+) -> bool:
+    """Tente de réserver ``amount`` photos sur le quota du photographe.
+
+    Effectue un UPDATE conditionnel atomique:
+        UPDATE users
+        SET photos_remaining = photos_remaining - :n
+        WHERE id = :pid
+          AND user_type = 'photographer'
+          AND photos_remaining >= :n
+
+    Retourne True si la réservation a réussi (rowcount == 1),
+    False si le solde est insuffisant ou l'utilisateur n'est pas un photographe.
+    """
+    if amount <= 0 or photographer_id is None:
+        return True
+    try:
+        result = db.execute(
+            _text(
+                "UPDATE users SET photos_remaining = photos_remaining - :n "
+                "WHERE id = :pid AND user_type = :ptype AND photos_remaining >= :n"
+            ),
+            {
+                "n": int(amount),
+                "pid": int(photographer_id),
+                "ptype": UserType.PHOTOGRAPHER.value,
+            },
+        )
+        db.commit()
+        return (result.rowcount or 0) == 1
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise
+
+
+def _release_photographer_photo_quota(
+    db: Session, photographer_id: int, amount: int
+) -> None:
+    """Recrédite ``amount`` au quota du photographe (recrédit partiel ou total).
+
+    Idempotent sur amount<=0 et silencieux en cas d'erreur (ne doit jamais
+    casser la requête principale).
+    """
+    if amount <= 0 or photographer_id is None:
+        return
+    try:
+        db.execute(
+            _text(
+                "UPDATE users SET photos_remaining = photos_remaining + :n WHERE id = :pid"
+            ),
+            {"n": int(amount), "pid": int(photographer_id)},
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning(
+            "[quota] release failed photographer_id=%s amount=%s err=%s",
+            photographer_id,
+            amount,
+            e,
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def _get_photographer_photo_quota(db: Session, photographer_id: int) -> int:
+    """Retourne le solde actuel de photos_remaining pour un photographe.
+
+    Retourne 0 en cas de ligne introuvable ou d'erreur.
+    """
+    if photographer_id is None:
+        return 0
+    try:
+        row = db.execute(
+            _text("SELECT photos_remaining FROM users WHERE id = :pid"),
+            {"pid": int(photographer_id)},
+        ).first()
+        if row is None or row[0] is None:
+            return 0
+        return int(row[0])
+    except Exception:
+        return 0
+
+
+def _insufficient_quota_response(photographer_id: int, requested: int, current: int):
+    """Construit un HTTPException 409 standardisé pour un quota insuffisant."""
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "INSUFFICIENT_PHOTO_QUOTA",
+            "message": (
+                f"Solde photo insuffisant: {current} photo(s) restante(s) "
+                f"pour {requested} demandée(s)."
+            ),
+            "photos_remaining": int(current),
+            "requested": int(requested),
+            "photographer_id": int(photographer_id),
+        },
+    )
+
+
+def _missing_photographer_quota_subject_response(event_id: int):
+    """Erreur stable si l'upload ne permet pas d'identifier le photographe à débiter."""
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "UNDETERMINED_PHOTOGRAPHER_ID",
+            "message": (
+                "Impossible de déterminer le photographe auquel rattacher "
+                "le quota photo pour cet événement."
+            ),
+            "event_id": int(event_id),
+        },
+    )
+
 
 @app.on_event("startup")
 def _startup_log_delete_job_routes():
@@ -3017,6 +3150,8 @@ async def get_current_user_info(current_user: User = Depends(get_current_user), 
         "created_at": current_user.created_at,
         "selfie_status": selfie_status,
         "selfie_error": selfie_error,
+        # Quota photo (pertinent pour les photographes). Toujours exposé (0 par défaut).
+        "photos_remaining": int(getattr(current_user, "photos_remaining", 0) or 0),
     }
 
     user_event = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).first()
@@ -4924,7 +5059,18 @@ async def admin_get_photographers(
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent acc+�der +� cette route")
     
     photographers = db.query(User).filter(User.user_type == UserType.PHOTOGRAPHER).all()
-    return photographers
+    return [
+        {
+            "id": p.id,
+            "username": p.username,
+            "email": p.email,
+            "user_type": p.user_type,
+            "is_active": p.is_active,
+            "created_at": p.created_at,
+            "photos_remaining": int(getattr(p, "photos_remaining", 0) or 0),
+        }
+        for p in photographers
+    ]
 
 @app.post("/api/admin/photographers")
 async def admin_create_photographer(
@@ -4962,6 +5108,42 @@ async def admin_create_photographer(
     db.refresh(db_photographer)
     
     return {"message": "Photographe cr+�+� avec succ+�s", "photographer_id": db_photographer.id}
+
+
+@app.post("/api/admin/photographers/{photographer_id}/photo-quota/add")
+async def admin_add_photographer_photo_quota(
+    photographer_id: int,
+    amount: int = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Ajoute manuellement des photos au solde d'un photographe (admin uniquement)."""
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent modifier le quota photo")
+
+    try:
+        amount = int(amount)
+    except Exception:
+        raise HTTPException(status_code=400, detail="amount doit être un entier strictement positif")
+
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="amount doit être un entier strictement positif")
+
+    photographer = db.query(User).filter(User.id == photographer_id).first()
+    if not photographer or photographer.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=404, detail="Photographe non trouvé")
+
+    before = int(getattr(photographer, "photos_remaining", 0) or 0)
+    photographer.photos_remaining = before + amount
+    db.commit()
+    db.refresh(photographer)
+
+    return {
+        "photographer_id": photographer.id,
+        "added": amount,
+        "photos_remaining_before": before,
+        "photos_remaining_after": int(photographer.photos_remaining or 0),
+    }
 
 @app.put("/api/admin/photographers/{photographer_id}")
 async def admin_update_photographer(
@@ -5657,7 +5839,10 @@ async def upload_photos_to_event(
         raise HTTPException(status_code=404, detail="Événement non trouvé")
     if current_user.user_type == UserType.PHOTOGRAPHER and event.photographer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Vous n'êtes pas propriétaire de cet événement")
-    effective_photographer_id = current_user.id if current_user.user_type == UserType.PHOTOGRAPHER else int(event.photographer_id)
+    effective_photographer_id = current_user.id if current_user.user_type == UserType.PHOTOGRAPHER else event.photographer_id
+    if not effective_photographer_id:
+        raise _missing_photographer_quota_subject_response(event_id)
+    effective_photographer_id = int(effective_photographer_id)
 
     effective_upload_batch_id = (upload_batch_id or "").strip() or None
     parsed_total_photos = 0
@@ -5695,235 +5880,313 @@ async def upload_photos_to_event(
     
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
-    
+
+    # ===== QUOTA PHOTO: réservation atomique (all-or-nothing) =====
+    # On ne compte que les fichiers images valides (les autres sont ignorés en boucle).
+    image_files_count = sum(
+        1 for f in files if (getattr(f, "content_type", "") or "").startswith("image/")
+    )
+    if image_files_count == 0:
+        raise HTTPException(status_code=400, detail="Aucune image valide fournie")
+
+    reserved_quota = image_files_count
+    if not _reserve_photographer_photo_quota(
+        db, effective_photographer_id, reserved_quota
+    ):
+        current_quota = _get_photographer_photo_quota(db, effective_photographer_id)
+        raise _insufficient_quota_response(
+            effective_photographer_id, reserved_quota, current_quota
+        )
+    print(
+        f"[QUOTA] upload-photos event={event_id} photographer={effective_photographer_id} "
+        f"reserved={reserved_quota}"
+    )
+
     # Vérifier si le workflow S3+SQS est configuré
     use_sqs_workflow = settings.is_sqs_configured
-    
-    if use_sqs_workflow:
-        # ========== NOUVEAU WORKFLOW S3 + SQS ==========
-        from s3_service import get_s3_service, get_sqs_service
-        s3_service = get_s3_service()
-        sqs_service = get_sqs_service()
-        
-        enqueued_jobs = []
-        failed_uploads = []
+    consumed_quota = 0
+    response = None
 
-        batch_id = str(uuid.uuid4())[:8]
-        _batch_start = time.perf_counter()
-        _total_size_bytes = 0
-        print(f"[UPLOAD] batch={batch_id} event={event_id} files_received={len(files)} workflow=s3_sqs photographer={effective_photographer_id}")
+    try:
+        if use_sqs_workflow:
+            # ========== NOUVEAU WORKFLOW S3 + SQS ==========
+            from s3_service import get_s3_service, get_sqs_service
+            s3_service = get_s3_service()
+            sqs_service = get_sqs_service()
 
-        for file in files:
-            if not file.content_type.startswith("image/"):
-                continue
+            enqueued_jobs = []
+            failed_uploads = []
 
-            photo = None
-            s3_key = None
+            batch_id = str(uuid.uuid4())[:8]
+            _batch_start = time.perf_counter()
+            _total_size_bytes = 0
+            print(f"[UPLOAD] batch={batch_id} event={event_id} files_received={len(files)} workflow=s3_sqs photographer={effective_photographer_id}")
 
-            try:
-                _t0 = time.perf_counter()
-                # 1. Lire les bytes de l'image (pas de fichier temp persistant)
-                image_bytes = await file.read()
-                _t_read = time.perf_counter()
-                
-                if not image_bytes:
-                    failed_uploads.append({
-                        "filename": file.filename,
-                        "error": "Empty file"
-                    })
+            for file in files:
+                if not (getattr(file, "content_type", "") or "").startswith("image/"):
                     continue
 
-                _file_size = len(image_bytes)
-                _total_size_bytes += _file_size
-                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} size_bytes={_file_size} t_read_ms={int((_t_read - _t0) * 1000)}")
+                photo = None
+                s3_key = None
 
-                # 2. Créer l'entrée Photo en DB avec status=PENDING
-                unique_filename = f"{uuid.uuid4()}.jpg"
-                photo = Photo(
-                    filename=unique_filename,
-                    original_filename=file.filename,
-                    content_type=file.content_type or "image/jpeg",
-                    photo_type="uploaded",
-                    photographer_id=effective_photographer_id,
-                    event_id=event_id,
-                    upload_batch_id=effective_upload_batch_id,
-                    processing_status=PhotoProcessingStatus.PENDING.value,
-                )
-                db.add(photo)
-                db.commit()
-                db.refresh(photo)
-                _t_db = time.perf_counter()
-                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_db_write_ms={int((_t_db - _t_read) * 1000)}")
-
-                # 3. Upload vers S3
-                extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
-                s3_key = s3_service.upload_photo(
-                    image_bytes=image_bytes,
-                    event_id=event_id,
-                    photo_id=photo.id,
-                    content_type=file.content_type or "image/jpeg",
-                    extension=extension
-                )
-                _t_s3 = time.perf_counter()
-                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_s3_upload_ms={int((_t_s3 - _t_db) * 1000)}")
-
-                # 4. Mettre à jour la photo avec la clé S3
-                photo.s3_key = s3_key
-                db.commit()
-                _t_s3_commit = time.perf_counter()
-
-                # 5. Envoyer le message SQS
-                message_id = sqs_service.send_photo_job(
-                    photo_id=photo.id,
-                    event_id=event_id,
-                    s3_key=s3_key
-                )
-                _t_sqs = time.perf_counter()
-                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_sqs_ms={int((_t_sqs - _t_s3_commit) * 1000)} t_file_total_ms={int((_t_sqs - _t0) * 1000)}")
-
-                enqueued_jobs.append({
-                    "photo_id": photo.id,
-                    "filename": file.filename,
-                    "s3_key": s3_key,
-                    "message_id": message_id,
-                    "status": "queued"
-                })
+                try:
+                    _t0 = time.perf_counter()
+                    # 1. Lire les bytes de l'image (pas de fichier temp persistant)
+                    image_bytes = await file.read()
+                    _t_read = time.perf_counter()
                 
-            except Exception as e:
-                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR {type(e).__name__}: {e}")
-                import traceback
-                traceback.print_exc()
-                
-                failed_uploads.append({
-                    "filename": file.filename,
-                    "error": str(e)
-                })
-                
-                # Rollback: marquer la photo comme FAILED si elle a été créée
-                if photo and photo.id:
-                    try:
-                        photo.processing_status = PhotoProcessingStatus.FAILED.value
-                        photo.error_message = f"Upload failed: {str(e)}"
-                        db.commit()
-                    except Exception:
-                        try:
-                            db.rollback()
-                        except Exception:
-                            pass
-        
-        _batch_elapsed_ms = int((time.perf_counter() - _batch_start) * 1000)
-        print(f"[UPLOAD] batch={batch_id} event={event_id} SUMMARY enqueued={len(enqueued_jobs)} failed={len(failed_uploads)} total_size_bytes={_total_size_bytes} t_batch_ms={_batch_elapsed_ms}")
+                    if not image_bytes:
+                        failed_uploads.append({
+                            "filename": file.filename,
+                            "error": "Empty file"
+                        })
+                        continue
 
-        response = {
-            "message": f"{len(enqueued_jobs)} photos en queue pour traitement (S3+SQS)",
-            "workflow": "s3_sqs",
-            "enqueued": len(enqueued_jobs),
-            "failed": len(failed_uploads),
-            "jobs": enqueued_jobs,
-        }
-        
-        if failed_uploads:
-            response["failed_uploads"] = failed_uploads
-        
-        return response
-    
-    else:
-        # ========== FALLBACK: ANCIEN WORKFLOW QUEUE EN MÉMOIRE ==========
-        # Utilisé si PHOTO_BUCKET_NAME ou PHOTO_SQS_QUEUE_URL ne sont pas configurés
-        print("[UploadEvent] Using legacy in-memory queue (S3+SQS not configured)")
+                    _file_size = len(image_bytes)
+                    _total_size_bytes += _file_size
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} size_bytes={_file_size} t_read_ms={int((_t_read - _t0) * 1000)}")
 
-        from photo_queue import get_photo_queue, PhotoJob
-        photo_queue = get_photo_queue()
+                    # 2. Créer l'entrée Photo en DB avec status=PENDING
+                    unique_filename = f"{uuid.uuid4()}.jpg"
+                    photo = Photo(
+                        filename=unique_filename,
+                        original_filename=file.filename,
+                        content_type=file.content_type or "image/jpeg",
+                        photo_type="uploaded",
+                        photographer_id=effective_photographer_id,
+                        event_id=event_id,
+                        upload_batch_id=effective_upload_batch_id,
+                        processing_status=PhotoProcessingStatus.PENDING.value,
+                    )
+                    db.add(photo)
+                    db.commit()
+                    db.refresh(photo)
+                    _t_db = time.perf_counter()
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_db_write_ms={int((_t_db - _t_read) * 1000)}")
 
-        enqueued_jobs = []
-        failed_uploads = []
+                    # 3. Upload vers S3
+                    extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
+                    s3_key = s3_service.upload_photo(
+                        image_bytes=image_bytes,
+                        event_id=event_id,
+                        photo_id=photo.id,
+                        content_type=file.content_type or "image/jpeg",
+                        extension=extension
+                    )
+                    _t_s3 = time.perf_counter()
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_s3_upload_ms={int((_t_s3 - _t_db) * 1000)}")
 
-        batch_id = str(uuid.uuid4())[:8]
-        _batch_start = time.perf_counter()
-        _total_size_bytes = 0
-        print(f"[UPLOAD] batch={batch_id} event={event_id} files_received={len(files)} workflow=memory_queue photographer={effective_photographer_id}")
+                    # 4. Mettre à jour la photo avec la clé S3
+                    photo.s3_key = s3_key
+                    db.commit()
+                    _t_s3_commit = time.perf_counter()
 
-        # Préparation de la collection (rapide, une seule fois)
-        try:
-            if hasattr(face_recognizer, 'prepare_event_for_batch'):
-                face_recognizer.prepare_event_for_batch(event_id, db)
-        except Exception as e:
-            print(f"[UploadEvent] Warning: prepare_event_for_batch failed: {e}")
-        
-        # Sauvegarder rapidement tous les fichiers et les mettre en queue
-        for file in files:
-            if not file.content_type.startswith("image/"):
-                continue
-            
-            try:
-                _t0 = time.perf_counter()
-                # Sauvegarder temporairement le fichier (méthode stable)
-                temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
-                with open(temp_path, "wb") as buffer:
-                    shutil.copyfileobj(file.file, buffer)
-                _t_write = time.perf_counter()
-                _file_size = os.path.getsize(temp_path)
-                _total_size_bytes += _file_size
-                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} size_bytes={_file_size} t_write_ms={int((_t_write - _t0) * 1000)}")
+                    # 5. Envoyer le message SQS
+                    message_id = sqs_service.send_photo_job(
+                        photo_id=photo.id,
+                        event_id=event_id,
+                        s3_key=s3_key
+                    )
+                    _t_sqs = time.perf_counter()
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} photo_id={photo.id} t_sqs_ms={int((_t_sqs - _t_s3_commit) * 1000)} t_file_total_ms={int((_t_sqs - _t0) * 1000)}")
 
-                # Créer un job et l'enqueuer
-                job_id = str(uuid.uuid4())
-                job = PhotoJob(
-                    job_id=job_id,
-                    event_id=event_id,
-                    photographer_id=effective_photographer_id,
-                    temp_path=temp_path,
-                    filename=file.filename,
-                    original_filename=file.filename,
-                    watcher_id=watcher_id,
-                )
-
-                if photo_queue.enqueue(job):
-                    _t_enqueue = time.perf_counter()
-                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} job_id={job_id} t_enqueue_ms={int((_t_enqueue - _t_write) * 1000)} t_file_total_ms={int((_t_enqueue - _t0) * 1000)}")
                     enqueued_jobs.append({
-                        "job_id": job_id,
+                        "photo_id": photo.id,
                         "filename": file.filename,
+                        "s3_key": s3_key,
+                        "message_id": message_id,
                         "status": "queued"
                     })
-                else:
-                    # Queue pleine, nettoyer le fichier temp
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR QUEUE_FULL")
+                    
+                except Exception as e:
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR {type(e).__name__}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    
                     failed_uploads.append({
                         "filename": file.filename,
-                        "error": "Queue is full, try again later"
+                        "error": str(e)
                     })
                     
-            except Exception as e:
-                print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR {type(e).__name__}: {e}")
-                failed_uploads.append({
-                    "filename": file.filename,
-                    "error": str(e)
-                })
-                # Nettoyer si le fichier a été créé
-                if 'temp_path' in locals() and os.path.exists(temp_path):
-                    try:
-                        os.remove(temp_path)
-                    except:
-                        pass
+                    # Rollback: marquer la photo comme FAILED si elle a été créée
+                    if photo and photo.id:
+                        try:
+                            photo.processing_status = PhotoProcessingStatus.FAILED.value
+                            photo.error_message = f"Upload failed: {str(e)}"
+                            db.commit()
+                        except Exception:
+                            try:
+                                db.rollback()
+                            except Exception:
+                                pass
         
-        _batch_elapsed_ms = int((time.perf_counter() - _batch_start) * 1000)
-        print(f"[UPLOAD] batch={batch_id} event={event_id} SUMMARY enqueued={len(enqueued_jobs)} failed={len(failed_uploads)} total_size_bytes={_total_size_bytes} t_batch_ms={_batch_elapsed_ms}")
+            _batch_elapsed_ms = int((time.perf_counter() - _batch_start) * 1000)
+            print(f"[UPLOAD] batch={batch_id} event={event_id} SUMMARY enqueued={len(enqueued_jobs)} failed={len(failed_uploads)} total_size_bytes={_total_size_bytes} t_batch_ms={_batch_elapsed_ms}")
 
-        response = {
-            "message": f"{len(enqueued_jobs)} photos en queue pour traitement (legacy)",
-            "workflow": "in_memory_queue",
-            "enqueued": len(enqueued_jobs),
-            "failed": len(failed_uploads),
-            "jobs": enqueued_jobs,
+            response = {
+                "message": f"{len(enqueued_jobs)} photos en queue pour traitement (S3+SQS)",
+                "workflow": "s3_sqs",
+                "enqueued": len(enqueued_jobs),
+                "failed": len(failed_uploads),
+                "jobs": enqueued_jobs,
+            }
+            
+            if failed_uploads:
+                response["failed_uploads"] = failed_uploads
+
+            consumed_quota = len(enqueued_jobs)
+
+        else:
+            # ========== FALLBACK: ANCIEN WORKFLOW QUEUE EN MÉMOIRE ==========
+            # Utilisé si PHOTO_BUCKET_NAME ou PHOTO_SQS_QUEUE_URL ne sont pas configurés
+            print("[UploadEvent] Using legacy in-memory queue (S3+SQS not configured)")
+
+            from photo_queue import get_photo_queue, PhotoJob
+            photo_queue = get_photo_queue()
+
+            enqueued_jobs = []
+            failed_uploads = []
+
+            batch_id = str(uuid.uuid4())[:8]
+            _batch_start = time.perf_counter()
+            _total_size_bytes = 0
+            print(f"[UPLOAD] batch={batch_id} event={event_id} files_received={len(files)} workflow=memory_queue photographer={effective_photographer_id}")
+
+            # Préparation de la collection (rapide, une seule fois)
+            try:
+                if hasattr(face_recognizer, 'prepare_event_for_batch'):
+                    face_recognizer.prepare_event_for_batch(event_id, db)
+            except Exception as e:
+                print(f"[UploadEvent] Warning: prepare_event_for_batch failed: {e}")
+            
+            # Sauvegarder rapidement tous les fichiers et les mettre en queue
+            for file in files:
+                if not (getattr(file, "content_type", "") or "").startswith("image/"):
+                    continue
+                
+                try:
+                    _t0 = time.perf_counter()
+                    # Sauvegarder temporairement le fichier (méthode stable)
+                    temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+                    with open(temp_path, "wb") as buffer:
+                        shutil.copyfileobj(file.file, buffer)
+                    _t_write = time.perf_counter()
+                    _file_size = os.path.getsize(temp_path)
+                    _total_size_bytes += _file_size
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} size_bytes={_file_size} t_write_ms={int((_t_write - _t0) * 1000)}")
+
+                    # Créer un job et l'enqueuer
+                    job_id = str(uuid.uuid4())
+                    job = PhotoJob(
+                        job_id=job_id,
+                        event_id=event_id,
+                        photographer_id=effective_photographer_id,
+                        temp_path=temp_path,
+                        filename=file.filename,
+                        original_filename=file.filename,
+                        watcher_id=watcher_id,
+                    )
+
+                    if photo_queue.enqueue(job):
+                        _t_enqueue = time.perf_counter()
+                        print(f"[UPLOAD] batch={batch_id} file={file.filename!r} job_id={job_id} t_enqueue_ms={int((_t_enqueue - _t_write) * 1000)} t_file_total_ms={int((_t_enqueue - _t0) * 1000)}")
+                        enqueued_jobs.append({
+                            "job_id": job_id,
+                            "filename": file.filename,
+                            "status": "queued"
+                        })
+                    else:
+                        # Queue pleine, nettoyer le fichier temp
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                        print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR QUEUE_FULL")
+                        failed_uploads.append({
+                            "filename": file.filename,
+                            "error": "Queue is full, try again later"
+                        })
+                        
+                except Exception as e:
+                    print(f"[UPLOAD] batch={batch_id} file={file.filename!r} ERROR {type(e).__name__}: {e}")
+                    failed_uploads.append({
+                        "filename": file.filename,
+                        "error": str(e)
+                    })
+                    # Nettoyer si le fichier a été créé
+                    if 'temp_path' in locals() and os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except:
+                            pass
+        
+            _batch_elapsed_ms = int((time.perf_counter() - _batch_start) * 1000)
+            print(f"[UPLOAD] batch={batch_id} event={event_id} SUMMARY enqueued={len(enqueued_jobs)} failed={len(failed_uploads)} total_size_bytes={_total_size_bytes} t_batch_ms={_batch_elapsed_ms}")
+
+            response = {
+                "message": f"{len(enqueued_jobs)} photos en queue pour traitement (legacy)",
+                "workflow": "in_memory_queue",
+                "enqueued": len(enqueued_jobs),
+                "failed": len(failed_uploads),
+                "jobs": enqueued_jobs,
+            }
+            
+            if failed_uploads:
+                response["failed_uploads"] = failed_uploads
+
+            consumed_quota = len(enqueued_jobs)
+
+        # ===== QUOTA PHOTO: recrédit partiel et exposition du solde =====
+        # Si certaines photos du batch réservé n'ont pas été effectivement enqueued
+        # (par ex. erreur S3/SQS sur un fichier individuel), on recrédite la différence.
+        try:
+            unused_quota = reserved_quota - consumed_quota
+            if unused_quota > 0:
+                _release_photographer_photo_quota(
+                    db, effective_photographer_id, unused_quota
+                )
+                print(
+                    f"[QUOTA] upload-photos event={event_id} "
+                    f"photographer={effective_photographer_id} "
+                    f"reserved={reserved_quota} consumed={consumed_quota} "
+                    f"released_unused={unused_quota}"
+                )
+        except Exception as _quota_err:
+            logger.warning(
+                "[QUOTA] release_unused failed photographer_id=%s err=%s",
+                effective_photographer_id,
+                _quota_err,
+            )
+
+        current_quota_after = _get_photographer_photo_quota(db, effective_photographer_id)
+        if response is None:
+            response = {}
+        response["photos_remaining"] = current_quota_after
+        response["quota"] = {
+            "reserved": reserved_quota,
+            "consumed": consumed_quota,
+            "photos_remaining": current_quota_after,
         }
-        
-        if failed_uploads:
-            response["failed_uploads"] = failed_uploads
-        
+
         return response
+    except Exception:
+        try:
+            unused_quota = reserved_quota - consumed_quota
+            if unused_quota > 0:
+                _release_photographer_photo_quota(
+                    db, effective_photographer_id, unused_quota
+                )
+                print(
+                    f"[QUOTA] upload-photos event={event_id} "
+                    f"photographer={effective_photographer_id} "
+                    f"reserved={reserved_quota} consumed={consumed_quota} "
+                    f"released_on_exception={unused_quota}"
+                )
+        except Exception as _quota_err:
+            logger.warning(
+                "[QUOTA] release_on_exception failed photographer_id=%s err=%s",
+                effective_photographer_id,
+                _quota_err,
+            )
+        raise
 
 @app.post("/api/photographer/events/{event_id}/upload-photos-async")
 async def upload_photos_to_event_async(
@@ -5944,34 +6207,68 @@ async def upload_photos_to_event_async(
 
     if not event:
         raise HTTPException(status_code=404, detail="Événement non trouvé")
+    if not current_user.id:
+        raise _missing_photographer_quota_subject_response(event_id)
 
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
 
-    # Créer un job
-    job_id = str(uuid.uuid4())
-    UPLOAD_JOBS[job_id] = {
-        "id": job_id,
-        "event_id": event_id,
-        "photographer_id": current_user.id,
-        "status": "pending",
-        "total": len(files),
-        "processed": 0,
-        "failed": 0,
-        "errors": [],
-        "started_at": time.time(),
-        "finished_at": None,
-    }
+    # ===== QUOTA PHOTO: réservation atomique (all-or-nothing) =====
+    # On pré-compte les fichiers images valides, car le reste est ignoré plus bas.
+    image_files_async = [
+        f for f in files if (getattr(f, "content_type", "") or "").startswith("image/")
+    ]
+    if not image_files_async:
+        raise HTTPException(status_code=400, detail="Aucune image valide fournie")
 
-    # Sauvegarder temporairement tous les fichiers pour détacher le job de la requête HTTP
+    reserved_quota = len(image_files_async)
+    if not _reserve_photographer_photo_quota(db, current_user.id, reserved_quota):
+        current_quota = _get_photographer_photo_quota(db, current_user.id)
+        raise _insufficient_quota_response(
+            current_user.id, reserved_quota, current_quota
+        )
+    print(
+        f"[QUOTA] upload-photos-async event={event_id} photographer={current_user.id} "
+        f"reserved={reserved_quota}"
+    )
+
+    # Protéger la section courte entre la réservation et le retour HTTP :
+    # si une exception remonte ici (écriture temp / scheduling), on recrédite
+    # totalement et on nettoie les fichiers temp partiellement créés.
     temp_files: List[Dict[str, str]] = []
-    for f in files:
-        if not f.content_type.startswith("image/"):
-            continue
-        temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(f.filename)[1]}"
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(f.file, buffer)
-        temp_files.append({"path": temp_path, "original": f.filename})
+    try:
+        # Créer un job
+        job_id = str(uuid.uuid4())
+        UPLOAD_JOBS[job_id] = {
+            "id": job_id,
+            "event_id": event_id,
+            "photographer_id": current_user.id,
+            "status": "pending",
+            "total": reserved_quota,
+            "processed": 0,
+            "failed": 0,
+            "errors": [],
+            "started_at": time.time(),
+            "finished_at": None,
+        }
+
+        # Sauvegarder temporairement tous les fichiers pour détacher le job de la requête HTTP
+        for f in image_files_async:
+            temp_path = f"./temp_{uuid.uuid4()}{os.path.splitext(f.filename)[1]}"
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(f.file, buffer)
+            temp_files.append({"path": temp_path, "original": f.filename})
+    except Exception:
+        # Recrédit total du quota réservé puisque le batch n'a jamais démarré.
+        _release_photographer_photo_quota(db, current_user.id, reserved_quota)
+        # Nettoyer d'éventuels temp files partiellement écrits
+        for item in temp_files:
+            try:
+                if os.path.exists(item.get("path", "")):
+                    os.remove(item["path"])
+            except Exception:
+                pass
+        raise
 
     def _process_job(job_key: str, event_id_local: int, photographer_id_local: int, temp_files_local: List[Dict[str, str]]):
         job = UPLOAD_JOBS.get(job_key)
@@ -6034,7 +6331,18 @@ async def upload_photos_to_event_async(
         # Fallback: exécuter synchrone (rare)
         _process_job(job_id, event_id, current_user.id, temp_files)
 
-    return {"job_id": job_id, "status": "scheduled"}
+    # Le traitement part en background: le quota reste intégralement débité.
+    # Si une photo individuelle échoue côté worker, on NE recrédite pas (V1).
+    current_quota_after = _get_photographer_photo_quota(db, current_user.id)
+    return {
+        "job_id": job_id,
+        "status": "scheduled",
+        "photos_remaining": current_quota_after,
+        "quota": {
+            "reserved": reserved_quota,
+            "photos_remaining": current_quota_after,
+        },
+    }
 
 @app.get("/api/upload-jobs/{job_id}/status")
 async def get_upload_job_status(job_id: str, current_user: User = Depends(get_current_user)):

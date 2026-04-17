@@ -29,6 +29,8 @@ class User(UserBase):
     selfie_path: Optional[str] = None  # Peut être None car les selfies sont stockées en binaire
     selfie_status: Optional[str] = None  # none|uploaded|valid|invalid
     selfie_error: Optional[str] = None  # Message d'erreur si selfie invalide
+    # Quota photo restant (pertinent pour les photographes, 0 par défaut pour les autres)
+    photos_remaining: Optional[int] = None
     # Champs de l'événement (optionnels)
     event_name: Optional[str] = None
     event_id: Optional[int] = None

@@ -977,9 +977,27 @@
                             <h4>${photographer.username}</h4>
                             <p><strong>Email:</strong> ${photographer.email}</p>
                             <p><strong>ID:</strong> ${photographer.id}</p>
+                            <p><strong>Photos restantes:</strong> ${photographer.photos_remaining ?? 0}</p>
                             <div class="card-actions">
-                                <button onclick="editPhotographer(${photographer.id}, '${photographer.username}', '${photographer.email}')" class="success">Modifier</button>
-                                <button onclick="deletePhotographer(${photographer.id}, '${photographer.username}')" class="danger">Supprimer</button>
+                                <button
+                                    onclick="addPhotographerPhotoQuotaFromButton(this)"
+                                    class="secondary"
+                                    data-photographer-id="${photographer.id}"
+                                    data-photographer-name="${encodeURIComponent(photographer.username || '')}"
+                                >➕ Ajouter des photos</button>
+                                <button
+                                    onclick="editPhotographerFromButton(this)"
+                                    class="success"
+                                    data-photographer-id="${photographer.id}"
+                                    data-photographer-name="${encodeURIComponent(photographer.username || '')}"
+                                    data-photographer-email="${encodeURIComponent(photographer.email || '')}"
+                                >Modifier</button>
+                                <button
+                                    onclick="deletePhotographerFromButton(this)"
+                                    class="danger"
+                                    data-photographer-id="${photographer.id}"
+                                    data-photographer-name="${encodeURIComponent(photographer.username || '')}"
+                                >Supprimer</button>
                             </div>
                         </div>
                     `).join('')}
@@ -1687,6 +1705,80 @@
         }
 
         // === FONCTIONS POUR LA GESTION DES PHOTOGRAPHES ===
+
+        function addPhotographerPhotoQuotaFromButton(button) {
+            if (!button) return;
+            const photographerId = Number(button.dataset.photographerId);
+            const photographerName = decodeURIComponent(button.dataset.photographerName || '');
+            if (!Number.isInteger(photographerId) || photographerId <= 0) {
+                showAlert('Photographe invalide', 'error');
+                return;
+            }
+            addPhotographerPhotoQuota(photographerId, photographerName);
+        }
+
+        function editPhotographerFromButton(button) {
+            if (!button) return;
+            const photographerId = Number(button.dataset.photographerId);
+            const photographerName = decodeURIComponent(button.dataset.photographerName || '');
+            const photographerEmail = decodeURIComponent(button.dataset.photographerEmail || '');
+            if (!Number.isInteger(photographerId) || photographerId <= 0) {
+                showAlert('Photographe invalide', 'error');
+                return;
+            }
+            editPhotographer(photographerId, photographerName, photographerEmail);
+        }
+
+        function deletePhotographerFromButton(button) {
+            if (!button) return;
+            const photographerId = Number(button.dataset.photographerId);
+            const photographerName = decodeURIComponent(button.dataset.photographerName || '');
+            if (!Number.isInteger(photographerId) || photographerId <= 0) {
+                showAlert('Photographe invalide', 'error');
+                return;
+            }
+            deletePhotographer(photographerId, photographerName);
+        }
+
+        async function addPhotographerPhotoQuota(photographerId, photographerName) {
+            const raw = prompt(`Combien de photos ajouter au photographe "${photographerName}" ?`);
+            if (raw === null) return;
+
+            const amount = Number(raw);
+            if (!Number.isInteger(amount) || amount <= 0) {
+                showAlert('Veuillez saisir un entier strictement positif', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/photographers/${photographerId}/photo-quota/add`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ amount }),
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok) {
+                    showAlert(
+                        `${data.added} photo(s) ajoutée(s). Nouveau solde: ${data.photos_remaining_after}.`,
+                        'success'
+                    );
+                    loadPhotographers();
+                } else {
+                    const detail = typeof data.detail === 'string'
+                        ? data.detail
+                        : (data.detail && data.detail.message) || 'Erreur lors de la mise à jour du quota';
+                    showAlert(detail, 'error');
+                }
+            } catch (error) {
+                console.error('Erreur addPhotographerPhotoQuota:', error);
+                showAlert('Erreur lors de la mise à jour du quota', 'error');
+            }
+        }
 
         async function createPhotographer() {
             const username = document.getElementById('photographerUsername').value;

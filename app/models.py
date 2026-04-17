@@ -67,6 +67,10 @@ class User(Base):
     selfie_error = Column(String, nullable=True, default=None)  # Message d'erreur si selfie invalide
     selfie_content_type = Column(String, nullable=True, default=None)  # ex: image/jpeg
     is_active = Column(Boolean, default=True)
+    # Quota photo restant (pertinent uniquement pour les utilisateurs PHOTOGRAPHER,
+    # mais la colonne existe sur tous les users pour rester simple).
+    # Seul le décompte/réservation côté routes d'upload photographe l'utilise.
+    photos_remaining = Column(Integer, nullable=False, default=0, server_default="0")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Contraintes unique composites : permet le même email/username pour des événements différents

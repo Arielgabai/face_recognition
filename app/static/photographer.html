@@ -634,6 +634,10 @@
                 <h3>Ajouter des Photos</h3>
                 <div class="card">
                     <p>Uploadez des photos pour l'événement sélectionné :</p>
+                    <div id="uploadQuotaCard" style="margin-bottom: 16px; padding: 12px 14px; border-radius: 8px; background: #f5f7fb; border: 1px solid #d8e1f0;">
+                        <div id="uploadQuotaTitle" style="font-weight: bold; margin-bottom: 6px;">Quota photo</div>
+                        <div id="uploadQuotaMessage" style="color: #444; line-height: 1.5;">Chargement du solde photo...</div>
+                    </div>
                     
                     <div class="upload-area" id="uploadArea">
                         <h4>📸 Glissez-déposez vos photos ici</h4>
@@ -978,6 +982,7 @@ let photographerLightbox = null;
                 <h3>👋 Bonjour ${currentUser.username} !</h3>
                 <p><strong>Email:</strong> ${currentUser.email}</p>
                 <p><strong>Type:</strong> Photographe</p>
+                <p><strong>Photos restantes:</strong> ${Math.max(0, Number(currentUser.photos_remaining ?? 0) || 0)}</p>
             `;
 
             // Pré-remplir le champ photographe (verrouillé) du formulaire de création d'événement
@@ -985,6 +990,64 @@ let photographerLightbox = null;
             if (createEventPhotographer) {
                 createEventPhotographer.value = `${currentUser.username} (ID: ${currentUser.id})`;
             }
+
+            updatePhotographerQuotaDisplay();
+        }
+
+        function getCurrentPhotosRemaining() {
+            return Math.max(0, Number(currentUser?.photos_remaining ?? 0) || 0);
+        }
+
+        function setCurrentPhotosRemaining(value) {
+            if (!currentUser) return;
+            currentUser.photos_remaining = Math.max(0, Number(value ?? 0) || 0);
+            displayUserInfo();
+        }
+
+        function updatePhotographerQuotaDisplay() {
+            const uploadArea = document.getElementById('uploadArea');
+            const quotaTitle = document.getElementById('uploadQuotaTitle');
+            const quotaMessage = document.getElementById('uploadQuotaMessage');
+            const photoFiles = document.getElementById('photoFiles');
+            if (!uploadArea || !quotaTitle || !quotaMessage) return;
+
+            const remaining = getCurrentPhotosRemaining();
+            if (remaining <= 0) {
+                quotaTitle.textContent = 'Quota photo épuisé';
+                quotaMessage.textContent = 'Vous n’avez plus de photos disponibles. Contactez un administrateur pour obtenir davantage de crédits.';
+                uploadArea.style.opacity = '0.6';
+                uploadArea.style.cursor = 'not-allowed';
+                uploadArea.title = 'Quota photo épuisé';
+                if (photoFiles) photoFiles.disabled = true;
+            } else {
+                quotaTitle.textContent = 'Quota photo';
+                quotaMessage.textContent = `Il vous reste ${remaining} photo(s) à uploader.`;
+                uploadArea.style.opacity = '';
+                uploadArea.style.cursor = 'pointer';
+                uploadArea.title = '';
+                if (photoFiles) photoFiles.disabled = false;
+            }
+        }
+
+        async function refreshPhotographerQuotaFromBackend() {
+            try {
+                const response = await fetch('/api/me', {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                if (!response.ok) return;
+                const data = await response.json();
+                if (typeof data.photos_remaining === 'number') {
+                    setCurrentPhotosRemaining(data.photos_remaining);
+                }
+            } catch (e) {
+                console.error('Erreur lors du rafraîchissement du quota photo:', e);
+            }
+        }
+
+        function getEligibleUploadFiles(fileList) {
+            return Array.from(fileList || []).filter(
+                f => f && ((f.type || '').startsWith('image/'))
+            );
         }
 
         function populatePhotographerQrEventSelect() {
@@ -2002,6 +2065,10 @@ async function hideVisibleInGeneral() {
 
             // Clic sur la zone d'upload
             uploadArea.addEventListener('click', () => {
+                if (getCurrentPhotosRemaining() <= 0) {
+                    showAlert('Vous n’avez plus de photos disponibles. Contactez un administrateur.', 'error');
+                    return;
+                }
                 photoFiles.click();
             });
 
@@ -2018,6 +2085,10 @@ async function hideVisibleInGeneral() {
             uploadArea.addEventListener('drop', (e) => {
                 e.preventDefault();
                 uploadArea.classList.remove('dragover');
+                if (getCurrentPhotosRemaining() <= 0) {
+                    showAlert('Vous n’avez plus de photos disponibles. Contactez un administrateur.', 'error');
+                    return;
+                }
                 photoFiles.files = e.dataTransfer.files;
                 handleFileSelection();
             });
@@ -2027,15 +2098,33 @@ async function hideVisibleInGeneral() {
         }
 
         function handleFileSelection() {
-            const files = document.getElementById('photoFiles').files;
+            const fileInput = document.getElementById('photoFiles');
+            const files = fileInput.files;
+            const eligibleFiles = getEligibleUploadFiles(files);
             if (files.length > 0) {
                 if (!currentEvent) {
                     showAlert('Veuillez sélectionner un événement avant d\'uploader des photos', 'error');
                     return;
                 }
+                const remaining = getCurrentPhotosRemaining();
+                if (remaining <= 0) {
+                    showAlert('Vous n’avez plus de photos disponibles. Contactez un administrateur.', 'error');
+                    fileInput.value = '';
+                    return;
+                }
+                if (eligibleFiles.length === 0) {
+                    showAlert('Veuillez sélectionner au moins une image valide.', 'error');
+                    fileInput.value = '';
+                    return;
+                }
+                if (eligibleFiles.length > remaining) {
+                    showAlert(`Vous avez sélectionné ${eligibleFiles.length} image(s), mais il ne vous reste que ${remaining} crédit(s).`, 'error');
+                    fileInput.value = '';
+                    return;
+                }
                 resetUploadStatusCard();
                 document.getElementById('uploadPreview').style.display = 'block';
-                displayPreview(files);
+                displayPreview(eligibleFiles);
             }
         }
 
@@ -2110,6 +2199,21 @@ async function hideVisibleInGeneral() {
                 return;
             }
 
+            const remainingBeforeUpload = getCurrentPhotosRemaining();
+            if (remainingBeforeUpload <= 0) {
+                showAlert('Vous n’avez plus de photos disponibles. Contactez un administrateur.', 'error');
+                return;
+            }
+            const eligibleSelectedFiles = getEligibleUploadFiles(fileList);
+            if (eligibleSelectedFiles.length === 0) {
+                showAlert('Veuillez sélectionner au moins une image valide.', 'error');
+                return;
+            }
+            if (eligibleSelectedFiles.length > remainingBeforeUpload) {
+                showAlert(`Vous avez sélectionné ${eligibleSelectedFiles.length} image(s), mais il ne vous reste que ${remainingBeforeUpload} crédit(s).`, 'error');
+                return;
+            }
+
             document.getElementById('uploadLoading').style.display = 'block';
             // Initialiser la progression
             const progressEl = document.getElementById('uploadProgress');
@@ -2125,7 +2229,7 @@ async function hideVisibleInGeneral() {
             const MAX_FILES_PER_BATCH = 20;         // Sécurité: limiter le nombre par batch
             const MAX_BATCH_BYTES = 20 * 1024 * 1024; // ~20MB par requête
 
-            const files = Array.from(fileList).filter(f => f && f.size > 0);
+            const files = eligibleSelectedFiles.filter(f => f && f.size > 0);
             const uploadBatchId = generateUploadBatchId();
             const totalPhotos = files.length;
             if (totalEl) totalEl.textContent = String(files.length);
@@ -2133,6 +2237,7 @@ async function hideVisibleInGeneral() {
             let failedCount = 0;
             let hasAsyncWorkflow = false;
             let lastError = null;
+            let latestPhotosRemaining = null;
             setUploadStatusCard(
                 'Envoi des photos en cours',
                 'Ne fermez pas votre ordinateur pendant cette étape.',
@@ -2161,7 +2266,22 @@ async function hideVisibleInGeneral() {
                     if (status === 413) {
                         return { ok: false, count: 0, workflow: null, error: 'Requête trop volumineuse (413). Réduisez la taille ou le nombre de fichiers.' };
                     }
-                    return { ok: false, count: 0, workflow: (data && data.workflow) || null, error: (data && data.detail) || `Erreur HTTP ${status}` };
+                    const detail = data && data.detail;
+                    const detailCode = detail && typeof detail === 'object' ? detail.code : null;
+                    const detailMessage = detail && typeof detail === 'object'
+                        ? (detail.message || `Erreur HTTP ${status}`)
+                        : (detail || `Erreur HTTP ${status}`);
+                    const detailPhotosRemaining = detail && typeof detail === 'object'
+                        ? detail.photos_remaining
+                        : null;
+                    return {
+                        ok: false,
+                        count: 0,
+                        workflow: (data && data.workflow) || null,
+                        error: detailMessage,
+                        errorCode: detailCode,
+                        photosRemaining: detailPhotosRemaining,
+                    };
                 }
                 let count = 0;
                 if (data && Array.isArray(data.uploaded_photos)) {
@@ -2176,6 +2296,7 @@ async function hideVisibleInGeneral() {
                     count,
                     workflow: (data && data.workflow) || null,
                     error: (data && data.error) || null,
+                    photosRemaining: data && typeof data.photos_remaining === 'number' ? data.photos_remaining : null,
                 };
             }
 
@@ -2190,8 +2311,13 @@ async function hideVisibleInGeneral() {
                         uploadedCount += r.count;
                         failedCount += Math.max(0, 1 - r.count);
                         hasAsyncWorkflow = hasAsyncWorkflow || r.workflow === 's3_sqs';
+                        if (typeof r.photosRemaining === 'number') latestPhotosRemaining = r.photosRemaining;
                     } else {
                         failedCount += 1;
+                        if (r.errorCode === 'INSUFFICIENT_PHOTO_QUOTA' && typeof r.photosRemaining === 'number') {
+                            latestPhotosRemaining = r.photosRemaining;
+                            setCurrentPhotosRemaining(r.photosRemaining);
+                        }
                         lastError = r.error || lastError;
                     }
                     // Petite pause pour ne pas saturer le backend
@@ -2211,8 +2337,13 @@ async function hideVisibleInGeneral() {
                         uploadedCount += r.count;
                         failedCount += Math.max(0, currentBatch.length - r.count);
                         hasAsyncWorkflow = hasAsyncWorkflow || r.workflow === 's3_sqs';
+                        if (typeof r.photosRemaining === 'number') latestPhotosRemaining = r.photosRemaining;
                     } else {
                         failedCount += currentBatch.length;
+                        if (r.errorCode === 'INSUFFICIENT_PHOTO_QUOTA' && typeof r.photosRemaining === 'number') {
+                            latestPhotosRemaining = r.photosRemaining;
+                            setCurrentPhotosRemaining(r.photosRemaining);
+                        }
                         lastError = r.error || lastError;
                     }
                     currentBatch = [];
@@ -2236,8 +2367,13 @@ async function hideVisibleInGeneral() {
                     uploadedCount += r.count;
                     failedCount += Math.max(0, currentBatch.length - r.count);
                     hasAsyncWorkflow = hasAsyncWorkflow || r.workflow === 's3_sqs';
+                    if (typeof r.photosRemaining === 'number') latestPhotosRemaining = r.photosRemaining;
                 } else {
                     failedCount += currentBatch.length;
+                    if (r.errorCode === 'INSUFFICIENT_PHOTO_QUOTA' && typeof r.photosRemaining === 'number') {
+                        latestPhotosRemaining = r.photosRemaining;
+                        setCurrentPhotosRemaining(r.photosRemaining);
+                    }
                     lastError = r.error || lastError;
                 }
                 if (processedEl) processedEl.textContent = String(uploadedCount);
@@ -2249,6 +2385,11 @@ async function hideVisibleInGeneral() {
             }
 
             if (uploadedCount > 0) {
+                if (typeof latestPhotosRemaining === 'number') {
+                    setCurrentPhotosRemaining(latestPhotosRemaining);
+                } else {
+                    await refreshPhotographerQuotaFromBackend();
+                }
                 let successMessage;
                 let successType;
                 if (hasAsyncWorkflow) {
@@ -2278,6 +2419,11 @@ async function hideVisibleInGeneral() {
                     startPhotoGridRefresh();
                 }
             } else {
+                if (typeof latestPhotosRemaining === 'number') {
+                    setCurrentPhotosRemaining(latestPhotosRemaining);
+                } else {
+                    await refreshPhotographerQuotaFromBackend();
+                }
                 showAlert(lastError || 'Aucune photo n\'a pu être téléchargée. Réduisez le nombre/taille et réessayez.', 'error');
                 resetUploadStatusCard();
             }
