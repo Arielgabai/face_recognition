@@ -80,7 +80,7 @@ def serve_react_frontend():
 from database import get_db, create_tables, get_db_diagnostic_snapshot
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher, LocalIngestionLog
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog, PasswordResetToken
-from models import DeleteJob, DeleteJobStatus, PhotographerUploadBatch
+from models import DeleteJob, DeleteJobStatus, PhotographerUploadBatch, PhotographerPhotoQuotaLog
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
@@ -316,6 +316,10 @@ def _startup_create_tables():
         # Ajouter la colonne users.photos_remaining (quota photo photographe)
         from add_photographer_photo_quota_column import add_photographer_photo_quota_column
         add_photographer_photo_quota_column()
+
+        # Créer la table d'historique minimal des ajouts de quota photo
+        from add_photographer_photo_quota_logs_table import run_migration as add_quota_logs_table
+        add_quota_logs_table()
         
     except Exception as e:
         # Ne pas bloquer le démarrage si la DB est indisponible
@@ -5059,8 +5063,16 @@ async def admin_get_photographers(
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent acc+�der +� cette route")
     
     photographers = db.query(User).filter(User.user_type == UserType.PHOTOGRAPHER).all()
-    return [
-        {
+    result = []
+    for p in photographers:
+        recent_logs = (
+            db.query(PhotographerPhotoQuotaLog)
+            .filter(PhotographerPhotoQuotaLog.photographer_id == p.id)
+            .order_by(PhotographerPhotoQuotaLog.created_at.desc(), PhotographerPhotoQuotaLog.id.desc())
+            .limit(5)
+            .all()
+        )
+        result.append({
             "id": p.id,
             "username": p.username,
             "email": p.email,
@@ -5068,9 +5080,19 @@ async def admin_get_photographers(
             "is_active": p.is_active,
             "created_at": p.created_at,
             "photos_remaining": int(getattr(p, "photos_remaining", 0) or 0),
-        }
-        for p in photographers
-    ]
+            "latest_quota_logs": [
+                {
+                    "id": log.id,
+                    "admin_user_id": log.admin_user_id,
+                    "added_amount": log.added_amount,
+                    "photos_remaining_before": log.photos_remaining_before,
+                    "photos_remaining_after": log.photos_remaining_after,
+                    "created_at": log.created_at.isoformat() if log.created_at else None,
+                }
+                for log in recent_logs
+            ],
+        })
+    return result
 
 @app.post("/api/admin/photographers")
 async def admin_create_photographer(
@@ -5134,7 +5156,16 @@ async def admin_add_photographer_photo_quota(
         raise HTTPException(status_code=404, detail="Photographe non trouvé")
 
     before = int(getattr(photographer, "photos_remaining", 0) or 0)
-    photographer.photos_remaining = before + amount
+    after = before + amount
+    photographer.photos_remaining = after
+    quota_log = PhotographerPhotoQuotaLog(
+        photographer_id=photographer.id,
+        admin_user_id=getattr(current_user, "id", None),
+        added_amount=amount,
+        photos_remaining_before=before,
+        photos_remaining_after=after,
+    )
+    db.add(quota_log)
     db.commit()
     db.refresh(photographer)
 

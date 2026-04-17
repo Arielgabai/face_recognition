@@ -973,6 +973,30 @@
             container.innerHTML = `
                 <div class="grid">
                     ${photographers.map(photographer => `
+                        ${(() => {
+                            const logs = Array.isArray(photographer.latest_quota_logs) ? photographer.latest_quota_logs : [];
+                            const logsHtml = logs.length
+                                ? `
+                                    <div style="margin-top:12px; padding-top:10px; border-top:1px solid #eee;">
+                                        <p style="font-weight:bold; margin-bottom:8px;">Derniers ajouts de quota</p>
+                                        <div style="font-size:13px; color:#555;">
+                                            ${logs.map(log => `
+                                                <div style="margin-bottom:6px;">
+                                                    <strong>+${log.added_amount}</strong>
+                                                    (${log.photos_remaining_before} → ${log.photos_remaining_after})
+                                                    <br>
+                                                    <span style="color:#777;">${formatAdminDateTime(log.created_at)}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                `
+                                : `
+                                    <div style="margin-top:12px; padding-top:10px; border-top:1px solid #eee; font-size:13px; color:#777;">
+                                        Aucun ajout de quota enregistré.
+                                    </div>
+                                `;
+                            return `
                         <div class="card">
                             <h4>${photographer.username}</h4>
                             <p><strong>Email:</strong> ${photographer.email}</p>
@@ -999,10 +1023,28 @@
                                     data-photographer-name="${encodeURIComponent(photographer.username || '')}"
                                 >Supprimer</button>
                             </div>
+                            ${logsHtml}
                         </div>
+                    `; })()}
                     `).join('')}
                 </div>
             `;
+        }
+
+        function formatAdminDateTime(value) {
+            if (!value) return 'Date inconnue';
+            try {
+                return new Date(value).toLocaleString('fr-FR', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                });
+            } catch (e) {
+                return 'Date inconnue';
+            }
         }
 
         function updatePhotographerSelects(photographers) {

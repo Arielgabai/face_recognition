@@ -293,6 +293,27 @@ class PasswordResetToken(Base):
     user = relationship("User")
 
 
+class PhotographerPhotoQuotaLog(Base):
+    """Historique minimal des ajouts manuels de quota photo faits par l'admin."""
+    __tablename__ = "photographer_photo_quota_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    photographer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    admin_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    added_amount = Column(Integer, nullable=False)
+    photos_remaining_before = Column(Integer, nullable=False)
+    photos_remaining_after = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index('idx_quota_logs_photographer_created', 'photographer_id', 'created_at'),
+        Index('idx_quota_logs_admin_created', 'admin_user_id', 'created_at'),
+    )
+
+    photographer = relationship("User", foreign_keys=[photographer_id])
+    admin_user = relationship("User", foreign_keys=[admin_user_id])
+
+
 class DeleteJob(Base):
     """
     Job de suppression de photos asynchrone.
