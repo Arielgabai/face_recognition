@@ -177,7 +177,7 @@
 
             <footer class="legal-footer">
                 {% for slug, page in legal_pages.items() %}
-                    <a href="/{{ slug }}"{% if slug == current_slug %} aria-current="page"{% endif %}>{{ page.title }}</a>
+                    <a href="/{{ slug }}{% if legal_audience %}?audience={{ legal_audience }}{% endif %}"{% if slug == current_slug %} aria-current="page"{% endif %}>{{ page.title }}</a>
                 {% endfor %}
             </footer>
         </article>

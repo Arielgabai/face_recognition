@@ -50,6 +50,7 @@ import secrets
 import hashlib
 import re
 import threading
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from database import SessionLocal  # là où tu l’as défini
 
@@ -102,6 +103,16 @@ LEGAL_PAGE_META: Dict[str, Dict[str, str]] = {
 LEGAL_VERSION_CACHE: Dict[str, str] = {}
 CONSENT_TYPE_TERMS_PRIVACY = "terms_privacy"
 CONSENT_TYPE_BIOMETRIC_SELFIE = "biometric_selfie"
+
+
+def get_legal_pages_for_audience(audience: str | None) -> Dict[str, Dict[str, str]]:
+    if audience == "user":
+        return {
+            slug: page
+            for slug, page in LEGAL_PAGE_META.items()
+            if slug != "cgv-photographes"
+        }
+    return LEGAL_PAGE_META
 
 
 def resolve_rgpd_dir() -> Path:
@@ -281,8 +292,7 @@ from models import DeleteJob, DeleteJobStatus, PhotographerUploadBatch, Photogra
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
-from pydantic import BaseModel
-from markupsafe import Markup
+from pydantic import BaseModel, EmailStr, TypeAdapter
 
 # Modèles Pydantic pour les requêtes
 class ShowInGeneralRequest(BaseModel):
@@ -514,6 +524,10 @@ def _startup_create_tables():
         # Ajouter la colonne users.photos_remaining (quota photo photographe)
         from add_photographer_photo_quota_column import add_photographer_photo_quota_column
         add_photographer_photo_quota_column()
+
+        # Ajouter les champs de profil photographe (prénom, nom, téléphone, site, logo)
+        from add_photographer_profile_fields import add_photographer_profile_fields
+        add_photographer_profile_fields()
 
         # Créer la table d'historique minimal des ajouts de quota photo
         from add_photographer_photo_quota_logs_table import run_migration as add_quota_logs_table
@@ -842,6 +856,71 @@ def assert_password_valid(password: str) -> None:
                 "Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial"
             ),
         )
+
+
+def _slugify_username_fragment(value: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", ".", (value or "").strip().lower()).strip(".")
+    return re.sub(r"\.+", ".", base)
+
+
+def generate_unique_photographer_username(
+    db: Session,
+    *,
+    email: str,
+    first_name: str,
+    last_name: str,
+    max_attempts: int = 25,
+) -> str:
+    preferred = ".".join(
+        filter(None, [_slugify_username_fragment(first_name), _slugify_username_fragment(last_name)])
+    ).strip(".")
+    fallback = _slugify_username_fragment((email or "").split("@")[0])
+    base_username = preferred or fallback or f"photographer.{uuid.uuid4().hex[:8]}"
+
+    for attempt in range(max_attempts):
+        if attempt == 0:
+            candidate = base_username
+        elif attempt < 10:
+            candidate = f"{base_username}.{attempt + 1}"
+        else:
+            candidate = f"{base_username}.{uuid.uuid4().hex[:6]}"
+
+        exists = db.query(User).filter(
+            (User.username == candidate) &
+            (User.event_id == None)
+        ).first()
+        if not exists:
+            return candidate
+
+    raise HTTPException(
+        status_code=409,
+        detail="Impossible de générer un identifiant photographe unique. Veuillez réessayer."
+    )
+
+
+def normalize_optional_website(website: str | None) -> str | None:
+    if not website:
+        return None
+    value = website.strip()
+    if not value:
+        return None
+    if not re.match(r"^https?://", value, re.IGNORECASE):
+        value = f"https://{value}"
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Le site web renseigné est invalide")
+    return value
+
+
+def normalize_and_validate_email(email: str) -> str:
+    value = (email or "").strip().lower()
+    if not value:
+        raise HTTPException(status_code=400, detail="L'email est obligatoire")
+    try:
+        normalized = TypeAdapter(EmailStr).validate_python(value)
+    except Exception:
+        raise HTTPException(status_code=400, detail="L'email renseigné est invalide")
+    return str(normalized).strip().lower()
 
 # === Helpers Email (SMTP) ===
 def _smtp_bool(value: str | None, default: bool = False) -> bool:
@@ -2848,6 +2927,8 @@ async def render_legal_page(request: Request, slug: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Page juridique introuvable")
 
+    audience = (request.query_params.get("audience") or "").strip().lower() or None
+
     return templates.TemplateResponse(
         "legal_page.html",
         {
@@ -2855,7 +2936,8 @@ async def render_legal_page(request: Request, slug: str):
             "title": page["title"],
             "content_html": page["content_html"],
             "current_slug": slug,
-            "legal_pages": LEGAL_PAGE_META,
+            "legal_pages": get_legal_pages_for_audience(audience),
+            "legal_audience": audience,
         },
     )
 
@@ -3248,6 +3330,128 @@ async def register_invite_with_selfie(
     
     return db_user
 
+@app.post("/api/photographer/register")
+async def photographer_register(
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(...),
+    password: str = Form(...),
+    website: str | None = Form(None),
+    logo: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    """Création autonome d'un compte photographe avec profil minimal."""
+    first_name = (first_name or "").strip()
+    last_name = (last_name or "").strip()
+    email = normalize_and_validate_email(email)
+    phone = (phone or "").strip()
+    website = normalize_optional_website(website)
+
+    if not first_name:
+        raise HTTPException(status_code=400, detail="Le prénom est obligatoire")
+    if not last_name:
+        raise HTTPException(status_code=400, detail="Le nom est obligatoire")
+    if not phone:
+        raise HTTPException(status_code=400, detail="Le téléphone est obligatoire")
+
+    assert_password_valid(password)
+
+    existing_user = db.query(User).filter(
+        (func.lower(User.email) == email) &
+        (User.is_active == True)
+    ).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Un compte existe déjà avec cet email")
+
+    logo_bytes = None
+    logo_content_type = None
+    if logo and getattr(logo, "filename", None):
+        allowed_logo_content_types = {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+        }
+        if not logo.content_type or logo.content_type not in allowed_logo_content_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Le logo doit être une image JPG, PNG, WEBP ou GIF"
+            )
+        await logo.seek(0)
+        logo_bytes = await logo.read()
+        if not logo_bytes:
+            raise HTTPException(status_code=400, detail="Le fichier logo est vide")
+        if len(logo_bytes) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Le logo est trop volumineux (maximum 5 MB)")
+        try:
+            from PIL import Image
+            import io as _io
+            img = Image.open(_io.BytesIO(logo_bytes))
+            img.verify()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Format d'image invalide pour le logo")
+        logo_content_type = logo.content_type or "image/png"
+
+    username = generate_unique_photographer_username(
+        db,
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+    )
+
+    hashed_password = get_password_hash(password)
+    db_photographer = User(
+        username=username,
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        phone=phone,
+        website=website,
+        logo_data=logo_bytes,
+        logo_content_type=logo_content_type,
+        hashed_password=hashed_password,
+        user_type=UserType.PHOTOGRAPHER,
+    )
+
+    db.add(db_photographer)
+    for attempt in range(3):
+        try:
+            db.commit()
+            db.refresh(db_photographer)
+            break
+        except IntegrityError as exc:
+            db.rollback()
+            exc_str = str(exc.orig).lower() if exc.orig else str(exc).lower()
+            if "email" in exc_str and "unique" in exc_str:
+                raise HTTPException(status_code=409, detail="Cet email est déjà utilisé")
+            if "username" in exc_str and "unique" in exc_str and attempt < 2:
+                db_photographer.username = generate_unique_photographer_username(
+                    db,
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                )
+                db.add(db_photographer)
+                continue
+            raise HTTPException(
+                status_code=409,
+                detail="Impossible de créer le compte photographe pour le moment. Veuillez réessayer."
+            )
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": db_photographer.username, "user_id": db_photographer.id},
+        expires_delta=access_token_expires,
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "photographer_id": db_photographer.id,
+        "username": db_photographer.username,
+    }
+
 @app.post("/api/login")
 async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     """Connexion utilisateur - accepte username OU email.
@@ -3389,6 +3593,12 @@ async def get_current_user_info(current_user: User = Depends(get_current_user), 
         "id": current_user.id,
         "username": current_user.username,
         "email": current_user.email,
+        "first_name": getattr(current_user, "first_name", None),
+        "last_name": getattr(current_user, "last_name", None),
+        "phone": getattr(current_user, "phone", None),
+        "website": getattr(current_user, "website", None),
+        "has_logo": bool(getattr(current_user, "logo_data", None)),
+        "logo_url": f"/api/photographer/logo/{current_user.id}" if getattr(current_user, "logo_data", None) else None,
         "user_type": current_user.user_type,
         "is_active": current_user.is_active,
         "created_at": current_user.created_at,
@@ -3406,6 +3616,23 @@ async def get_current_user_info(current_user: User = Depends(get_current_user), 
             user_dict["event_id"] = event.id
             user_dict["event_code"] = event.event_code
             user_dict["event_date"] = event.date
+            if event.photographer_id:
+                photographer = db.query(User).filter(
+                    User.id == event.photographer_id,
+                    User.user_type == UserType.PHOTOGRAPHER,
+                ).first()
+                if photographer:
+                    photographer_name = " ".join(
+                        part for part in [photographer.first_name, photographer.last_name] if part
+                    ).strip()
+                    user_dict["photographer_first_name"] = photographer.first_name
+                    user_dict["photographer_last_name"] = photographer.last_name
+                    user_dict["photographer_name"] = photographer_name or None
+                    user_dict["photographer_has_logo"] = bool(getattr(photographer, "logo_data", None))
+                    user_dict["photographer_logo_url"] = (
+                        f"/api/photographer/logo/{photographer.id}"
+                        if getattr(photographer, "logo_data", None) else None
+                    )
 
     return user_dict
 
@@ -4949,6 +5176,30 @@ async def get_selfie_by_user_id(
 
     # Aucun selfie disponible
     raise HTTPException(status_code=404, detail="Selfie non disponible")
+
+
+@app.get("/api/photographer/logo/{user_id}")
+async def get_photographer_logo(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    photographer = db.query(User).filter(
+        User.id == user_id,
+        User.user_type == UserType.PHOTOGRAPHER
+    ).first()
+    if not photographer:
+        raise HTTPException(status_code=404, detail="Photographe non trouvé")
+    if not photographer.logo_data:
+        raise HTTPException(status_code=404, detail="Logo non disponible")
+    media_type = photographer.logo_content_type or "image/png"
+    if not media_type.startswith("image/"):
+        media_type = "image/png"
+
+    return Response(
+        content=photographer.logo_data,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 # === ROUTES ADMIN ===
 

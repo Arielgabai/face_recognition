@@ -685,7 +685,7 @@
                     <div class="checkbox-row">
                         <input type="checkbox" id="termsConsent">
                         <label for="termsConsent">
-                            J’accepte les <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a> et j’ai lu la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                            J’accepte les <a href="/cgu-utilisateur?audience=user" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a> et j’ai lu la <a href="/politique-confidentialite?audience=user" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
                         </label>
                     </div>
                     <div id="termsConsentError" class="field-error"></div>
@@ -715,9 +715,9 @@
         </div>
 
         <div class="legal-footer">
-            <a href="/mentions-legales" target="_blank" rel="noopener noreferrer">Mentions légales</a>
-            <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Confidentialité</a>
-            <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU</a>
+            <a href="/mentions-legales?audience=user" target="_blank" rel="noopener noreferrer">Mentions légales</a>
+            <a href="/politique-confidentialite?audience=user" target="_blank" rel="noopener noreferrer">Confidentialité</a>
+            <a href="/cgu-utilisateur?audience=user" target="_blank" rel="noopener noreferrer">CGU</a>
         </div>
 
 
@@ -1097,7 +1097,7 @@
                 // Attend que le matching asynchrone soit visible côté client,
                 // sans bloquer indéfiniment (max ~24 s).
                 console.log(`[${reqId}] polling start`);
-                overlayText.textContent = 'Préparation de vos photos…';
+                overlayText.textContent = 'Création du compte en cours…';
                 const MAX_POLLS = 12;
                 for (let i = 0; i < MAX_POLLS; i++) {
                     try {

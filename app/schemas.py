@@ -26,6 +26,12 @@ class User(UserBase):
     id: int
     is_active: bool
     created_at: datetime
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
+    has_logo: Optional[bool] = None
     selfie_path: Optional[str] = None  # Peut être None car les selfies sont stockées en binaire
     selfie_status: Optional[str] = None  # none|uploaded|valid|invalid
     selfie_error: Optional[str] = None  # Message d'erreur si selfie invalide

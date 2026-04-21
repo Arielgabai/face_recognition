@@ -43,8 +43,64 @@
             width: auto;
             filter: drop-shadow(0 0 10px rgba(255, 54, 213, 0.25));
         }
+        .brand-header-dashboard {
+            max-width: 620px;
+        }
+        .co-branding {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .co-branding-partner {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+            backdrop-filter: blur(8px);
+        }
+        .co-branding-separator {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1rem;
+            font-weight: 700;
+        }
+        .co-branding-name {
+            color: #f4f1ff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            white-space: nowrap;
+        }
+        .co-branding-logo {
+            display: none;
+            max-height: 34px;
+            max-width: 150px;
+            width: auto;
+            object-fit: contain;
+            border-radius: 10px;
+        }
         @media (max-width: 420px) {
             .brand-logo { height: 50px; }
+            .co-branding {
+                gap: 10px;
+            }
+            .co-branding-partner {
+                padding: 7px 12px;
+            }
+            .co-branding-logo {
+                max-height: 30px;
+                max-width: 120px;
+            }
+            .co-branding-name {
+                font-size: 0.9rem;
+                white-space: normal;
+                text-align: center;
+            }
         }
 
         /* Neon script effect */
@@ -639,11 +695,50 @@
             padding: 40px 20px;
             color: #9ca3af;
         }
+        .empty-state.empty-state-premium {
+            max-width: 560px;
+            margin: 24px auto 0;
+            padding: 36px 28px;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03)),
+                radial-gradient(circle at top, rgba(138, 43, 226, 0.18), transparent 60%);
+            box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+            backdrop-filter: blur(10px);
+        }
 
         .empty-state-icon {
             font-size: 4rem;
             margin-bottom: 20px;
             opacity: 0.5;
+        }
+        .empty-state-premium .empty-state-icon {
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 2rem;
+            opacity: 1;
+            background: rgba(138, 43, 226, 0.12);
+            box-shadow: inset 0 0 0 1px rgba(138, 43, 226, 0.14);
+        }
+        .empty-state-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 14px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #d8cfff;
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
 
         .empty-state h4 {
@@ -2136,8 +2231,15 @@
             </div>
             
             <!-- Bannière avec le nom de l'événement -->
-            <div class="brand-header">
-                <img src="/static/img/findme-logo.png" alt="FindMe" class="brand-logo" />
+            <div class="brand-header brand-header-dashboard">
+                <div class="co-branding">
+                    <img src="/static/img/findme-logo.png" alt="FindMe" class="brand-logo" />
+                    <div class="co-branding-partner" id="photographerBranding">
+                        <span class="co-branding-separator">×</span>
+                        <img id="photographerBrandLogo" class="co-branding-logo" alt="Logo du photographe" />
+                        <span id="photographerBrandName" class="co-branding-name"></span>
+                    </div>
+                </div>
             </div>
             <div class="event-banner">
                 <div style="text-align: center;">
@@ -2169,10 +2271,11 @@
                         <div class="loading-spinner"></div>
                         <span>Chargement de vos photos...</span>
                     </div>
-                    <div class="empty-state" id="myPhotosEmpty">
-                        <div class="empty-state-icon">🖼️</div>
-                        <h4>Aucune photo trouvée</h4>
-                        <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
+                    <div class="empty-state empty-state-premium" id="myPhotosEmpty">
+                        <div class="empty-state-badge">En préparation</div>
+                        <div class="empty-state-icon">✨</div>
+                        <h4>Vos photos arrivent bientôt</h4>
+                        <p>Un peu de patience, vous serez notifié par mail dès que vos photos seront disponibles.</p>
                     </div>
                 </div>
             </div>
@@ -2183,10 +2286,11 @@
                         <div class="loading-spinner"></div>
                         <span>Chargement des photos...</span>
                     </div>
-                    <div class="empty-state" id="allPhotosEmpty">
-                        <div class="empty-state-icon">📷</div>
-                        <h4>Aucune photo disponible</h4>
-                        <p>Les photos de votre événement apparaîtront ici</p>
+                    <div class="empty-state empty-state-premium" id="allPhotosEmpty">
+                        <div class="empty-state-badge">En préparation</div>
+                        <div class="empty-state-icon">✨</div>
+                        <h4>Vos photos arrivent bientôt</h4>
+                        <p>Un peu de patience, vous serez notifié par mail dès que vos photos seront disponibles.</p>
                     </div>
                 </div>
             </div>
@@ -2286,9 +2390,9 @@
     </div>
 
     <div class="app-legal-footer">
-        <a href="/mentions-legales" target="_blank" rel="noopener noreferrer">Mentions légales</a>
-        <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>
-        <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a>
+        <a href="/mentions-legales?audience=user" target="_blank" rel="noopener noreferrer">Mentions légales</a>
+        <a href="/politique-confidentialite?audience=user" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>
+        <a href="/cgu-utilisateur?audience=user" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a>
     </div>
 
     <script>
@@ -2354,6 +2458,17 @@
 
         // Etat global supprimé: on refetch systématiquement pour garantir fraîcheur
         try { delete window.__myPhotosPrimed; delete window.__myPhotosHash; } catch {}
+
+        function getPremiumEmptyStateMarkup() {
+            return `
+                <div class="empty-state empty-state-premium">
+                    <div class="empty-state-badge">En préparation</div>
+                    <div class="empty-state-icon">✨</div>
+                    <h4>Vos photos arrivent bientôt</h4>
+                    <p>Un peu de patience, vous serez notifié par mail dès que vos photos seront disponibles.</p>
+                </div>
+            `;
+        }
 
         async function login(userId = null) {
             if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
@@ -2781,13 +2896,7 @@
                 if (response.ok) {
                     const photos = await response.json();
                     if (photos.length === 0) {
-                        container.innerHTML = `
-                            <div class="empty-state">
-                                <div class="empty-state-icon">🖼️</div>
-                                <h4>Aucune photo trouvée</h4>
-                                <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
-                            </div>
-                        `;
+                        container.innerHTML = getPremiumEmptyStateMarkup();
                         // Signaler que l'onglet "Vos Photos" est prêt (même s'il est vide)
                         try { dispatchMyPhotosLoaded(); } catch {}
                     } else {
@@ -2912,13 +3021,7 @@
                     const allPhotos = __allPhotosState.photos;
                     
                     if (allPhotos.length === 0) {
-                        container.innerHTML = `
-                            <div class="empty-state">
-                                <div class="empty-state-icon">📷</div>
-                                <h4>Aucune photo disponible</h4>
-                                <p>Les photos de votre événement apparaîtront ici</p>
-                            </div>
-                        `;
+                        container.innerHTML = getPremiumEmptyStateMarkup();
                     } else {
                         // Mettre à jour le titre de l'événement dans la bannière
                         const eventTitle = document.getElementById('eventTitle');
@@ -3441,7 +3544,7 @@
                         </div>
                         <div class="consent-note">
                             Le selfie est traité pour permettre la recherche de photos par reconnaissance faciale.
-                            Consultez la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                            Consultez la <a href="/politique-confidentialite?audience=user" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
                             <div class="consent-checkbox">
                                 <input type="checkbox" id="profileBiometricConsent">
                                 <label for="profileBiometricConsent">Je consens explicitement à ce traitement pour la recherche faciale.</label>
@@ -3657,6 +3760,48 @@
             }
         }
 
+        function renderPhotographerBranding(user) {
+            const branding = document.getElementById('photographerBranding');
+            const logo = document.getElementById('photographerBrandLogo');
+            const name = document.getElementById('photographerBrandName');
+            if (!branding || !logo || !name) return;
+
+            const photographerName = [
+                user?.photographer_first_name,
+                user?.photographer_last_name
+            ].filter(Boolean).join(' ').trim() || user?.photographer_name || '';
+            const logoUrl = user?.photographer_logo_url || '';
+
+            const showNameFallback = () => {
+                logo.style.display = 'none';
+                name.style.display = photographerName ? 'inline' : 'none';
+                name.textContent = photographerName;
+                branding.style.display = photographerName ? 'inline-flex' : 'none';
+            };
+
+            if (!photographerName && !logoUrl) {
+                branding.style.display = 'none';
+                logo.removeAttribute('src');
+                name.textContent = '';
+                return;
+            }
+
+            if (logoUrl) {
+                branding.style.display = 'inline-flex';
+                name.style.display = 'none';
+                logo.style.display = 'block';
+                logo.alt = photographerName ? `Logo ${photographerName}` : 'Logo du photographe';
+                logo.onerror = () => {
+                    logo.onerror = null;
+                    showNameFallback();
+                };
+                logo.src = logoUrl;
+                return;
+            }
+
+            showNameFallback();
+        }
+
         function handleLogout() {
             // Fermer le menu hamburger d'abord
             closeMenu();
@@ -3692,6 +3837,7 @@
                     currentUser = await response.json();
                     document.getElementById('loginForm').style.display = 'none';
                     document.getElementById('dashboard').classList.add('show');
+                    renderPhotographerBranding(currentUser);
 
                     // Mettre à jour le titre avec le nom de l'événement de l'utilisateur
                     const eventTitle = document.getElementById('eventTitle');
@@ -3834,7 +3980,7 @@
                                 <p class="upload-hint">Format recommandé: JPG, PNG</p>
                                 <div class="consent-note">
                                     La mise à jour du selfie active le traitement de votre image et des données biométriques dérivées pour la recherche de photos.
-                                    Consultez la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                                    Consultez la <a href="/politique-confidentialite?audience=user" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
                                     <div class="consent-checkbox">
                                         <input type="checkbox" id="selfieBiometricConsent">
                                         <label for="selfieBiometricConsent">Je consens explicitement à ce traitement pour la recherche faciale.</label>
@@ -4329,13 +4475,7 @@
 
             // Cas: aucune photo
             if (!Array.isArray(photos) || photos.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🖼️</div>
-                        <h4>Aucune photo trouvée</h4>
-                        <p>Vous recevrez vos photos ici une fois qu'elles seront disponibles</p>
-                    </div>
-                `;
+                container.innerHTML = getPremiumEmptyStateMarkup();
                 try { dispatchMyPhotosLoaded(); } catch {}
                 return;
             }

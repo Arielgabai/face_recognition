@@ -58,6 +58,12 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, index=True)  # Removed unique=True (now handled by composite constraint)
     email = Column(String, index=True)  # Removed unique=True (now handled by composite constraint)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    website = Column(String, nullable=True)
+    logo_data = Column(LargeBinary, nullable=True)
+    logo_content_type = Column(String, nullable=True)
     hashed_password = Column(String)
     user_type = Column(String, default=UserType.USER)
     event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True)  # NEW: événement principal

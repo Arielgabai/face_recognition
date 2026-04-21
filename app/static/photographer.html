@@ -110,6 +110,51 @@
         .password-wrapper { position: relative; }
         .password-wrapper input[type="password"], .password-wrapper input[type="text"] { padding-right: 40px; }
         .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; font-size: 16px; }
+        .auth-switch {
+            text-align: center;
+            margin-top: 16px;
+            color: #666;
+            font-size: 14px;
+        }
+        .auth-switch a {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .auth-switch a:hover {
+            text-decoration: underline;
+        }
+        .auth-note {
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            background: #f5f7fb;
+            border: 1px solid #d8e1f0;
+            color: #444;
+            line-height: 1.5;
+        }
+        .profile-logo {
+            width: 72px;
+            height: 72px;
+            object-fit: cover;
+            border-radius: 12px;
+            border: 1px solid #d8e1f0;
+            background: #fff;
+            margin-bottom: 12px;
+        }
+        .profile-logo-placeholder {
+            width: 72px;
+            height: 72px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            border: 1px dashed #c9d2e4;
+            background: #f8f9fb;
+            color: #7a869a;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
         .alert {
             padding: 15px;
             margin-bottom: 20px;
@@ -629,6 +674,55 @@
                     🔑 Mot de passe oublié ?
                 </a>
             </div>
+            <div class="auth-switch">
+                <a href="#" onclick="showRegisterForm(); return false;">Créer mon compte photographe</a>
+            </div>
+        </div>
+
+        <div id="registerForm" style="display: none;">
+            <h2>Créer mon compte photographe</h2>
+            <div class="auth-note">
+                Créez votre compte pour accéder au dashboard photographe, gérer vos événements et téléverser vos photos.
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="registerFirstName">Prénom:</label>
+                    <input type="text" id="registerFirstName" placeholder="Votre prénom">
+                </div>
+                <div class="form-group">
+                    <label for="registerLastName">Nom:</label>
+                    <input type="text" id="registerLastName" placeholder="Votre nom">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="registerEmail">Email:</label>
+                    <input type="email" id="registerEmail" placeholder="votre@email.com">
+                </div>
+                <div class="form-group">
+                    <label for="registerPhone">Téléphone:</label>
+                    <input type="text" id="registerPhone" placeholder="06 00 00 00 00">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="registerWebsite">Site web (optionnel):</label>
+                    <input type="text" id="registerWebsite" placeholder="www.mon-site.com">
+                </div>
+                <div class="form-group">
+                    <label for="registerLogo">Logo (optionnel):</label>
+                    <input type="file" id="registerLogo" accept="image/*">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="registerPassword">Mot de passe:</label>
+                <input type="password" id="registerPassword" placeholder="Choisissez un mot de passe robuste">
+            </div>
+            <button onclick="registerPhotographer()" class="success">Créer mon compte photographe</button>
+            <button onclick="showLoginForm()">Retour à la connexion</button>
+            <div class="auth-switch">
+                <a href="#" onclick="showLoginForm(); return false;">J’ai déjà un compte</a>
+            </div>
         </div>
 
         <div id="dashboard" style="display: none;">
@@ -904,7 +998,65 @@ let photographerLightbox = null;
 
         document.addEventListener('DOMContentLoaded', function() {
             attachPasswordToggle('password');
+            attachPasswordToggle('registerPassword');
         });
+
+        function showRegisterForm() {
+            const loginForm = document.getElementById('loginForm');
+            const registerForm = document.getElementById('registerForm');
+            if (loginForm) loginForm.style.display = 'none';
+            if (registerForm) registerForm.style.display = 'block';
+        }
+
+        function showLoginForm() {
+            const loginForm = document.getElementById('loginForm');
+            const registerForm = document.getElementById('registerForm');
+            if (registerForm) registerForm.style.display = 'none';
+            if (loginForm) loginForm.style.display = 'block';
+        }
+
+        async function registerPhotographer() {
+            const firstName = document.getElementById('registerFirstName').value.trim();
+            const lastName = document.getElementById('registerLastName').value.trim();
+            const email = document.getElementById('registerEmail').value.trim();
+            const phone = document.getElementById('registerPhone').value.trim();
+            const website = document.getElementById('registerWebsite').value.trim();
+            const password = document.getElementById('registerPassword').value;
+            const logoFile = document.getElementById('registerLogo').files[0];
+
+            if (!firstName || !lastName || !email || !phone || !password) {
+                showAlert('Veuillez remplir tous les champs obligatoires', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('first_name', firstName);
+            formData.append('last_name', lastName);
+            formData.append('email', email);
+            formData.append('phone', phone);
+            formData.append('password', password);
+            if (website) formData.append('website', website);
+            if (logoFile) formData.append('logo', logoFile);
+
+            try {
+                const response = await fetch('/api/photographer/register', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok) {
+                    token = data.access_token;
+                    localStorage.setItem('token', token);
+                    showAlert('Compte photographe créé avec succès !', 'success');
+                    loadDashboard();
+                } else {
+                    showAlert(data.detail || 'Erreur lors de la création du compte photographe', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur lors de la création du compte photographe', 'error');
+            }
+        }
 
         async function login() {
             const username = document.getElementById('username').value;
@@ -961,6 +1113,8 @@ let photographerLightbox = null;
             
             // Masquer le dashboard et afficher le formulaire de connexion
             if (loginForm) loginForm.style.display = 'block';
+            const registerForm = document.getElementById('registerForm');
+            if (registerForm) registerForm.style.display = 'none';
             const dashboard = document.getElementById('dashboard');
             if (dashboard) dashboard.style.display = 'none';
             
@@ -998,6 +1152,8 @@ let photographerLightbox = null;
                     }
                     
                     document.getElementById('loginForm').style.display = 'none';
+                    const registerForm = document.getElementById('registerForm');
+                    if (registerForm) registerForm.style.display = 'none';
                     document.getElementById('dashboard').style.display = 'block';
                     
                     // Afficher les informations utilisateur
@@ -1021,9 +1177,22 @@ let photographerLightbox = null;
 
         function displayUserInfo() {
             const userInfo = document.getElementById('userInfo');
+            const displayName = [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ') || currentUser.username;
+            const websiteHtml = currentUser.website
+                ? `<p><strong>Site web:</strong> <a href="${currentUser.website}" target="_blank" rel="noopener noreferrer">${currentUser.website}</a></p>`
+                : '<p><strong>Site web:</strong> Non renseigné</p>';
+            const phoneHtml = currentUser.phone
+                ? `<p><strong>Téléphone:</strong> ${currentUser.phone}</p>`
+                : '<p><strong>Téléphone:</strong> Non renseigné</p>';
+            const logoHtml = currentUser.logo_url
+                ? `<img src="${currentUser.logo_url}" alt="Logo photographe" class="profile-logo">`
+                : '<div class="profile-logo-placeholder">Pas de logo</div>';
             userInfo.innerHTML = `
-                <h3>👋 Bonjour ${currentUser.username} !</h3>
+                ${logoHtml}
+                <h3>👋 Bonjour ${displayName} !</h3>
                 <p><strong>Email:</strong> ${currentUser.email}</p>
+                ${phoneHtml}
+                ${websiteHtml}
                 <p><strong>Type:</strong> Photographe</p>
                 <p><strong>Photos restantes:</strong> ${Math.max(0, Number(currentUser.photos_remaining ?? 0) || 0)}</p>
             `;
