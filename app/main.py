@@ -1034,6 +1034,23 @@ def send_email(to_email: str, subject: str, html_content: str, text_content: str
         logger.error(f"Error sending email to {to_email}: {e}")
         return False
 
+
+def _absolute_public_url(path: str) -> str:
+    return f"{SITE_BASE_URL.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _photo_is_email_renderable(photo: Photo | None) -> bool:
+    if not photo:
+        return False
+    if (getattr(photo, "processing_status", None) or "").upper() != "DONE":
+        return False
+    if not str(getattr(photo, "content_type", "") or "").startswith("image/"):
+        return False
+    if getattr(photo, "photo_data", None):
+        return True
+    file_path = getattr(photo, "file_path", None)
+    return bool(file_path and os.path.exists(file_path))
+
 def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
     """Envoie les emails de notification aux utilisateurs d'un événement (tâche de fond)."""
     session = next(get_db())
@@ -1074,72 +1091,105 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
                 Photo.id == event.email_featured_photo_id,
                 Photo.event_id == event_id,
             ).first()
-            if featured_photo and (featured_photo.content_type or "").startswith("image/"):
-                featured_photo_url = f"{SITE_BASE_URL}/api/photo/{featured_photo.id}"
+            if _photo_is_email_renderable(featured_photo):
+                featured_photo_url = _absolute_public_url(f"/api/photo/{featured_photo.id}")
 
-        findme_logo_url = f"{SITE_BASE_URL}/static/img/findme-logo.png"
+        findme_logo_url = None
+        findme_logo_path = Path(__file__).resolve().parent / "static" / "img" / "findme-logo.png"
+        if findme_logo_path.exists():
+            findme_logo_url = _absolute_public_url("/static/img/findme-logo.png")
         photographer_logo_url = None
-        if photographer and getattr(photographer, "logo_data", None):
-            photographer_logo_url = f"{SITE_BASE_URL}/api/photographer/logo/{photographer.id}"
+        if (
+            photographer
+            and getattr(photographer, "logo_data", None)
+            and str(getattr(photographer, "logo_content_type", "") or "image/png").startswith("image/")
+        ):
+            photographer_logo_url = _absolute_public_url(f"/api/photographer/logo/{photographer.id}")
 
         subject = f"Vos photos de {event.name} sont disponibles sur FindMe"
-        link = f"{SITE_BASE_URL}"
+        link = _absolute_public_url("/")
         text_body = (
             f"Bonjour,\n\n"
             f"Bonne nouvelle : les photos de l'événement '{event.name}' sont désormais disponibles.\n"
             f"Accédez à vos photos ici : {link}\n\n"
             f"À très vite,\n{photographer_signature}"
         )
-        brand_block = (
-            f"""
-            <div style="text-align:center; margin-bottom: 24px;">
-                <img src="{findme_logo_url}" alt="FindMe" style="height:44px; width:auto; vertical-align:middle; display:inline-block;">
-                <span style="display:inline-block; margin:0 12px; font-size:24px; font-weight:700; color:#111827; vertical-align:middle;">×</span>
-                {
-                    f'<img src="{photographer_logo_url}" alt="{escape(photographer_name or "Logo photographe")}" style="max-height:34px; max-width:160px; width:auto; vertical-align:middle; display:inline-block;">'
-                    if photographer_logo_url else
-                    f'<span style="display:inline-block; vertical-align:middle; font-size:18px; font-weight:600; color:#111827;">{escape(photographer_name or "votre photographe")}</span>'
-                }
-            </div>
-            """
+        findme_brand_html = (
+            f'<img src="{findme_logo_url}" alt="FindMe" height="44" style="display:block; height:44px; width:auto; border:0;">'
+            if findme_logo_url else
+            '<span style="font-size:24px; font-weight:700; color:#111827;">FindMe</span>'
         )
+        photographer_brand_html = (
+            f'<img src="{photographer_logo_url}" alt="{escape(photographer_name or "Logo photographe")}" height="34" style="display:block; max-height:34px; max-width:160px; width:auto; border:0;">'
+            if photographer_logo_url else
+            f'<span style="font-size:18px; font-weight:600; color:#111827;">{escape(photographer_name or "votre photographe")}</span>'
+        )
+        brand_block = f"""
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 24px auto;">
+            <tr>
+                <td align="center" valign="middle" style="padding:0 4px 0 0;">{findme_brand_html}</td>
+                <td align="center" valign="middle" style="padding:0 10px; font-size:22px; line-height:1; font-weight:700; color:#111827;">×</td>
+                <td align="center" valign="middle" style="padding:0 0 0 4px;">{photographer_brand_html}</td>
+            </tr>
+        </table>
+        """
         featured_photo_block = (
             f"""
-            <div style="margin: 24px 0 28px;">
-                <img src="{featured_photo_url}" alt="Aperçu de l'événement {escape(event.name)}" style="display:block; width:100%; max-width:560px; margin:0 auto; border-radius:20px; box-shadow:0 16px 40px rgba(15,23,42,0.16); object-fit:cover;">
-            </div>
+            <tr>
+                <td align="center" style="padding: 0 28px 28px 28px;">
+                    <img src="{featured_photo_url}" alt="Aperçu de l'événement {escape(event.name)}" width="560" style="display:block; width:100%; max-width:560px; height:auto; border:0; outline:none; text-decoration:none;">
+                </td>
+            </tr>
             """
             if featured_photo_url else ""
         )
         html_body = f"""
         <html>
-            <body style="margin:0; padding:24px 12px; background:#f5f3ff; font-family:Arial, sans-serif; color:#111827;">
-                <div style="max-width:640px; margin:0 auto; background:#ffffff; border-radius:28px; overflow:hidden; box-shadow:0 20px 50px rgba(15,23,42,0.12);">
-                    <div style="padding:32px 28px;">
-                        {brand_block}
-                        <div style="text-align:center;">
-                            <div style="display:inline-block; padding:8px 14px; border-radius:999px; background:#f3e8ff; color:#7c3aed; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">Photos disponibles</div>
-                            <h1 style="margin:18px 0 12px; font-size:30px; line-height:1.15; color:#111827;">Vos photos de {escape(event.name)} vous attendent</h1>
-                            <p style="margin:0 auto; max-width:500px; font-size:16px; line-height:1.7; color:#4b5563;">
-                                Bonne nouvelle, les photos de votre événement sont maintenant en ligne sur FindMe.
-                                Retrouvez vos souvenirs en quelques clics.
-                            </p>
-                        </div>
-                        {featured_photo_block}
-                        <div style="text-align:center; margin: 6px 0 28px;">
-                            <a href="{link}" target="_blank" rel="noopener" style="display:inline-block; padding:14px 26px; border-radius:999px; background:#8a2be2; color:#ffffff; text-decoration:none; font-weight:700; font-size:15px;">
-                                Accéder à mes photos
-                            </a>
-                        </div>
-                        <div style="padding:18px 20px; border-radius:18px; background:#faf5ff; color:#5b21b6; font-size:14px; line-height:1.6; text-align:center;">
-                            Connectez-vous à votre espace FindMe pour découvrir vos photos et télécharger celles qui vous ressemblent.
-                        </div>
-                    </div>
-                    <div style="padding:20px 28px 28px; border-top:1px solid #ede9fe; text-align:center; color:#6b7280; font-size:14px; line-height:1.6;">
-                        À très vite,<br>
-                        <strong style="color:#111827;">{escape(photographer_signature)}</strong>
-                    </div>
-                </div>
+            <body style="margin:0; padding:0; background-color:#f5f3ff; font-family:Arial, sans-serif; color:#111827;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f5f3ff;">
+                    <tr>
+                        <td align="center" style="padding:24px 12px;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:640px; background-color:#ffffff;">
+                                <tr>
+                                    <td align="center" style="padding:32px 28px 18px 28px;">
+                                        {brand_block}
+                                        <div style="display:inline-block; padding:8px 14px; background-color:#f3e8ff; color:#7c3aed; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">Photos disponibles</div>
+                                        <h1 style="margin:18px 0 12px 0; font-size:30px; line-height:1.15; color:#111827;">Vos photos de {escape(event.name)} vous attendent</h1>
+                                        <p style="margin:0; font-size:16px; line-height:1.7; color:#4b5563;">
+                                            Bonne nouvelle, les photos de votre événement sont maintenant en ligne sur FindMe.<br>
+                                            Retrouvez vos souvenirs en quelques clics.
+                                        </p>
+                                    </td>
+                                </tr>
+                                {featured_photo_block}
+                                <tr>
+                                    <td align="center" style="padding: 0 28px 28px 28px;">
+                                        <a href="{link}" target="_blank" rel="noopener" style="display:inline-block; padding:14px 26px; background-color:#8a2be2; color:#ffffff; text-decoration:none; font-weight:700; font-size:15px;">
+                                            Accéder à mes photos
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding:0 28px 24px 28px;">
+                                        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#faf5ff;">
+                                            <tr>
+                                                <td align="center" style="padding:18px 20px; color:#5b21b6; font-size:14px; line-height:1.6;">
+                                                    Connectez-vous à votre espace FindMe pour découvrir vos photos et télécharger celles qui vous ressemblent.
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding:20px 28px 28px 28px; border-top:1px solid #ede9fe; color:#6b7280; font-size:14px; line-height:1.6;">
+                                        À très vite,<br>
+                                        <strong style="color:#111827;">{escape(photographer_signature)}</strong>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </body>
         </html>
         """
@@ -6468,8 +6518,11 @@ async def set_event_email_featured_photo(
         ).first()
         if not photo:
             raise HTTPException(status_code=404, detail="Photo introuvable pour cet événement")
-        if (photo.processing_status or "").upper() != "DONE":
-            raise HTTPException(status_code=400, detail="Seules les photos prêtes peuvent être utilisées dans l'email")
+        if not _photo_is_email_renderable(photo):
+            raise HTTPException(
+                status_code=400,
+                detail="Seules les photos prêtes et réellement disponibles peuvent être utilisées dans l'email",
+            )
         event.email_featured_photo_id = photo.id
         message = "La photo de couverture email a été enregistrée."
     else:
