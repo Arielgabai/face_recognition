@@ -13,6 +13,7 @@ load_ssm_parameters()
 # 3. Charger le fichier .env local (les valeurs SSM ont priorité car déjà dans os.environ)
 from dotenv import load_dotenv
 load_dotenv()
+from markupsafe import Markup
 
 # =============================================================================
 # IMPORTS STANDARDS (après chargement de la config)
