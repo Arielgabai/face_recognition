@@ -52,11 +52,22 @@
             justify-content: center;
             gap: 12px;
             flex-wrap: wrap;
+            min-width: 0;
+        }
+        .brand-header-dashboard .co-branding {
+            flex-wrap: nowrap;
+            gap: 10px;
+        }
+        .brand-header-dashboard .brand-logo {
+            height: 44px;
+            flex: 0 1 auto;
         }
         .co-branding-partner {
             display: none;
             align-items: center;
             gap: 12px;
+            min-width: 0;
+            flex: 0 1 auto;
         }
         .co-branding-separator {
             color: #ffffff;
@@ -81,21 +92,42 @@
             width: auto;
             object-fit: contain;
             border-radius: 10px;
+            flex: 0 1 auto;
+        }
+        .co-branding.co-branding-has-logo .brand-logo {
+            height: 38px;
+        }
+        .co-branding.co-branding-has-logo .co-branding-logo {
+            max-height: 28px;
+            max-width: 108px;
         }
         @media (max-width: 420px) {
             .brand-logo { height: 50px; }
             .co-branding {
                 gap: 10px;
             }
+            .brand-header-dashboard .co-branding {
+                gap: 8px;
+            }
+            .brand-header-dashboard .brand-logo {
+                height: 38px;
+            }
             .co-branding-partner {
                 gap: 10px;
             }
             .co-branding-separator {
-                font-size: 1.35rem;
+                font-size: 1.2rem;
             }
             .co-branding-logo {
                 max-height: 30px;
                 max-width: 120px;
+            }
+            .co-branding.co-branding-has-logo .brand-logo {
+                height: 32px;
+            }
+            .co-branding.co-branding-has-logo .co-branding-logo {
+                max-height: 22px;
+                max-width: 84px;
             }
             .co-branding-name {
                 font-size: 0.9rem;
@@ -3765,6 +3797,7 @@
             const branding = document.getElementById('photographerBranding');
             const logo = document.getElementById('photographerBrandLogo');
             const name = document.getElementById('photographerBrandName');
+            const wrapper = branding ? branding.closest('.co-branding') : null;
             if (!branding || !logo || !name) return;
 
             const photographerName = [
@@ -3774,6 +3807,7 @@
             const logoUrl = user?.photographer_logo_url || '';
 
             const showNameFallback = () => {
+                if (wrapper) wrapper.classList.remove('co-branding-has-logo');
                 logo.style.display = 'none';
                 name.style.display = photographerName ? 'inline' : 'none';
                 name.textContent = photographerName;
@@ -3781,6 +3815,7 @@
             };
 
             if (!photographerName && !logoUrl) {
+                if (wrapper) wrapper.classList.remove('co-branding-has-logo');
                 branding.style.display = 'none';
                 logo.removeAttribute('src');
                 name.textContent = '';
@@ -3788,6 +3823,7 @@
             }
 
             if (logoUrl) {
+                if (wrapper) wrapper.classList.add('co-branding-has-logo');
                 branding.style.display = 'inline-flex';
                 name.style.display = 'none';
                 logo.style.display = 'block';
