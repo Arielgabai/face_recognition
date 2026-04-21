@@ -115,10 +115,22 @@
             border-radius: 14px;
         }
 
+        .consent-group.compact {
+            margin-top: 18px;
+            padding: 12px 14px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
         .consent-group p {
             margin: 0 0 12px;
             color: #cfd2ff;
             font-size: 0.92rem;
+        }
+
+        .consent-group.compact p {
+            margin-bottom: 10px;
+            font-size: 0.82rem;
+            color: #b8bbed;
         }
 
         .checkbox-row {
@@ -128,6 +140,10 @@
             color: var(--text);
         }
 
+        .consent-group.compact .checkbox-row {
+            gap: 10px;
+        }
+
         .checkbox-row input[type="checkbox"] {
             width: auto;
             margin-top: 4px;
@@ -135,11 +151,22 @@
             flex-shrink: 0;
         }
 
+        .consent-group.compact .checkbox-row input[type="checkbox"] {
+            margin-top: 3px;
+            transform: scale(0.95);
+        }
+
         .checkbox-row label {
             margin: 0;
             color: var(--text);
             font-weight: 400;
             line-height: 1.5;
+        }
+
+        .consent-group.compact .checkbox-row label {
+            font-size: 0.84rem;
+            line-height: 1.45;
+            color: #d7dafd;
         }
 
         .checkbox-row a,
@@ -611,18 +638,6 @@
                     <div id="passwordError" class="field-error"></div>
                 </div>
 
-                <div class="consent-group">
-                    <p>Avant de continuer, veuillez prendre connaissance des documents applicables.</p>
-                    <div class="checkbox-row">
-                        <input type="checkbox" id="termsConsent">
-                        <label for="termsConsent">
-                            J’accepte les <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a>
-                            et j’ai lu la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
-                        </label>
-                    </div>
-                    <div id="termsConsentError" class="field-error"></div>
-                </div>
-                
                 <!-- Type d'utilisateur supprimé: tous les comptes créés ici sont des utilisateurs -->
                 
                 <button onclick="nextStep()" class="btn btn-primary">Continuer</button>
@@ -634,17 +649,6 @@
                     Prenez une photo claire de votre visage pour la reconnaissance faciale
                 </p>
 
-                <div class="consent-group" style="margin-bottom: 20px;">
-                    <div class="checkbox-row">
-                        <input type="checkbox" id="biometricConsent">
-                        <label for="biometricConsent">
-                            Je consens explicitement au traitement de mon selfie et des données biométriques dérivées pour la recherche de photos, conformément à la
-                            <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
-                        </label>
-                    </div>
-                    <div id="biometricConsentError" class="field-error"></div>
-                </div>
-                
                 <!-- Android camera capture: Two options for better UX -->
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
                     <!-- Android camera capture: Direct camera access with capture="user" for front camera -->
@@ -674,6 +678,25 @@
                 <div class="loading" id="validationLoading">
                     <div class="spinner"></div>
                     <p style="color: #9ca3af;">Vérification de votre selfie...</p>
+                </div>
+
+                <div class="consent-group compact">
+                    <p>En créant votre compte, vous confirmez les consentements suivants :</p>
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="termsConsent">
+                        <label for="termsConsent">
+                            J’accepte les <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a> et j’ai lu la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                        </label>
+                    </div>
+                    <div id="termsConsentError" class="field-error"></div>
+
+                    <div class="checkbox-row" style="margin-top: 10px;">
+                        <input type="checkbox" id="biometricConsent">
+                        <label for="biometricConsent">
+                            Je consens explicitement au traitement de mon selfie et des données biométriques dérivées pour la recherche de photos.
+                        </label>
+                    </div>
+                    <div id="biometricConsentError" class="field-error"></div>
                 </div>
                 
                 <div style="margin-top: 20px;">
@@ -755,13 +778,11 @@
             const username = document.getElementById('username').value.trim();
             const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
-            const termsConsent = document.getElementById('termsConsent').checked;
             const uErr = document.getElementById('usernameError');
             const eErr = document.getElementById('emailError');
             const pErr = document.getElementById('passwordError');
             const cErr = document.getElementById('eventCodeError');
-            const tErr = document.getElementById('termsConsentError');
-            [uErr, eErr, pErr, cErr, tErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
+            [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
 
             let hasError = false;
             if (!eventCode) { cErr.textContent='Le code événement est obligatoire'; cErr.style.display='block'; hasError = true; }
@@ -769,7 +790,6 @@
             if (!email) { eErr.textContent='L\'email est obligatoire'; eErr.style.display='block'; hasError = true; }
             const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
             if (!strongPw.test(password)) { pErr.textContent='Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial'; pErr.style.display='block'; hasError = true; }
-            if (!termsConsent) { tErr.textContent='Vous devez accepter les CGU et la Politique de confidentialité pour continuer'; tErr.style.display='block'; hasError = true; }
             // Vérifier la validité du code événement côté serveur (afficher l'erreur mais ne pas retourner avant d'avoir vérifié username/email)
             try {
                 const resp = await fetch('/api/check-event-code', {
@@ -973,9 +993,22 @@
 
             const biometricConsent = document.getElementById('biometricConsent').checked;
             const biometricConsentError = document.getElementById('biometricConsentError');
+            const termsConsent = document.getElementById('termsConsent').checked;
+            const termsConsentError = document.getElementById('termsConsentError');
             if (biometricConsentError) {
                 biometricConsentError.textContent = '';
                 biometricConsentError.style.display = 'none';
+            }
+            if (termsConsentError) {
+                termsConsentError.textContent = '';
+                termsConsentError.style.display = 'none';
+            }
+            if (!termsConsent) {
+                if (termsConsentError) {
+                    termsConsentError.textContent = 'Vous devez accepter les CGU et la Politique de confidentialité';
+                    termsConsentError.style.display = 'block';
+                }
+                return;
             }
             if (!biometricConsent) {
                 if (biometricConsentError) {
@@ -990,7 +1023,6 @@
             const email     = document.getElementById('email').value.trim();
             const password  = document.getElementById('password').value;
             const eventCode = document.getElementById('eventCode').value.trim();
-            const termsConsent = document.getElementById('termsConsent').checked;
 
             // ── Lock UI immédiatement ──────────────────────────────────────────
             isRegistering = true;
