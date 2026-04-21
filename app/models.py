@@ -89,6 +89,7 @@ class User(Base):
     face_matches = relationship("FaceMatch", back_populates="user")
     events = relationship("Event", back_populates="photographer", foreign_keys="Event.photographer_id")
     user_events = relationship("UserEvent", back_populates="user")
+    consent_events = relationship("UserConsentEvent", back_populates="user")
     primary_event = relationship("Event", foreign_keys=[event_id], viewonly=True)  # NEW: relation vers l'événement principal (lecture seule)
 
 class Photo(Base):
@@ -169,6 +170,26 @@ class PhotographerUploadBatch(Base):
 
     event = relationship("Event")
     photographer = relationship("User")
+
+
+class UserConsentEvent(Base):
+    """Historique minimal des consentements juridiques et biométriques utilisateur."""
+    __tablename__ = "user_consent_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    consent_type = Column(String, nullable=False, index=True)
+    accepted = Column(Boolean, nullable=False, default=True)
+    legal_version = Column(String, nullable=False)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index('idx_user_consent_user_type_created', 'user_id', 'consent_type', 'created_at'),
+    )
+
+    user = relationship("User", back_populates="consent_events")
 
 class FaceMatch(Base):
     __tablename__ = "face_matches"

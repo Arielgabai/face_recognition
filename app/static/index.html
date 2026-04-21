@@ -153,6 +153,75 @@
             font-size: 0.9rem;
         }
 
+        .legal-links,
+        .app-legal-footer {
+            text-align: center;
+            color: #b9bdf0;
+        }
+
+        .legal-links {
+            margin-top: 18px;
+            font-size: 0.88rem;
+            line-height: 1.7;
+        }
+
+        .legal-links a,
+        .app-legal-footer a,
+        .consent-note a {
+            color: #d9b6ff;
+            text-decoration: none;
+        }
+
+        .legal-links a:hover,
+        .app-legal-footer a:hover,
+        .consent-note a:hover {
+            text-decoration: underline;
+        }
+
+        .app-legal-footer {
+            margin: 22px auto 0;
+            padding: 18px 8px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px 18px;
+            font-size: 0.85rem;
+        }
+
+        .consent-note {
+            margin-top: 16px;
+            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            color: #d7dafd;
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+
+        .consent-checkbox {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-top: 14px;
+            color: var(--text);
+        }
+
+        .consent-checkbox input[type="checkbox"] {
+            width: auto;
+            margin-top: 3px;
+            accent-color: var(--neon-purple);
+            flex-shrink: 0;
+        }
+
+        .consent-checkbox label {
+            margin: 0;
+            color: var(--text);
+            font-weight: 400;
+            line-height: 1.5;
+        }
+
         .form-input {
             width: 100%;
             padding: 15px 20px;
@@ -595,28 +664,6 @@
         .empty-state p {
             font-size: 0.9rem;
             line-height: 1.6;
-        }
-
-
-
-        /* Powered by section */
-        .powered-by {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            color: #9ca3af;
-            font-size: 0.8rem;
-        }
-
-        .powered-by-logo {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            background: linear-gradient(45deg, #a4401d, #a4401d);
-            border-radius: 50%;
-            margin-right: 8px;
-            vertical-align: middle;
         }
 
 
@@ -2045,6 +2092,13 @@
                         🔑 Mot de passe oublié ?
                     </a>
                 </div>
+
+                <div class="legal-links">
+                    <a href="/mentions-legales" target="_blank" rel="noopener noreferrer">Mentions légales</a> ·
+                    <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a> ·
+                    <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a> ·
+                    <a href="/cgv-photographes" target="_blank" rel="noopener noreferrer">CGV Photographes</a>
+                </div>
             </div>
         </div>
 
@@ -2244,6 +2298,13 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <div class="app-legal-footer">
+        <a href="/mentions-legales" target="_blank" rel="noopener noreferrer">Mentions légales</a>
+        <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>
+        <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a>
+        <a href="/cgv-photographes" target="_blank" rel="noopener noreferrer">CGV Photographes</a>
     </div>
 
     <script>
@@ -3394,6 +3455,14 @@
                                 🖼️ Choisir depuis la galerie
                             </label>
                         </div>
+                        <div class="consent-note">
+                            Le selfie est traité pour permettre la recherche de photos par reconnaissance faciale.
+                            Consultez la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                            <div class="consent-checkbox">
+                                <input type="checkbox" id="profileBiometricConsent">
+                                <label for="profileBiometricConsent">Je consens explicitement à ce traitement pour la recherche faciale.</label>
+                            </div>
+                        </div>
                         <img id="profileSelfiePreview" class="selfie-preview" alt="Aperçu du selfie" style="display: none;">
                         <div class="selfie-actions">
                             <button onclick="updateProfileSelfie()" class="btn btn-success" id="updateSelfieBtn">
@@ -3450,6 +3519,7 @@
         async function updateProfileSelfie() {
             if (navigator.vibrate) { try { navigator.vibrate(10); } catch {} }
             const selfieFile = profileSelfieFileReady;
+            const biometricConsent = document.getElementById('profileBiometricConsent');
             
             if (!selfieFile) {
                 showAlert('Veuillez sélectionner un selfie', 'error');
@@ -3464,6 +3534,13 @@
             // Clear previous error in modal before submitting
             const errBox = document.getElementById('profileSelfieModalError');
             if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+            if (!biometricConsent || !biometricConsent.checked) {
+                if (errBox) {
+                    errBox.style.display = 'block';
+                    errBox.textContent = 'Votre consentement explicite est requis pour traiter votre selfie et activer la recherche faciale.';
+                }
+                return;
+            }
             // Prepare abort controller for this upload
             try { if (selfieUpdateController) { selfieUpdateController.abort(); } } catch {}
             selfieUpdateController = new AbortController();
@@ -3475,6 +3552,7 @@
             try {
                 const formData = new FormData();
                 formData.append('file', selfieFile);
+                formData.append('biometric_consent', 'true');
 
                 const response = await apiFetch('/api/upload-selfie', {
                     method: 'POST',
@@ -3770,6 +3848,14 @@
                                     </button>
                                 </div>
                                 <p class="upload-hint">Format recommandé: JPG, PNG</p>
+                                <div class="consent-note">
+                                    La mise à jour du selfie active le traitement de votre image et des données biométriques dérivées pour la recherche de photos.
+                                    Consultez la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                                    <div class="consent-checkbox">
+                                        <input type="checkbox" id="selfieBiometricConsent">
+                                        <label for="selfieBiometricConsent">Je consens explicitement à ce traitement pour la recherche faciale.</label>
+                                    </div>
+                                </div>
                             </div>
                             <div class="modal-actions">
                                 <button class="btn btn-secondary" onclick="closeSelfieModal()">Annuler</button>
@@ -3804,6 +3890,8 @@
                 if (btnText) { btnText.textContent = 'Modifier'; btnText.style.opacity = '1'; btnText.style.color = ''; }
                 if (spinner) { spinner.style.display = 'none'; }
             }
+            const consentCheckbox = document.getElementById('selfieBiometricConsent');
+            if (consentCheckbox) consentCheckbox.checked = false;
             
             // Charger le selfie actuel
             loadCurrentSelfie();
@@ -3982,9 +4070,21 @@
 
         async function updateSelfie() {
             const file = selfieFileReady;
+            const biometricConsent = document.getElementById('selfieBiometricConsent');
             
             if (!file) {
                 showAlert('Veuillez sélectionner une photo', 'error');
+                return;
+            }
+
+            if (!biometricConsent || !biometricConsent.checked) {
+                const errBox = document.getElementById('selfieModalError');
+                if (errBox) {
+                    errBox.style.display = 'block';
+                    errBox.textContent = 'Votre consentement explicite est requis pour traiter votre selfie et activer la recherche faciale.';
+                } else {
+                    showAlert('Votre consentement explicite est requis pour traiter votre selfie.', 'error');
+                }
                 return;
             }
 
@@ -4021,6 +4121,7 @@
         async function uploadNewSelfie(file) {
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('biometric_consent', 'true');
 
             const modalEl = document.getElementById('selfieModal');
             const updateBtn = modalEl ? modalEl.querySelector('#updateSelfieBtn') : document.getElementById('updateSelfieBtn');

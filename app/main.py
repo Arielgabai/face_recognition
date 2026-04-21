@@ -34,6 +34,8 @@ import os
 import shutil
 import uuid
 from datetime import timedelta, datetime, timezone
+from pathlib import Path
+from html import escape
 from sqlalchemy.exc import NoResultFound, IntegrityError
 import qrcode
 from io import BytesIO
@@ -77,14 +79,209 @@ def serve_react_frontend():
     with open(REACT_BUILD_PATH, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
+
+LEGAL_PAGE_META: Dict[str, Dict[str, str]] = {
+    "mentions-legales": {
+        "title": "Mentions légales",
+        "filename": "mentions-legales.md",
+    },
+    "politique-confidentialite": {
+        "title": "Politique de confidentialité",
+        "filename": "politique-confidentialite.md",
+    },
+    "cgu-utilisateur": {
+        "title": "CGU Utilisateur",
+        "filename": "cgu-utilisateur.md",
+    },
+    "cgv-photographes": {
+        "title": "CGV Photographes",
+        "filename": "cgv-photographes.md",
+    },
+}
+LEGAL_VERSION_CACHE: Dict[str, str] = {}
+CONSENT_TYPE_TERMS_PRIVACY = "terms_privacy"
+CONSENT_TYPE_BIOMETRIC_SELFIE = "biometric_selfie"
+
+
+def resolve_rgpd_dir() -> Path:
+    base_dir = Path(__file__).resolve().parent
+    candidates = [
+        base_dir / "rgpd",
+        base_dir.parent / "rgpd",
+        base_dir.parent.parent / "rgpd",
+        Path.cwd() / "rgpd",
+        Path.cwd().parent / "rgpd",
+    ]
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.is_dir():
+            return resolved
+    raise FileNotFoundError("Dossier rgpd introuvable")
+
+
+def _render_inline_markdown(text: str) -> str:
+    segments = re.split(r"(\*\*.*?\*\*)", text)
+    rendered: List[str] = []
+    for segment in segments:
+        if segment.startswith("**") and segment.endswith("**") and len(segment) >= 4:
+            rendered.append(f"<strong>{escape(segment[2:-2])}</strong>")
+        else:
+            rendered.append(escape(segment))
+    return "".join(rendered)
+
+
+def render_markdown_to_html(markdown_text: str) -> Markup:
+    blocks: List[str] = []
+    paragraph_lines: List[str] = []
+    list_items: List[str] = []
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph_lines
+        if not paragraph_lines:
+            return
+        blocks.append("<p>" + "<br>".join(_render_inline_markdown(line) for line in paragraph_lines) + "</p>")
+        paragraph_lines = []
+
+    def flush_list() -> None:
+        nonlocal list_items
+        if not list_items:
+            return
+        blocks.append("<ul>" + "".join(f"<li>{item}</li>" for item in list_items) + "</ul>")
+        list_items = []
+
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+
+        if not stripped:
+            flush_paragraph()
+            flush_list()
+            continue
+
+        heading_match = re.match(r"^(#{1,6})\s+(.*)$", stripped)
+        if heading_match:
+            flush_paragraph()
+            flush_list()
+            level = len(heading_match.group(1))
+            content = _render_inline_markdown(heading_match.group(2).strip())
+            blocks.append(f"<h{level}>{content}</h{level}>")
+            continue
+
+        if stripped.startswith("- "):
+            flush_paragraph()
+            list_items.append(_render_inline_markdown(stripped[2:].strip()))
+            continue
+
+        flush_list()
+        paragraph_lines.append(stripped)
+
+    flush_paragraph()
+    flush_list()
+    return Markup("\n".join(blocks))
+
+
+def load_legal_page_content(slug: str) -> Dict[str, Any]:
+    page_meta = LEGAL_PAGE_META.get(slug)
+    if not page_meta:
+        raise FileNotFoundError(f"Page juridique inconnue: {slug}")
+
+    rgpd_dir = resolve_rgpd_dir()
+    markdown_path = rgpd_dir / page_meta["filename"]
+    if not markdown_path.is_file():
+        raise FileNotFoundError(f"Fichier juridique introuvable: {markdown_path}")
+
+    markdown_text = markdown_path.read_text(encoding="utf-8")
+    return {
+        "slug": slug,
+        "title": page_meta["title"],
+        "content_html": render_markdown_to_html(markdown_text),
+    }
+
+
+def get_legal_version(slug: str) -> str:
+    cached = LEGAL_VERSION_CACHE.get(slug)
+    if cached:
+        return cached
+
+    page_meta = LEGAL_PAGE_META.get(slug)
+    if not page_meta:
+        return "unknown"
+
+    try:
+        markdown_path = resolve_rgpd_dir() / page_meta["filename"]
+        markdown_text = markdown_path.read_text(encoding="utf-8")
+        match = re.search(r"Dernière mise à jour\s*:\s*([0-9]{2}/[0-9]{2}/[0-9]{4})", markdown_text)
+        version = match.group(1) if match else "unknown"
+    except Exception:
+        version = "unknown"
+
+    LEGAL_VERSION_CACHE[slug] = version
+    return version
+
+
+def get_consent_legal_version(consent_type: str) -> str:
+    if consent_type == CONSENT_TYPE_TERMS_PRIVACY:
+        return (
+            f"cgu-utilisateur:{get_legal_version('cgu-utilisateur')}"
+            f"|politique-confidentialite:{get_legal_version('politique-confidentialite')}"
+        )
+    if consent_type == CONSENT_TYPE_BIOMETRIC_SELFIE:
+        return f"politique-confidentialite:{get_legal_version('politique-confidentialite')}"
+    return "unknown"
+
+
+def get_request_ip_address(request: Request) -> str | None:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip() or None
+    if request.client and request.client.host:
+        return request.client.host
+    return None
+
+
+def record_user_consent(
+    db: Session,
+    *,
+    user_id: int,
+    consent_type: str,
+    accepted: bool,
+    request: Request,
+) -> bool:
+    try:
+        consent_event = UserConsentEvent(
+            user_id=user_id,
+            consent_type=consent_type,
+            accepted=accepted,
+            legal_version=get_consent_legal_version(consent_type),
+            ip_address=get_request_ip_address(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+        db.add(consent_event)
+        db.commit()
+        return True
+    except Exception as exc:
+        db.rollback()
+        logger.warning(
+            "[consent] could not persist consent user_id=%s consent_type=%s: %s",
+            user_id,
+            consent_type,
+            exc,
+        )
+        return False
+
 from database import get_db, create_tables, get_db_diagnostic_snapshot
 from models import User, Photo, FaceMatch, UserType, Event, UserEvent, LocalWatcher, LocalIngestionLog
 from models import GoogleDriveIntegration, GoogleDriveIngestionLog, PasswordResetToken
-from models import DeleteJob, DeleteJobStatus, PhotographerUploadBatch, PhotographerPhotoQuotaLog
+from models import DeleteJob, DeleteJobStatus, PhotographerUploadBatch, PhotographerPhotoQuotaLog, UserConsentEvent
 GDRIVE_LISTENERS: Dict[int, Dict[str, Any]] = {}
 GDRIVE_JOBS: Dict[str, Dict[str, Any]] = {}
 from schemas import UserCreate, UserLogin, Token, User as UserSchema, Photo as PhotoSchema, UserProfile
 from pydantic import BaseModel
+from markupsafe import Markup
 
 # Modèles Pydantic pour les requêtes
 class ShowInGeneralRequest(BaseModel):
@@ -320,6 +517,10 @@ def _startup_create_tables():
         # Créer la table d'historique minimal des ajouts de quota photo
         from add_photographer_photo_quota_logs_table import run_migration as add_quota_logs_table
         add_quota_logs_table()
+
+        # Créer la table d'historique minimal des consentements utilisateur
+        from add_user_consent_events_table import run_migration as add_user_consent_events_table
+        add_user_consent_events_table()
         
     except Exception as e:
         # Ne pas bloquer le démarrage si la DB est indisponible
@@ -2639,6 +2840,44 @@ async def register_page(event_code: str = None):
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Page d'inscription</h1><p>Page d'inscription non trouve</p>")
 
+
+async def render_legal_page(request: Request, slug: str):
+    try:
+        page = load_legal_page_content(slug)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Page juridique introuvable")
+
+    return templates.TemplateResponse(
+        "legal_page.html",
+        {
+            "request": request,
+            "title": page["title"],
+            "content_html": page["content_html"],
+            "current_slug": slug,
+            "legal_pages": LEGAL_PAGE_META,
+        },
+    )
+
+
+@app.get("/mentions-legales", response_class=HTMLResponse)
+async def legal_mentions_page(request: Request):
+    return await render_legal_page(request, "mentions-legales")
+
+
+@app.get("/politique-confidentialite", response_class=HTMLResponse)
+async def privacy_policy_page(request: Request):
+    return await render_legal_page(request, "politique-confidentialite")
+
+
+@app.get("/cgu-utilisateur", response_class=HTMLResponse)
+async def user_terms_page(request: Request):
+    return await render_legal_page(request, "cgu-utilisateur")
+
+
+@app.get("/cgv-photographes", response_class=HTMLResponse)
+async def photographer_terms_page(request: Request):
+    return await render_legal_page(request, "cgv-photographes")
+
 # Vérification disponibilité username/email (pour validation côté client)
 @app.post("/api/check-user-availability")
 async def check_user_availability(
@@ -3601,6 +3840,7 @@ def _rematch_selfie_background_only(user_id: int, file_data: bytes):
 async def upload_selfie(
     request: Request,
     file: UploadFile = File(...),
+    biometric_consent: bool = Form(False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     strict: bool = True,
@@ -3621,6 +3861,12 @@ async def upload_selfie(
         raise HTTPException(
             status_code=403, 
             detail="Les photographes ne peuvent pas uploader de selfies"
+        )
+
+    if not biometric_consent:
+        raise HTTPException(
+            status_code=400,
+            detail="Votre consentement explicite est requis pour traiter votre selfie et activer la recherche faciale"
         )
     
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -3683,6 +3929,13 @@ async def upload_selfie(
     current_user.selfie_error = None
     current_user.selfie_content_type = "image/jpeg"
     db.commit()
+    record_user_consent(
+        db,
+        user_id=current_user.id,
+        consent_type=CONSENT_TYPE_BIOMETRIC_SELFIE,
+        accepted=True,
+        request=request,
+    )
     logger.info(f"[PERF][upload-selfie] req_id={req_id} save selfie took {time.time() - _t_save:.3f}s")
     logger.info(f"[SelfieUpload] req_id={req_id} Selfie validated+saved for user_id={current_user.id}")
     
@@ -6902,6 +7155,9 @@ async def register_complete(
     password: str = Form(...),
     event_code: str = Form(...),
     selfie: UploadFile = File(...),
+    terms_accepted: bool = Form(False),
+    privacy_accepted: bool = Form(False),
+    biometric_consent: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     """Endpoint atomique d'inscription : valide le selfie AVANT de créer le compte.
@@ -6939,6 +7195,12 @@ async def register_complete(
         assert_password_valid(password)
     except HTTPException as e:
         errors.append(str(e.detail) if hasattr(e, "detail") else "Mot de passe invalide")
+
+    if not terms_accepted or not privacy_accepted:
+        errors.append("Vous devez accepter les CGU et la Politique de confidentialité")
+
+    if not biometric_consent:
+        errors.append("Votre consentement explicite est requis pour traiter votre selfie et activer la recherche faciale")
 
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
@@ -7015,6 +7277,24 @@ async def register_complete(
         logger.warning(
             "[register-complete] IntegrityError on UserEvent (non-bloquant) user_id=%s event=%s : %s",
             db_user.id, event_code, exc,
+        )
+
+    # ── 6b. Historique minimal des consentements (best effort) ───────────────
+    if terms_accepted and privacy_accepted:
+        record_user_consent(
+            db,
+            user_id=db_user.id,
+            consent_type=CONSENT_TYPE_TERMS_PRIVACY,
+            accepted=True,
+            request=request,
+        )
+    if biometric_consent:
+        record_user_consent(
+            db,
+            user_id=db_user.id,
+            consent_type=CONSENT_TYPE_BIOMETRIC_SELFIE,
+            accepted=True,
+            request=request,
         )
 
     # ── 7. Génération du token JWT (évite un round-trip /api/login) ───────────

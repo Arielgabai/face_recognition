@@ -107,6 +107,54 @@
             font-size: 0.9rem;
         }
 
+        .consent-group {
+            margin: 20px 0 0;
+            padding: 16px 18px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+        }
+
+        .consent-group p {
+            margin: 0 0 12px;
+            color: #cfd2ff;
+            font-size: 0.92rem;
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            color: var(--text);
+        }
+
+        .checkbox-row input[type="checkbox"] {
+            width: auto;
+            margin-top: 4px;
+            accent-color: var(--neon-purple);
+            flex-shrink: 0;
+        }
+
+        .checkbox-row label {
+            margin: 0;
+            color: var(--text);
+            font-weight: 400;
+            line-height: 1.5;
+        }
+
+        .checkbox-row a,
+        .legal-links a,
+        .legal-footer a {
+            color: #d9b6ff;
+            text-decoration: none;
+        }
+
+        .checkbox-row a:hover,
+        .legal-links a:hover,
+        .legal-footer a:hover {
+            text-decoration: underline;
+        }
+
         .form-input {
             width: 100%;
             padding: 15px 20px;
@@ -418,25 +466,25 @@
             text-decoration: underline;
         }
 
-        /* Powered by section */
-        .powered-by {
+        .legal-links {
             text-align: center;
-            margin-top: 40px;
+            margin-top: 26px;
+            color: #b7baf0;
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+
+        .legal-footer {
+            text-align: center;
+            margin-top: 28px;
             padding-top: 20px;
             border-top: 1px solid rgba(138, 43, 226, 0.25);
             color: #8d90c9;
-            font-size: 0.8rem;
-        }
-
-        .powered-by-logo {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            background: radial-gradient(circle at 30% 30%, var(--neon-purple), #4b1a91);
-            border-radius: 50%;
-            margin-right: 8px;
-            vertical-align: middle;
-            box-shadow: var(--shadow-purple);
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px 18px;
         }
 
         /* Bandeau de reprise selfie */
@@ -572,6 +620,18 @@
                     </div>
                     <div id="passwordError" class="field-error"></div>
                 </div>
+
+                <div class="consent-group">
+                    <p>Avant de continuer, veuillez prendre connaissance des documents applicables.</p>
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="termsConsent">
+                        <label for="termsConsent">
+                            J’accepte les <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a>
+                            et j’ai lu la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                        </label>
+                    </div>
+                    <div id="termsConsentError" class="field-error"></div>
+                </div>
                 
                 <!-- Type d'utilisateur supprimé: tous les comptes créés ici sont des utilisateurs -->
                 
@@ -583,6 +643,17 @@
                 <p style="text-align: center; color: var(--muted); margin-bottom: 20px;">
                     Prenez une photo claire de votre visage pour la reconnaissance faciale
                 </p>
+
+                <div class="consent-group" style="margin-bottom: 20px;">
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="biometricConsent">
+                        <label for="biometricConsent">
+                            Je consens explicitement au traitement de mon selfie et des données biométriques dérivées pour la recherche de photos, conformément à la
+                            <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                        </label>
+                    </div>
+                    <div id="biometricConsentError" class="field-error"></div>
+                </div>
                 
                 <!-- Android camera capture: Two options for better UX -->
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
@@ -628,6 +699,20 @@
 
         <div class="back-to-login">
             <a href="/">← Retour à la connexion</a>
+        </div>
+
+        <div class="legal-links">
+            <a href="/mentions-legales" target="_blank" rel="noopener noreferrer">Mentions légales</a> ·
+            <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a> ·
+            <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a> ·
+            <a href="/cgv-photographes" target="_blank" rel="noopener noreferrer">CGV Photographes</a>
+        </div>
+
+        <div class="legal-footer">
+            <a href="/mentions-legales" target="_blank" rel="noopener noreferrer">Mentions légales</a>
+            <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Confidentialité</a>
+            <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU</a>
+            <a href="/cgv-photographes" target="_blank" rel="noopener noreferrer">CGV Photographes</a>
         </div>
 
 
@@ -688,11 +773,13 @@
             const username = document.getElementById('username').value.trim();
             const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
+            const termsConsent = document.getElementById('termsConsent').checked;
             const uErr = document.getElementById('usernameError');
             const eErr = document.getElementById('emailError');
             const pErr = document.getElementById('passwordError');
             const cErr = document.getElementById('eventCodeError');
-            [uErr, eErr, pErr, cErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
+            const tErr = document.getElementById('termsConsentError');
+            [uErr, eErr, pErr, cErr, tErr].forEach(el => { if (el) { el.textContent=''; el.style.display='none'; }});
 
             let hasError = false;
             if (!eventCode) { cErr.textContent='Le code événement est obligatoire'; cErr.style.display='block'; hasError = true; }
@@ -700,6 +787,7 @@
             if (!email) { eErr.textContent='L\'email est obligatoire'; eErr.style.display='block'; hasError = true; }
             const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
             if (!strongPw.test(password)) { pErr.textContent='Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial'; pErr.style.display='block'; hasError = true; }
+            if (!termsConsent) { tErr.textContent='Vous devez accepter les CGU et la Politique de confidentialité pour continuer'; tErr.style.display='block'; hasError = true; }
             // Vérifier la validité du code événement côté serveur (afficher l'erreur mais ne pas retourner avant d'avoir vérifié username/email)
             try {
                 const resp = await fetch('/api/check-event-code', {
@@ -901,11 +989,26 @@
                 return;
             }
 
+            const biometricConsent = document.getElementById('biometricConsent').checked;
+            const biometricConsentError = document.getElementById('biometricConsentError');
+            if (biometricConsentError) {
+                biometricConsentError.textContent = '';
+                biometricConsentError.style.display = 'none';
+            }
+            if (!biometricConsent) {
+                if (biometricConsentError) {
+                    biometricConsentError.textContent = 'Votre consentement explicite est requis pour activer la recherche faciale';
+                    biometricConsentError.style.display = 'block';
+                }
+                return;
+            }
+
             // ── Lecture des valeurs AVANT tout await ──────────────────────────
             const username  = document.getElementById('username').value.trim();
             const email     = document.getElementById('email').value.trim();
             const password  = document.getElementById('password').value;
             const eventCode = document.getElementById('eventCode').value.trim();
+            const termsConsent = document.getElementById('termsConsent').checked;
 
             // ── Lock UI immédiatement ──────────────────────────────────────────
             isRegistering = true;
@@ -936,6 +1039,9 @@
                 form.append('password',   password);
                 form.append('event_code', eventCode);
                 form.append('selfie',     selfieFile, selfieFile.name);
+                form.append('terms_accepted', String(termsConsent));
+                form.append('privacy_accepted', String(termsConsent));
+                form.append('biometric_consent', String(biometricConsent));
 
                 let registerResp, registerData;
                 try {

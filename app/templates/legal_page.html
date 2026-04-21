@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} | FindMe</title>
+    <style>
+        :root {
+            --bg-1: #0b0b1a;
+            --bg-2: #16163a;
+            --text: #e6e7ff;
+            --muted: #a7a9d6;
+            --surface: rgba(13, 13, 28, 0.82);
+            --surface-border: rgba(138, 43, 226, 0.28);
+            --accent: #8a2be2;
+            --accent-soft: rgba(138, 43, 226, 0.16);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Inter, Arial, sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(60% 120% at 15% 5%, rgba(138, 43, 226, 0.18), rgba(0, 0, 0, 0) 60%),
+                radial-gradient(55% 120% at 85% 10%, rgba(57, 255, 20, 0.08), rgba(0, 0, 0, 0) 60%),
+                linear-gradient(135deg, var(--bg-1), var(--bg-2));
+            min-height: 100vh;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .shell {
+            width: min(100% - 32px, 980px);
+            margin: 0 auto;
+            padding: 32px 0 56px;
+        }
+
+        .legal-card {
+            background: var(--surface);
+            border: 1px solid var(--surface-border);
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+            overflow: hidden;
+        }
+
+        .legal-header {
+            padding: 28px 28px 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .legal-kicker {
+            display: inline-flex;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: #f5dcff;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .legal-header h1 {
+            margin: 14px 0 8px;
+            font-size: clamp(2rem, 5vw, 2.7rem);
+            line-height: 1.12;
+        }
+
+        .legal-header p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .legal-content {
+            padding: 28px;
+            line-height: 1.75;
+        }
+
+        .legal-content h1,
+        .legal-content h2,
+        .legal-content h3 {
+            margin: 1.8em 0 0.6em;
+            line-height: 1.2;
+        }
+
+        .legal-content h1:first-child,
+        .legal-content h2:first-child,
+        .legal-content h3:first-child,
+        .legal-content p:first-child {
+            margin-top: 0;
+        }
+
+        .legal-content h1 { font-size: 2rem; }
+        .legal-content h2 { font-size: 1.35rem; }
+        .legal-content h3 { font-size: 1.08rem; color: #f3d8ff; }
+
+        .legal-content p,
+        .legal-content ul {
+            margin: 0 0 1rem;
+        }
+
+        .legal-content ul {
+            padding-left: 1.25rem;
+        }
+
+        .legal-content li + li {
+            margin-top: 0.35rem;
+        }
+
+        .legal-content strong {
+            color: #ffffff;
+        }
+
+        .legal-footer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 18px;
+            padding: 20px 28px 28px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .legal-footer a {
+            color: var(--muted);
+        }
+
+        .legal-footer a:hover,
+        .legal-footer a[aria-current="page"] {
+            color: #ffffff;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+            color: var(--muted);
+        }
+
+        .back-link:hover {
+            color: #ffffff;
+        }
+
+        @media (max-width: 640px) {
+            .shell {
+                width: min(100% - 20px, 980px);
+                padding-top: 20px;
+            }
+
+            .legal-header,
+            .legal-content,
+            .legal-footer {
+                padding-left: 18px;
+                padding-right: 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <a class="back-link" href="/">← Retour à la plateforme</a>
+
+        <article class="legal-card">
+            <header class="legal-header">
+                <span class="legal-kicker">Informations juridiques</span>
+                <h1>{{ title }}</h1>
+                <p>Contenu repris depuis les documents juridiques préparés pour FindMe.</p>
+            </header>
+
+            <section class="legal-content">
+                {{ content_html }}
+            </section>
+
+            <footer class="legal-footer">
+                {% for slug, page in legal_pages.items() %}
+                    <a href="/{{ slug }}"{% if slug == current_slug %} aria-current="page"{% endif %}>{{ page.title }}</a>
+                {% endfor %}
+            </footer>
+        </article>
+    </div>
+</body>
+</html>

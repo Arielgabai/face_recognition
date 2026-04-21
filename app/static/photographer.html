@@ -40,6 +40,45 @@
             margin-bottom: 5px;
             font-weight: bold;
         }
+        .legal-links,
+        .legal-footer {
+            color: #5f50c7;
+            text-align: center;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+        .legal-links {
+            margin-top: 16px;
+        }
+        .legal-links a,
+        .legal-footer a,
+        .compliance-note a {
+            color: #5f50c7;
+            text-decoration: none;
+        }
+        .legal-links a:hover,
+        .legal-footer a:hover,
+        .compliance-note a:hover {
+            text-decoration: underline;
+        }
+        .legal-footer {
+            margin-top: 28px;
+            padding-top: 18px;
+            border-top: 1px solid #dde4f0;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px 18px;
+        }
+        .compliance-note {
+            margin: 14px 0 16px;
+            padding: 14px 16px;
+            border-radius: 8px;
+            background: #f8f5ff;
+            border: 1px solid #ddd4ff;
+            color: #4338ca;
+            line-height: 1.6;
+        }
         input, select, textarea {
             width: 100%;
             padding: 10px;
@@ -596,6 +635,11 @@
                     🔑 Mot de passe oublié ?
                 </a>
             </div>
+            <div class="legal-links">
+                <a href="/cgv-photographes" target="_blank" rel="noopener noreferrer">CGV Photographes</a> ·
+                <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a> ·
+                <a href="/mentions-legales" target="_blank" rel="noopener noreferrer">Mentions légales</a>
+            </div>
         </div>
 
         <div id="dashboard" style="display: none;">
@@ -634,6 +678,10 @@
                 <h3>Ajouter des Photos</h3>
                 <div class="card">
                     <p>Uploadez des photos pour l'événement sélectionné :</p>
+                    <div class="compliance-note">
+                        En téléversant des photographies sur la Plateforme, vous confirmez disposer des droits, autorisations et informations nécessaires pour utiliser ces contenus via le service, conformément à vos obligations légales et professionnelles.
+                        Consultez les <a href="/cgv-photographes" target="_blank" rel="noopener noreferrer">CGV Photographes</a> et la <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>.
+                    </div>
                     <div id="uploadQuotaCard" style="margin-bottom: 16px; padding: 12px 14px; border-radius: 8px; background: #f5f7fb; border: 1px solid #d8e1f0;">
                         <div id="uploadQuotaTitle" style="font-weight: bold; margin-bottom: 6px;">Quota photo</div>
                         <div id="uploadQuotaMessage" style="color: #444; line-height: 1.5;">Chargement du solde photo...</div>
@@ -756,6 +804,13 @@
                     <div id="photographerQrCodeResult" style="margin-top: 16px;"></div>
                 </div>
             </div>
+        </div>
+
+        <div class="legal-footer">
+            <a href="/mentions-legales" target="_blank" rel="noopener noreferrer">Mentions légales</a>
+            <a href="/politique-confidentialite" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a>
+            <a href="/cgu-utilisateur" target="_blank" rel="noopener noreferrer">CGU Utilisateur</a>
+            <a href="/cgv-photographes" target="_blank" rel="noopener noreferrer">CGV Photographes</a>
         </div>
     </div>
 
