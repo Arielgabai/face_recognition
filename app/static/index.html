@@ -45,29 +45,35 @@
         }
         .brand-header-dashboard {
             max-width: 620px;
+            width: auto;
+            padding-inline: 0;
         }
         .co-branding {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 12px;
+            gap: 10px;
             flex-wrap: wrap;
             min-width: 0;
         }
         .brand-header-dashboard .co-branding {
             flex-wrap: nowrap;
-            gap: 10px;
+            gap: 6px;
+            width: auto;
+            max-width: 100%;
         }
         .brand-header-dashboard .brand-logo {
             height: 44px;
-            flex: 0 1 auto;
+            flex: 0 0 auto;
+            display: block;
         }
         .co-branding-partner {
             display: none;
             align-items: center;
-            gap: 12px;
+            justify-content: flex-start;
+            gap: 8px;
             min-width: 0;
-            flex: 0 1 auto;
+            flex: 0 0 auto;
         }
         .co-branding-separator {
             color: #ffffff;
@@ -104,16 +110,16 @@
         @media (max-width: 420px) {
             .brand-logo { height: 50px; }
             .co-branding {
-                gap: 10px;
+                gap: 8px;
             }
             .brand-header-dashboard .co-branding {
-                gap: 8px;
+                gap: 4px;
             }
             .brand-header-dashboard .brand-logo {
                 height: 38px;
             }
             .co-branding-partner {
-                gap: 10px;
+                gap: 6px;
             }
             .co-branding-separator {
                 font-size: 1.2rem;
@@ -127,7 +133,7 @@
             }
             .co-branding.co-branding-has-logo .co-branding-logo {
                 max-height: 22px;
-                max-width: 84px;
+                max-width: 76px;
             }
             .co-branding-name {
                 font-size: 0.9rem;
