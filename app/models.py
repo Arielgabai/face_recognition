@@ -34,6 +34,7 @@ class Event(Base):
     event_code = Column(String, unique=True, index=True)
     date = Column(DateTime(timezone=True), nullable=True)
     photographer_id = Column(Integer, ForeignKey("users.id"))
+    email_featured_photo_id = Column(Integer, nullable=True)
 
     photographer = relationship("User", foreign_keys=[photographer_id], back_populates="events")
     photos = relationship("Photo", back_populates="event")

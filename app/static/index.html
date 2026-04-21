@@ -347,6 +347,17 @@
         .form-input::placeholder {
             color: #9ca3af;
         }
+        textarea.form-input {
+            min-height: 140px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        .contact-feedback {
+            margin-top: 15px;
+            text-align: center;
+            display: none;
+            font-size: 0.95rem;
+        }
 
         .btn {
             padding: 15px 30px;
@@ -2251,6 +2262,10 @@
                             <span style="color:#ffffff">📷</span>
                             <span style="color:#ffffff">Modifier mon selfie</span>
                         </div>
+                        <div class="menu-item" id="contactPhotographerMenuItem" onclick="openPhotographerContact()" style="color:#ffffff; display:none;">
+                            <span style="color:#ffffff">✉️</span>
+                            <span id="contactPhotographerMenuLabel" style="color:#ffffff">Contacter le photographe</span>
+                        </div>
                         <div class="menu-divider"></div>
 
                         <div class="menu-item" onclick="handleLogout()" style="color:#8a2be2;display:flex;align-items:center;gap:8px;">
@@ -2421,6 +2436,40 @@
                     <button onclick="closePasswordResetModal()" class="btn btn-secondary" style="flex: 1;">Annuler</button>
                     <button onclick="sendPasswordReset()" class="btn btn-primary" id="resetBtn" style="flex: 1;">
                         <span class="btn-text">Envoyer le lien</span>
+                        <div class="loading-spinner" style="display: none;"></div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="contactPhotographerModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="contactPhotographerTitle">Contacter le photographe</h3>
+                <button class="modal-close" onclick="closePhotographerContactModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="contactPhotographerIntro" style="color: #9ca3af; margin-bottom: 20px; text-align: center;">
+                    Envoyez un message au photographe.
+                </p>
+                <div class="form-group">
+                    <label for="contactPhotographerName">Votre nom</label>
+                    <input type="text" id="contactPhotographerName" class="form-input" placeholder="Votre nom">
+                </div>
+                <div class="form-group">
+                    <label for="contactPhotographerEmail">Votre email</label>
+                    <input type="email" id="contactPhotographerEmail" class="form-input" placeholder="votre@email.com">
+                </div>
+                <div class="form-group">
+                    <label for="contactPhotographerMessage">Votre message</label>
+                    <textarea id="contactPhotographerMessage" class="form-input" placeholder="Expliquez brièvement votre demande..."></textarea>
+                </div>
+                <div id="contactPhotographerFeedback" class="contact-feedback"></div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button onclick="closePhotographerContactModal()" class="btn btn-secondary" style="flex: 1;">Annuler</button>
+                    <button onclick="sendPhotographerContactMessage()" class="btn btn-primary" id="contactPhotographerSendBtn" style="flex: 1;">
+                        <span class="btn-text">Envoyer</span>
                         <div class="loading-spinner" style="display: none;"></div>
                     </button>
                 </div>
@@ -3799,6 +3848,34 @@
             }
         }
 
+        function getPhotographerDisplayName(user = currentUser) {
+            return [
+                user?.photographer_first_name,
+                user?.photographer_last_name
+            ].filter(Boolean).join(' ').trim() || user?.photographer_name || 'le photographe';
+        }
+
+        function getCurrentUserDisplayName(user = currentUser) {
+            return [
+                user?.first_name,
+                user?.last_name
+            ].filter(Boolean).join(' ').trim() || user?.username || '';
+        }
+
+        function updateContactPhotographerMenu(user = currentUser) {
+            const menuItem = document.getElementById('contactPhotographerMenuItem');
+            const menuLabel = document.getElementById('contactPhotographerMenuLabel');
+            if (!menuItem || !menuLabel) return;
+
+            if (!user?.photographer_contact_available) {
+                menuItem.style.display = 'none';
+                return;
+            }
+
+            menuLabel.textContent = `Contacter ${getPhotographerDisplayName(user)}`;
+            menuItem.style.display = 'flex';
+        }
+
         function renderPhotographerBranding(user) {
             const branding = document.getElementById('photographerBranding');
             const logo = document.getElementById('photographerBrandLogo');
@@ -3881,6 +3958,7 @@
                     document.getElementById('loginForm').style.display = 'none';
                     document.getElementById('dashboard').classList.add('show');
                     renderPhotographerBranding(currentUser);
+                    updateContactPhotographerMenu(currentUser);
 
                     // Mettre à jour le titre avec le nom de l'événement de l'utilisateur
                     const eventTitle = document.getElementById('eventTitle');
@@ -4796,6 +4874,102 @@
                 closePasswordResetModal();
             }
         });
+
+        function openPhotographerContact() {
+            closeMenu();
+
+            if (!currentUser?.photographer_contact_available) {
+                showAlert('Le photographe n’a pas encore renseigné de moyen de contact.', 'info');
+                return;
+            }
+
+            if (currentUser?.photographer_website) {
+                window.open(currentUser.photographer_website, '_blank', 'noopener,noreferrer');
+                return;
+            }
+
+            const modal = document.getElementById('contactPhotographerModal');
+            const title = document.getElementById('contactPhotographerTitle');
+            const intro = document.getElementById('contactPhotographerIntro');
+            const nameInput = document.getElementById('contactPhotographerName');
+            const emailInput = document.getElementById('contactPhotographerEmail');
+            const messageInput = document.getElementById('contactPhotographerMessage');
+            const feedback = document.getElementById('contactPhotographerFeedback');
+            const photographerName = getPhotographerDisplayName(currentUser);
+
+            title.textContent = `Contacter ${photographerName}`;
+            intro.textContent = `Votre message sera transmis par email à ${photographerName}.`;
+            nameInput.value = getCurrentUserDisplayName(currentUser);
+            emailInput.value = currentUser?.email || '';
+            messageInput.value = '';
+            feedback.style.display = 'none';
+            feedback.textContent = '';
+            modal.classList.add('active');
+        }
+
+        function closePhotographerContactModal() {
+            const modal = document.getElementById('contactPhotographerModal');
+            modal.classList.remove('active');
+        }
+
+        document.getElementById('contactPhotographerModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closePhotographerContactModal();
+            }
+        });
+
+        async function sendPhotographerContactMessage() {
+            const sendBtn = document.getElementById('contactPhotographerSendBtn');
+            const btnText = sendBtn.querySelector('.btn-text');
+            const spinner = sendBtn.querySelector('.loading-spinner');
+            const feedback = document.getElementById('contactPhotographerFeedback');
+            const name = document.getElementById('contactPhotographerName').value.trim();
+            const email = document.getElementById('contactPhotographerEmail').value.trim();
+            const message = document.getElementById('contactPhotographerMessage').value.trim();
+
+            feedback.style.display = 'none';
+            feedback.textContent = '';
+
+            if (!name || !email || !message) {
+                feedback.style.display = 'block';
+                feedback.style.color = '#ef4444';
+                feedback.textContent = 'Merci de renseigner votre nom, votre email et votre message.';
+                return;
+            }
+
+            sendBtn.disabled = true;
+            sendBtn.classList.add('btn-loading');
+            btnText.style.opacity = '0';
+            spinner.style.display = 'inline-block';
+
+            try {
+                const response = await apiFetch('/api/contact-photographer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, message }),
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(data.detail || "L'envoi du message a échoué");
+                }
+
+                feedback.style.display = 'block';
+                feedback.style.color = '#39ff14';
+                feedback.textContent = data.message || 'Votre message a bien été envoyé.';
+                document.getElementById('contactPhotographerMessage').value = '';
+                showAlert(data.message || 'Votre message a bien été envoyé au photographe.', 'success');
+            } catch (error) {
+                feedback.style.display = 'block';
+                feedback.style.color = '#ef4444';
+                feedback.textContent = error.message || 'Impossible de contacter le photographe pour le moment.';
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.classList.remove('btn-loading');
+                btnText.style.opacity = '1';
+                spinner.style.display = 'none';
+            }
+        }
 
         async function sendPasswordReset() {
             const email = document.getElementById('resetEmail').value;

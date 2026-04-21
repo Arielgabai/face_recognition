@@ -324,6 +324,10 @@
         .photo-status-badge.hidden {
             background: rgba(249, 115, 22, 0.9);
         }
+        .photo-status-badge.featured-email {
+            top: 42px;
+            background: rgba(138, 43, 226, 0.92);
+        }
         .photo-general-toggle {
             position: absolute;
             top: 10px;
@@ -838,6 +842,9 @@
                 <h3>Informations Événement</h3>
                 <div class="card">
                     <div id="eventInfo">Chargement...</div>
+                    <p style="margin-top:10px; color:#666; line-height:1.5;">
+                        Choisissez une photo dans la galerie pour l’utiliser comme visuel principal dans l’email de notification.
+                    </p>
                     <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
                         <button class="success" onclick="notifyPhotosAvailable()">📧 Notifier que les photos sont disponibles</button>
                     </div>
@@ -913,6 +920,15 @@ let deleteJobPollRunId = 0;
 const PHOTO_GRID_REFRESH_INTERVAL_MS = 2500;
 const PHOTO_GRID_REFRESH_MAX_ATTEMPTS = 12;
 const DELETE_JOB_POLL_INTERVAL_MS = 2000;
+
+        function syncCurrentEventPatch(patch = {}) {
+            if (!currentEvent) return;
+            currentEvent = { ...currentEvent, ...patch };
+            userEvents = userEvents.map(event => String(event.id) === String(currentEvent.id)
+                ? { ...event, ...patch }
+                : event
+            );
+        }
 const DELETE_JOB_POLL_MAX_ATTEMPTS = 60;
 let photographerLightbox = null;
 
@@ -1678,6 +1694,7 @@ function renderPhotoGrid() {
                 const isSelected = selectedPhotoIds.includes(photo.id);
                 const status = typeof photo.processing_status === 'string' ? photo.processing_status.toUpperCase() : '';
                 const isDone = status === 'DONE';
+                const isEmailFeatured = String(currentEvent?.email_featured_photo_id || '') === String(photo.id);
                 const toggleIcon = photo.show_in_general === true ? '👁️' : '🚫';
                 const toggleTitle = photo.show_in_general === true
                     ? 'Retirer de l’onglet Général'
@@ -1687,6 +1704,9 @@ function renderPhotoGrid() {
                     : '<span class="photo-status-badge hidden">Masqué</span>';
                 const previewButton = isDone
                     ? `<button class="photo-card-action secondary" onclick="event.stopPropagation(); previewPhoto(${photo.id})">Aperçu</button>`
+                    : '';
+                const emailButton = isDone
+                    ? `<button class="photo-card-action secondary" onclick="event.stopPropagation(); setEmailFeaturedPhoto(${photo.id})">${isEmailFeatured ? 'Retirer email' : 'Utiliser dans email'}</button>`
                     : '';
                 let visual = '';
 
@@ -1718,6 +1738,7 @@ function renderPhotoGrid() {
                     ${visual}
                     <div class="photo-hover-overlay"></div>
                     ${statusBadge}
+                    ${isEmailFeatured ? '<span class="photo-status-badge featured-email">Email</span>' : ''}
                     <button class="photo-general-toggle" onclick="event.stopPropagation(); toggleGeneralStatus(${photo.id}, ${photo.show_in_general === true ? 'false' : 'true'})" title="${toggleTitle}">
                         ${toggleIcon}
                     </button>
@@ -1727,6 +1748,7 @@ function renderPhotoGrid() {
                     </div>
                     <div class="photo-card-actions">
                         ${previewButton}
+                        ${emailButton}
                         <button class="photo-card-action secondary" onclick="event.stopPropagation(); togglePhotoSelect(${photo.id})">${isSelected ? 'Retirer' : 'Sélectionner'}</button>
                         <button onclick="event.stopPropagation(); deletePhoto(${photo.id})" class="photo-card-action danger">🗑️</button>
                     </div>
@@ -2209,16 +2231,49 @@ async function hideVisibleInGeneral() {
             
             try {
                 const container = document.getElementById('eventInfo');
+                const featuredPhoto = currentPhotos.find(photo => String(photo.id) === String(currentEvent.email_featured_photo_id || ''));
                 container.innerHTML = `
                     <h4>${currentEvent.name}</h4>
                     <p><strong>Code événement:</strong> ${currentEvent.event_code}</p>
                     <p><strong>Date:</strong> ${currentEvent.date ? new Date(currentEvent.date).toLocaleDateString() : 'Non définie'}</p>
                     <p><strong>Photographe:</strong> ${currentUser.username}</p>
                     <p><strong>ID Événement:</strong> ${currentEvent.id}</p>
+                    <p><strong>Photo email:</strong> ${featuredPhoto ? escapeHtml(featuredPhoto.original_filename || featuredPhoto.filename || `Photo #${featuredPhoto.id}`) : 'Aucune sélectionnée'}</p>
                 `;
             } catch (error) {
                 console.error('Erreur lors du chargement des informations:', error);
                 document.getElementById('eventInfo').innerHTML = '<p style="color: #666;">Erreur lors du chargement des informations</p>';
+            }
+        }
+
+        async function setEmailFeaturedPhoto(photoId) {
+            if (!currentEvent) {
+                showAlert('Veuillez sélectionner un événement', 'error');
+                return;
+            }
+
+            const nextPhotoId = String(currentEvent.email_featured_photo_id || '') === String(photoId) ? null : photoId;
+
+            try {
+                const resp = await fetch(`/api/photographer/events/${currentEvent.id}/email-featured-photo`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ photo_id: nextPhotoId }),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    showAlert(data.detail || 'Erreur lors de la sélection de la photo email', 'error');
+                    return;
+                }
+                syncCurrentEventPatch({ email_featured_photo_id: data.email_featured_photo_id || null });
+                renderPhotoGrid();
+                loadEventInfo();
+                showAlert(data.message || 'Photo de couverture email mise à jour.', 'success');
+            } catch (error) {
+                showAlert('Erreur réseau lors de la sélection de la photo email', 'error');
             }
         }
 

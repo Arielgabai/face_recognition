@@ -529,6 +529,10 @@ def _startup_create_tables():
         from add_photographer_profile_fields import add_photographer_profile_fields
         add_photographer_profile_fields()
 
+        # Ajouter la photo de couverture optionnelle pour les emails de notification d'événement
+        from add_event_email_featured_photo import add_event_email_featured_photo
+        add_event_email_featured_photo()
+
         # Créer la table d'historique minimal des ajouts de quota photo
         from add_photographer_photo_quota_logs_table import run_migration as add_quota_logs_table
         add_quota_logs_table()
@@ -1046,20 +1050,99 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
             .all()
         )
         emails = sorted({(u.email or "").strip() for u in users if (u.email or "").strip()})
-        subject = f"Vos photos de {event.name} sont disponibles"
+        photographer = None
+        if event.photographer_id:
+            photographer = session.query(User).filter(
+                User.id == event.photographer_id,
+                User.user_type == UserType.PHOTOGRAPHER,
+            ).first()
+
+        photographer_name = " ".join(
+            part for part in [
+                getattr(photographer, "first_name", None),
+                getattr(photographer, "last_name", None),
+            ] if part
+        ).strip()
+        photographer_signature = (
+            f"FindMe x {photographer_name}"
+            if photographer_name else "FindMe x votre photographe"
+        )
+
+        featured_photo_url = None
+        if getattr(event, "email_featured_photo_id", None):
+            featured_photo = session.query(Photo).filter(
+                Photo.id == event.email_featured_photo_id,
+                Photo.event_id == event_id,
+            ).first()
+            if featured_photo and (featured_photo.content_type or "").startswith("image/"):
+                featured_photo_url = f"{SITE_BASE_URL}/api/photo/{featured_photo.id}"
+
+        findme_logo_url = f"{SITE_BASE_URL}/static/img/findme-logo.png"
+        photographer_logo_url = None
+        if photographer and getattr(photographer, "logo_data", None):
+            photographer_logo_url = f"{SITE_BASE_URL}/api/photographer/logo/{photographer.id}"
+
+        subject = f"Vos photos de {event.name} sont disponibles sur FindMe"
         link = f"{SITE_BASE_URL}"
         text_body = (
             f"Bonjour,\n\n"
-            f"Les photos de l'événement '{event.name}' sont désormais disponibles.\n"
-            f"Accédez à vos photos sur notre site : {link}\n\n"
-            f"À bientôt,\nL'équipe Photo"
+            f"Bonne nouvelle : les photos de l'événement '{event.name}' sont désormais disponibles.\n"
+            f"Accédez à vos photos ici : {link}\n\n"
+            f"À très vite,\n{photographer_signature}"
         )
-        html_body = (
-            f"<p>Bonjour,</p>"
-            f"<p>Les photos de l'événement '<strong>{event.name}</strong>' sont désormais disponibles.</p>"
-            f"<p><a href=\"{link}\" target=\"_blank\" rel=\"noopener\">Accéder à mes photos</a></p>"
-            f"<p>À bientôt,<br/>L'équipe Photo</p>"
+        brand_block = (
+            f"""
+            <div style="text-align:center; margin-bottom: 24px;">
+                <img src="{findme_logo_url}" alt="FindMe" style="height:44px; width:auto; vertical-align:middle; display:inline-block;">
+                <span style="display:inline-block; margin:0 12px; font-size:24px; font-weight:700; color:#111827; vertical-align:middle;">×</span>
+                {
+                    f'<img src="{photographer_logo_url}" alt="{escape(photographer_name or "Logo photographe")}" style="max-height:34px; max-width:160px; width:auto; vertical-align:middle; display:inline-block;">'
+                    if photographer_logo_url else
+                    f'<span style="display:inline-block; vertical-align:middle; font-size:18px; font-weight:600; color:#111827;">{escape(photographer_name or "votre photographe")}</span>'
+                }
+            </div>
+            """
         )
+        featured_photo_block = (
+            f"""
+            <div style="margin: 24px 0 28px;">
+                <img src="{featured_photo_url}" alt="Aperçu de l'événement {escape(event.name)}" style="display:block; width:100%; max-width:560px; margin:0 auto; border-radius:20px; box-shadow:0 16px 40px rgba(15,23,42,0.16); object-fit:cover;">
+            </div>
+            """
+            if featured_photo_url else ""
+        )
+        html_body = f"""
+        <html>
+            <body style="margin:0; padding:24px 12px; background:#f5f3ff; font-family:Arial, sans-serif; color:#111827;">
+                <div style="max-width:640px; margin:0 auto; background:#ffffff; border-radius:28px; overflow:hidden; box-shadow:0 20px 50px rgba(15,23,42,0.12);">
+                    <div style="padding:32px 28px;">
+                        {brand_block}
+                        <div style="text-align:center;">
+                            <div style="display:inline-block; padding:8px 14px; border-radius:999px; background:#f3e8ff; color:#7c3aed; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">Photos disponibles</div>
+                            <h1 style="margin:18px 0 12px; font-size:30px; line-height:1.15; color:#111827;">Vos photos de {escape(event.name)} vous attendent</h1>
+                            <p style="margin:0 auto; max-width:500px; font-size:16px; line-height:1.7; color:#4b5563;">
+                                Bonne nouvelle, les photos de votre événement sont maintenant en ligne sur FindMe.
+                                Retrouvez vos souvenirs en quelques clics.
+                            </p>
+                        </div>
+                        {featured_photo_block}
+                        <div style="text-align:center; margin: 6px 0 28px;">
+                            <a href="{link}" target="_blank" rel="noopener" style="display:inline-block; padding:14px 26px; border-radius:999px; background:#8a2be2; color:#ffffff; text-decoration:none; font-weight:700; font-size:15px;">
+                                Accéder à mes photos
+                            </a>
+                        </div>
+                        <div style="padding:18px 20px; border-radius:18px; background:#faf5ff; color:#5b21b6; font-size:14px; line-height:1.6; text-align:center;">
+                            Connectez-vous à votre espace FindMe pour découvrir vos photos et télécharger celles qui vous ressemblent.
+                        </div>
+                    </div>
+                    <div style="padding:20px 28px 28px; border-top:1px solid #ede9fe; text-align:center; color:#6b7280; font-size:14px; line-height:1.6;">
+                        À très vite,<br>
+                        <strong style="color:#111827;">{escape(photographer_signature)}</strong>
+                    </div>
+                </div>
+            </body>
+        </html>
+        """
         return _send_bulk_email_smtp(list(emails), subject, text_body, html_body)
     finally:
         try:
@@ -3625,9 +3708,13 @@ async def get_current_user_info(current_user: User = Depends(get_current_user), 
                     photographer_name = " ".join(
                         part for part in [photographer.first_name, photographer.last_name] if part
                     ).strip()
+                    photographer_website = (getattr(photographer, "website", None) or "").strip() or None
+                    photographer_email = (getattr(photographer, "email", None) or "").strip() or None
                     user_dict["photographer_first_name"] = photographer.first_name
                     user_dict["photographer_last_name"] = photographer.last_name
                     user_dict["photographer_name"] = photographer_name or None
+                    user_dict["photographer_website"] = photographer_website
+                    user_dict["photographer_contact_available"] = bool(photographer_website or photographer_email)
                     user_dict["photographer_has_logo"] = bool(getattr(photographer, "logo_data", None))
                     user_dict["photographer_logo_url"] = (
                         f"/api/photographer/logo/{photographer.id}"
@@ -3635,6 +3722,100 @@ async def get_current_user_info(current_user: User = Depends(get_current_user), 
                     )
 
     return user_dict
+
+@app.post("/api/contact-photographer")
+async def contact_photographer(
+    request_data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.USER:
+        raise HTTPException(status_code=403, detail="Seuls les utilisateurs peuvent accéder à cette route")
+
+    sender_name = (request_data.get("name") or "").strip()
+    sender_email = normalize_and_validate_email(request_data.get("email"))
+    message = (request_data.get("message") or "").strip()
+
+    if not sender_name:
+        raise HTTPException(status_code=400, detail="Votre nom est requis")
+    if not message:
+        raise HTTPException(status_code=400, detail="Votre message est requis")
+    if len(message) > 5000:
+        raise HTTPException(status_code=400, detail="Votre message est trop long")
+
+    user_event = db.query(UserEvent).filter(UserEvent.user_id == current_user.id).first()
+    if not user_event:
+        raise HTTPException(status_code=404, detail="Aucun événement associé à cet utilisateur")
+
+    event = db.query(Event).filter(Event.id == user_event.event_id).first()
+    if not event or not event.photographer_id:
+        raise HTTPException(status_code=404, detail="Aucun photographe n'est associé à cet événement")
+
+    photographer = db.query(User).filter(
+        User.id == event.photographer_id,
+        User.user_type == UserType.PHOTOGRAPHER,
+    ).first()
+    if not photographer:
+        raise HTTPException(status_code=404, detail="Photographe introuvable")
+
+    if (getattr(photographer, "website", None) or "").strip():
+        raise HTTPException(status_code=400, detail="Le photographe préfère être contacté via son site web")
+
+    photographer_email = (getattr(photographer, "email", None) or "").strip()
+    if not photographer_email:
+        raise HTTPException(status_code=400, detail="Le photographe n'a pas renseigné d'adresse email de contact")
+
+    smtp_cfg = _get_smtp_config()
+    if smtp_cfg.get("dry_run"):
+        raise HTTPException(status_code=503, detail="Le service de contact par email n'est pas disponible pour le moment")
+
+    photographer_name = " ".join(
+        part for part in [getattr(photographer, "first_name", None), getattr(photographer, "last_name", None)] if part
+    ).strip() or "le photographe"
+    user_label = " ".join(
+        part for part in [getattr(current_user, "first_name", None), getattr(current_user, "last_name", None)] if part
+    ).strip() or current_user.username or sender_name
+    event_name = getattr(event, "name", None) or "votre événement"
+    safe_message_html = escape(message).replace("\n", "<br>")
+
+    subject = f"Nouveau message FindMe pour {photographer_name}"
+    text_body = (
+        f"Bonjour {photographer_name},\n\n"
+        f"Vous avez reçu un nouveau message depuis FindMe.\n\n"
+        f"Événement : {event_name}\n"
+        f"Nom : {sender_name}\n"
+        f"Email : {sender_email}\n"
+        f"Compte FindMe : {user_label}\n\n"
+        f"Message :\n{message}\n"
+    )
+    html_body = f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937;">
+            <h2 style="margin-bottom: 16px;">Nouveau message FindMe</h2>
+            <p>Bonjour {escape(photographer_name)},</p>
+            <p>Vous avez reçu un nouveau message depuis FindMe.</p>
+            <p>
+                <strong>Événement :</strong> {escape(event_name)}<br>
+                <strong>Nom :</strong> {escape(sender_name)}<br>
+                <strong>Email :</strong> {escape(sender_email)}<br>
+                <strong>Compte FindMe :</strong> {escape(user_label)}
+            </p>
+            <div style="margin-top: 18px; padding: 16px; border-radius: 12px; background: #f5f3ff; border: 1px solid #ddd6fe;">
+                {safe_message_html}
+            </div>
+        </body>
+    </html>
+    """
+
+    if not send_email(
+        to_email=photographer_email,
+        subject=subject,
+        html_content=html_body,
+        text_content=text_body,
+    ):
+        raise HTTPException(status_code=502, detail="L'envoi du message au photographe a échoué")
+
+    return {"message": "Votre message a bien été envoyé au photographe."}
 
 @app.get("/api/my-selfie")
 async def get_my_selfie(current_user: User = Depends(get_current_user)):
@@ -6243,7 +6424,63 @@ async def get_photographer_events(
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent acc+�der +� cette route")
     
     events = db.query(Event).filter(Event.photographer_id == current_user.id).all()
-    return events
+    return [
+        {
+            "id": event.id,
+            "name": event.name,
+            "event_code": event.event_code,
+            "date": event.date,
+            "photographer_id": event.photographer_id,
+            "email_featured_photo_id": getattr(event, "email_featured_photo_id", None),
+        }
+        for event in events
+    ]
+
+
+@app.put("/api/photographer/events/{event_id}/email-featured-photo")
+async def set_event_email_featured_photo(
+    event_id: int,
+    request_data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_type != UserType.PHOTOGRAPHER:
+        raise HTTPException(status_code=403, detail="Seuls les photographes peuvent modifier cette sélection")
+
+    event = db.query(Event).filter(Event.id == event_id, Event.photographer_id == current_user.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
+
+    photo_id = request_data.get("photo_id")
+    if photo_id in ("", 0):
+        photo_id = None
+
+    if photo_id is not None:
+        try:
+            photo_id = int(photo_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Photo invalide")
+
+        photo = db.query(Photo).filter(
+            Photo.id == photo_id,
+            Photo.event_id == event_id,
+            Photo.photographer_id == current_user.id,
+        ).first()
+        if not photo:
+            raise HTTPException(status_code=404, detail="Photo introuvable pour cet événement")
+        if (photo.processing_status or "").upper() != "DONE":
+            raise HTTPException(status_code=400, detail="Seules les photos prêtes peuvent être utilisées dans l'email")
+        event.email_featured_photo_id = photo.id
+        message = "La photo de couverture email a été enregistrée."
+    else:
+        event.email_featured_photo_id = None
+        message = "La photo de couverture email a été retirée."
+
+    db.commit()
+    return {
+        "message": message,
+        "email_featured_photo_id": event.email_featured_photo_id,
+    }
 
 
 @app.post("/api/photographer/events/{event_id}/notify-photos-available")
