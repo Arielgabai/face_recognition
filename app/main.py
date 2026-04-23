@@ -1372,8 +1372,24 @@ def send_email(to_email: str, subject: str, html_content: str, text_content: str
         return False
 
 
-def _absolute_public_url(path: str) -> str:
-    return f"{SITE_BASE_URL.rstrip('/')}/{path.lstrip('/')}"
+def _request_public_base_url(request: Request | None = None) -> str:
+    if request is not None:
+        try:
+            forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+            forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+            if forwarded_proto and forwarded_host:
+                return f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+
+            origin = str(request.base_url).strip()
+            if origin:
+                return origin.rstrip("/")
+        except Exception:
+            pass
+    return SITE_BASE_URL.rstrip("/")
+
+
+def _absolute_public_url(path: str, request: Request | None = None) -> str:
+    return f"{_request_public_base_url(request)}/{path.lstrip('/')}"
 
 
 def _photo_is_email_renderable(photo: Photo | None) -> bool:
@@ -6881,6 +6897,7 @@ async def photographer_create_event(
 
 @app.get("/api/photographer/events/{event_code}/qr")
 async def photographer_generate_event_qr(
+    request: Request,
     event_code: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -6898,7 +6915,7 @@ async def photographer_generate_event_qr(
     if event.photographer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Vous ne pouvez générer de QR code que pour vos propres événements")
 
-    url = f"{SITE_BASE_URL}/register?event_code={event_code}"
+    url = _absolute_public_url(f"/register?event_code={event_code}", request)
     img = qrcode.make(url)
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -6907,7 +6924,11 @@ async def photographer_generate_event_qr(
 
 
 @app.get("/api/admin/event-qr/{event_code}")
-async def generate_event_qr(event_code: str, current_user: User = Depends(get_current_user)):
+async def generate_event_qr(
+    request: Request,
+    event_code: str,
+    current_user: User = Depends(get_current_user),
+):
     """G+�n+�rer un QR code pour l'inscription +� un +�v+�nement (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent g+�n+�rer un QR code")
@@ -6924,9 +6945,9 @@ async def generate_event_qr(event_code: str, current_user: User = Depends(get_cu
         except Exception:
             pass
     
-    # Gnerer l'URL d'inscription vers la page avec code dans le chemin
-    # Utiliser l'URL configurée via SITE_BASE_URL (variable d'environnement)
-    url = f"{SITE_BASE_URL}/register?event_code={event_code}"
+    # Générer l'URL d'inscription en privilégiant le domaine réellement utilisé
+    # par la requête courante (ex: domaine personnalisé AWS).
+    url = _absolute_public_url(f"/register?event_code={event_code}", request)
     img = qrcode.make(url)
     buf = BytesIO()
     img.save(buf, format="PNG")
