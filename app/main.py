@@ -1115,7 +1115,7 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
             f"À très vite,\n{photographer_signature}"
         )
         findme_brand_html = (
-            f'<img src="{findme_logo_url}" alt="FindMe" height="44" style="display:block; height:44px; width:auto; border:0;">'
+            f'<span style="display:inline-block; padding:8px 12px; background-color:#000000; border-radius:12px;"><img src="{findme_logo_url}" alt="FindMe" height="44" style="display:block; height:44px; width:auto; border:0;"></span>'
             if findme_logo_url else
             '<span style="font-size:24px; font-weight:700; color:#111827;">FindMe</span>'
         )
