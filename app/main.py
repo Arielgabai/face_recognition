@@ -24,7 +24,7 @@ import logging
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response, RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from sqlalchemy import text as _text
@@ -34,6 +34,7 @@ import time
 import os
 import shutil
 import uuid
+import json
 from datetime import timedelta, datetime, timezone
 from pathlib import Path
 from html import escape
@@ -53,6 +54,7 @@ import threading
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from database import SessionLocal  # là où tu l’as défini
+from settings import settings
 
 
 # NOTE: Les semaphores dlib/face_recognition ont été supprimés
@@ -540,6 +542,10 @@ def _startup_create_tables():
         # Créer la table d'historique minimal des consentements utilisateur
         from add_user_consent_events_table import run_migration as add_user_consent_events_table
         add_user_consent_events_table()
+
+        # Ajouter les colonnes d'authentification sociale utilisateur
+        from add_social_auth_columns import add_social_auth_columns
+        add_social_auth_columns()
         
     except Exception as e:
         # Ne pas bloquer le démarrage si la DB est indisponible
@@ -817,6 +823,337 @@ def _ensure_local_watchers_schema(db: Session) -> None:
 
 # Base URL du site pour les liens envoyés par email
 SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "https://facerecognition-d0r8.onrender.com")
+
+SOCIAL_AUTH_STATE_TTL_MINUTES = 15
+SOCIAL_AUTH_SESSION_TTL_MINUTES = 15
+SOCIAL_AUTH_PLACEHOLDER_PASSWORD_BYTES = 24
+
+
+def _social_provider_label(provider: str) -> str:
+    mapping = {"google": "Google", "facebook": "Facebook"}
+    return mapping.get((provider or "").strip().lower(), "Social")
+
+
+def _build_signed_token(payload: Dict[str, Any], ttl_minutes: int) -> str:
+    now = datetime.now(timezone.utc)
+    token_payload = dict(payload)
+    token_payload["iat"] = int(now.timestamp())
+    token_payload["exp"] = int((now + timedelta(minutes=ttl_minutes)).timestamp())
+    return jwt.encode(token_payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _decode_signed_token(token: str, expected_kind: str) -> Dict[str, Any]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Token social invalide ou expiré")
+    if payload.get("token_kind") != expected_kind:
+        raise HTTPException(status_code=400, detail="Type de token social invalide")
+    return payload
+
+
+def _get_social_provider_settings(provider: str) -> Dict[str, str]:
+    provider_key = (provider or "").strip().lower()
+    if provider_key == "google":
+        return {
+            "provider": "google",
+            "label": "Google",
+            "client_id": settings.GOOGLE_OAUTH_CLIENT_ID or os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""),
+            "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET or os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""),
+            "redirect_uri": settings.GOOGLE_OAUTH_REDIRECT_URI or os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", f"{SITE_BASE_URL}/api/auth/social/callback/google"),
+            "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+            "token_url": "https://oauth2.googleapis.com/token",
+            "userinfo_url": "https://openidconnect.googleapis.com/v1/userinfo",
+            "scope": "openid email profile",
+        }
+    if provider_key == "facebook":
+        return {
+            "provider": "facebook",
+            "label": "Facebook",
+            "client_id": settings.FACEBOOK_OAUTH_CLIENT_ID or os.environ.get("FACEBOOK_OAUTH_CLIENT_ID", ""),
+            "client_secret": settings.FACEBOOK_OAUTH_CLIENT_SECRET or os.environ.get("FACEBOOK_OAUTH_CLIENT_SECRET", ""),
+            "redirect_uri": settings.FACEBOOK_OAUTH_REDIRECT_URI or os.environ.get("FACEBOOK_OAUTH_REDIRECT_URI", f"{SITE_BASE_URL}/api/auth/social/callback/facebook"),
+            "auth_url": "https://www.facebook.com/v19.0/dialog/oauth",
+            "token_url": "https://graph.facebook.com/v19.0/oauth/access_token",
+            "userinfo_url": "https://graph.facebook.com/me",
+            "scope": "email,public_profile",
+        }
+    raise HTTPException(status_code=404, detail="Provider social non supporté")
+
+
+def _is_social_provider_enabled(provider: str) -> bool:
+    config = _get_social_provider_settings(provider)
+    return bool(config["client_id"] and config["client_secret"] and config["redirect_uri"])
+
+
+def _get_social_auth_front_config() -> Dict[str, Any]:
+    providers: Dict[str, Any] = {}
+    for provider in ("google", "facebook"):
+        config = _get_social_provider_settings(provider)
+        providers[provider] = {
+            "enabled": bool(config["client_id"] and config["client_secret"] and config["redirect_uri"]),
+            "label": config["label"],
+            "start_path": f"/api/auth/social/start?provider={provider}",
+        }
+    return {"providers": providers}
+
+
+def _load_static_html(path: str, replacements: Dict[str, str] | None = None) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    content = content.replace("{{SOCIAL_AUTH_CONFIG}}", json.dumps(_get_social_auth_front_config(), ensure_ascii=True))
+    for key, value in (replacements or {}).items():
+        content = content.replace(key, value)
+    return content
+
+
+def _build_social_start_url(provider: str, mode: str, event_code: str | None = None) -> str:
+    params = {"provider": provider, "mode": mode}
+    if event_code:
+        params["event_code"] = event_code
+    return f"/api/auth/social/start?{urlencode(params)}"
+
+
+def _build_front_redirect(path: str, params: Dict[str, Any] | None = None) -> str:
+    filtered = {
+        key: value
+        for key, value in (params or {}).items()
+        if value is not None and value != ""
+    }
+    if not filtered:
+        return path
+    return f"{path}?{urlencode(filtered)}"
+
+
+def _create_social_state_token(provider: str, mode: str, event_code: str | None = None) -> str:
+    return _build_signed_token(
+        {
+            "token_kind": "social_state",
+            "provider": provider,
+            "mode": mode,
+            "event_code": (event_code or "").strip() or None,
+        },
+        SOCIAL_AUTH_STATE_TTL_MINUTES,
+    )
+
+
+def _decode_social_state_token(token: str) -> Dict[str, Any]:
+    return _decode_signed_token(token, "social_state")
+
+
+def _create_social_auth_token(identity: Dict[str, Any]) -> str:
+    return _build_signed_token(
+        {
+            "token_kind": "social_auth",
+            "provider": identity["provider"],
+            "subject": identity["subject"],
+            "email": identity["email"],
+            "name": identity.get("name") or "",
+        },
+        SOCIAL_AUTH_SESSION_TTL_MINUTES,
+    )
+
+
+def _decode_social_auth_token(token: str) -> Dict[str, Any]:
+    return _decode_signed_token(token, "social_auth")
+
+
+def _generate_social_placeholder_password() -> str:
+    raw = secrets.token_urlsafe(SOCIAL_AUTH_PLACEHOLDER_PASSWORD_BYTES)
+    return f"Sm!{raw}A1"
+
+
+def _build_social_authorize_url(provider: str, mode: str, event_code: str | None = None) -> str:
+    config = _get_social_provider_settings(provider)
+    if not _is_social_provider_enabled(provider):
+        raise HTTPException(
+            status_code=400,
+            detail=f"L'authentification {_social_provider_label(provider)} n'est pas configurée"
+        )
+
+    state = _create_social_state_token(provider, mode, event_code)
+    if provider == "google":
+        params = {
+            "client_id": config["client_id"],
+            "redirect_uri": config["redirect_uri"],
+            "response_type": "code",
+            "scope": config["scope"],
+            "state": state,
+            "access_type": "offline",
+            "prompt": "select_account",
+        }
+        return f'{config["auth_url"]}?{urlencode(params)}'
+
+    params = {
+        "client_id": config["client_id"],
+        "redirect_uri": config["redirect_uri"],
+        "response_type": "code",
+        "scope": config["scope"],
+        "state": state,
+    }
+    return f'{config["auth_url"]}?{urlencode(params)}'
+
+
+def _exchange_social_code_for_access_token(provider: str, code: str) -> Dict[str, Any]:
+    config = _get_social_provider_settings(provider)
+    if provider == "google":
+        response = requests.post(
+            config["token_url"],
+            data={
+                "code": code,
+                "client_id": config["client_id"],
+                "client_secret": config["client_secret"],
+                "redirect_uri": config["redirect_uri"],
+                "grant_type": "authorization_code",
+            },
+            timeout=30,
+        )
+    else:
+        response = requests.get(
+            config["token_url"],
+            params={
+                "client_id": config["client_id"],
+                "client_secret": config["client_secret"],
+                "redirect_uri": config["redirect_uri"],
+                "code": code,
+            },
+            timeout=30,
+        )
+
+    try:
+        response.raise_for_status()
+    except Exception:
+        try:
+            body = response.json()
+        except Exception:
+            body = {"raw": response.text}
+        raise HTTPException(
+            status_code=400,
+            detail=f"Échec de l'échange OAuth {_social_provider_label(provider)}: {body}"
+        )
+    return response.json()
+
+
+def _fetch_social_identity(provider: str, access_token: str) -> Dict[str, str]:
+    config = _get_social_provider_settings(provider)
+    if provider == "google":
+        response = requests.get(
+            config["userinfo_url"],
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30,
+        )
+    else:
+        response = requests.get(
+            config["userinfo_url"],
+            params={
+                "fields": "id,name,email,picture.type(large)",
+                "access_token": access_token,
+            },
+            timeout=30,
+        )
+
+    try:
+        response.raise_for_status()
+    except Exception:
+        try:
+            body = response.json()
+        except Exception:
+            body = {"raw": response.text}
+        raise HTTPException(
+            status_code=400,
+            detail=f"Impossible de récupérer le profil {_social_provider_label(provider)}: {body}"
+        )
+
+    payload = response.json()
+    subject = str(payload.get("sub") or payload.get("id") or "").strip()
+    email = normalize_and_validate_email(payload.get("email") or "")
+    name = (payload.get("name") or "").strip()
+    if not subject:
+        raise HTTPException(status_code=400, detail=f"Identifiant {_social_provider_label(provider)} manquant")
+    if not email:
+        raise HTTPException(status_code=400, detail=f"Adresse email {_social_provider_label(provider)} introuvable")
+    return {
+        "provider": provider,
+        "subject": subject,
+        "email": email,
+        "name": name,
+    }
+
+
+def _serialize_user_accounts(db: Session, users: List[User]) -> List[Dict[str, Any]]:
+    accounts: List[Dict[str, Any]] = []
+    for user in users:
+        event_info = {
+            "user_id": user.id,
+            "username": user.username,
+            "user_type": user.user_type,
+        }
+        if user.event_id:
+            event = db.query(Event).filter(Event.id == user.event_id).first()
+            if event:
+                event_info.update(
+                    {
+                        "event_id": event.id,
+                        "event_name": event.name,
+                        "event_code": event.event_code,
+                        "event_date": event.date.isoformat() if event.date else None,
+                    }
+                )
+        accounts.append(event_info)
+    return accounts
+
+
+def _issue_access_token_for_user(user: User) -> Dict[str, Any]:
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username, "user_id": user.id},
+        expires_delta=access_token_expires,
+    )
+    expires_at = datetime.utcnow() + access_token_expires
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": int(access_token_expires.total_seconds()),
+        "expires_at": expires_at.isoformat() + "Z",
+    }
+
+
+def _link_social_identity_if_needed(db: Session, user: User, provider: str, subject: str, email: str) -> None:
+    changed = False
+    if not getattr(user, "auth_provider", None):
+        user.auth_provider = provider
+        changed = True
+    if not getattr(user, "auth_provider_subject", None):
+        user.auth_provider_subject = subject
+        changed = True
+    if email and getattr(user, "auth_provider_email", None) != email:
+        user.auth_provider_email = email
+        changed = True
+    if changed:
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+
+def _find_social_login_users(db: Session, provider: str, subject: str, email: str) -> List[User]:
+    email = normalize_and_validate_email(email)
+    users = db.query(User).filter(
+        (
+            ((User.auth_provider == provider) & (User.auth_provider_subject == subject))
+            | (func.lower(User.email) == email)
+        )
+        & (User.is_active == True)
+        & (User.user_type == UserType.USER.value)
+    ).all()
+
+    unique_users: List[User] = []
+    seen_ids = set()
+    for user in users:
+        if user.id in seen_ids:
+            continue
+        unique_users.append(user)
+        seen_ids.add(user.id)
+    return unique_users
 
 # État en mémoire pour suivre l'avancement du rematching de selfie par utilisateur
 REMATCH_STATUS: Dict[int, Dict[str, Any]] = {}
@@ -2857,8 +3194,7 @@ async def root(request: Request):
                 pass
         
         # Interface normale pour les autres utilisateurs
-        with open("static/index.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+        return HTMLResponse(content=_load_static_html("static/index.html"))
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Face Recognition API</h1><p>Frontend not found</p>")
 
@@ -3041,15 +3377,152 @@ async def photographer_interface():
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Photographer Interface</h1><p>Photographer interface not found</p>")
 
+
+@app.get("/api/auth/social/config")
+async def social_auth_config():
+    return _get_social_auth_front_config()
+
+
+@app.get("/api/auth/social/start")
+async def social_auth_start(provider: str, mode: str = "login", event_code: str | None = None):
+    resolved_mode = (mode or "").strip().lower()
+    if resolved_mode not in {"login", "register"}:
+        raise HTTPException(status_code=400, detail="Mode social invalide")
+    auth_url = _build_social_authorize_url(provider.strip().lower(), resolved_mode, event_code)
+    return RedirectResponse(url=auth_url, status_code=302)
+
+
+@app.get("/api/auth/social/callback/{provider}")
+async def social_auth_callback(provider: str, code: str | None = None, state: str | None = None, error: str | None = None):
+    provider = (provider or "").strip().lower()
+
+    if error:
+        return RedirectResponse(
+            url=_build_front_redirect(
+                "/login",
+                {"social_error": f"{_social_provider_label(provider)} a refusé la connexion: {error}"},
+            ),
+            status_code=302,
+        )
+
+    if not code or not state:
+        return RedirectResponse(
+            url=_build_front_redirect("/login", {"social_error": "Réponse OAuth incomplète"}),
+            status_code=302,
+        )
+
+    try:
+        state_payload = _decode_social_state_token(state)
+        if state_payload.get("provider") != provider:
+            raise HTTPException(status_code=400, detail="State OAuth invalide")
+
+        oauth_tokens = _exchange_social_code_for_access_token(provider, code)
+        identity = _fetch_social_identity(provider, oauth_tokens.get("access_token", ""))
+        social_auth_token = _create_social_auth_token(identity)
+
+        mode = (state_payload.get("mode") or "login").strip().lower()
+        event_code = (state_payload.get("event_code") or "").strip() or None
+
+        if mode == "register":
+            return RedirectResponse(
+                url=_build_front_redirect(
+                    "/register",
+                    {
+                        "event_code": event_code,
+                        "social_provider": identity["provider"],
+                        "social_email": identity["email"],
+                        "social_name": identity.get("name") or "",
+                        "social_auth_token": social_auth_token,
+                    },
+                ),
+                status_code=302,
+            )
+
+        return RedirectResponse(
+            url=_build_front_redirect(
+                "/login",
+                {
+                    "social_provider": identity["provider"],
+                    "social_email": identity["email"],
+                    "social_name": identity.get("name") or "",
+                    "social_auth_token": social_auth_token,
+                },
+            ),
+            status_code=302,
+        )
+    except HTTPException as exc:
+        return RedirectResponse(
+            url=_build_front_redirect("/login", {"social_error": str(exc.detail)}),
+            status_code=302,
+        )
+    except Exception as exc:
+        logger.exception("[social-auth] callback failure provider=%s", provider)
+        return RedirectResponse(
+            url=_build_front_redirect(
+                "/login",
+                {"social_error": f"Erreur lors de la connexion {_social_provider_label(provider)}: {exc}"},
+            ),
+            status_code=302,
+        )
+
+
+@app.post("/api/auth/social/login")
+async def social_auth_login(
+    social_auth_token: str = Body(..., embed=True),
+    user_id: int | None = Body(None, embed=True),
+    db: Session = Depends(get_db),
+):
+    payload = _decode_social_auth_token(social_auth_token)
+    provider = (payload.get("provider") or "").strip().lower()
+    subject = (payload.get("subject") or "").strip()
+    email = normalize_and_validate_email(payload.get("email") or "")
+
+    if not provider or not subject or not email:
+        raise HTTPException(status_code=400, detail="Session sociale invalide")
+
+    users = _find_social_login_users(db, provider, subject, email)
+    if not users:
+        return {
+            "needs_registration": True,
+            "register_url": _build_front_redirect(
+                "/register",
+                {
+                    "social_provider": provider,
+                    "social_email": email,
+                    "social_name": payload.get("name") or "",
+                    "social_auth_token": social_auth_token,
+                },
+            ),
+            "message": "Aucun compte utilisateur lié à cette identité sociale.",
+        }
+
+    if user_id:
+        selected_user = next((user for user in users if user.id == user_id), None)
+        if selected_user is None:
+            raise HTTPException(status_code=403, detail="Le compte sélectionné ne correspond pas à cette identité sociale")
+        _link_social_identity_if_needed(db, selected_user, provider, subject, email)
+        return _issue_access_token_for_user(selected_user)
+
+    if len(users) == 1:
+        user = users[0]
+        _link_social_identity_if_needed(db, user, provider, subject, email)
+        return _issue_access_token_for_user(user)
+
+    return {
+        "multiple_accounts": True,
+        "accounts": _serialize_user_accounts(db, users),
+        "message": "Plusieurs comptes FindMe correspondent à cet email. Choisissez votre événement.",
+    }
+
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(event_code: str = None):
     """Page d'inscription pour les invits avec code vnement"""
     try:
-        with open("static/register.html", "r", encoding="utf-8") as f:
-            content = f.read()
-            # Injecter le code vnement dans le JavaScript
-            content = content.replace('{{EVENT_CODE}}', event_code or '')
-            return HTMLResponse(content=content)
+        content = _load_static_html(
+            "static/register.html",
+            replacements={"{{EVENT_CODE}}": event_code or ""},
+        )
+        return HTMLResponse(content=content)
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Page d'inscription</h1><p>Page d'inscription non trouve</p>")
 
@@ -3229,8 +3702,7 @@ async def register_with_code_path(event_code: str):
 @app.get("/login", response_class=HTMLResponse)
 async def spa_login():
     try:
-        with open("static/index.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+        return HTMLResponse(content=_load_static_html("static/index.html"))
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Face Recognition API</h1><p>Frontend not found</p>")
 
@@ -3246,8 +3718,7 @@ async def select_event_page():
 @app.get("/dashboard", response_class=HTMLResponse)
 async def spa_dashboard():
     try:
-        with open("static/index.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+        return HTMLResponse(content=_load_static_html("static/index.html"))
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Face Recognition API</h1><p>Frontend not found</p>")
 
@@ -7694,12 +8165,13 @@ async def register_complete(
     request: Request,
     username: str = Form(...),
     email: str = Form(...),
-    password: str = Form(...),
+    password: str = Form(""),
     event_code: str = Form(...),
     selfie: UploadFile = File(...),
     terms_accepted: bool = Form(False),
     privacy_accepted: bool = Form(False),
     biometric_consent: bool = Form(False),
+    social_auth_token: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     """Endpoint atomique d'inscription : valide le selfie AVANT de créer le compte.
@@ -7714,6 +8186,25 @@ async def register_complete(
     logger.info(f"[register-complete] req_id={req_id} username={username}")
 
     errors: list[str] = []
+    username = (username or "").strip()
+    email = normalize_and_validate_email(email)
+    social_payload = None
+    provider = None
+    subject = None
+
+    if social_auth_token:
+        social_payload = _decode_social_auth_token(social_auth_token)
+        provider = (social_payload.get("provider") or "").strip().lower()
+        subject = (social_payload.get("subject") or "").strip()
+        if not provider or not subject:
+            raise HTTPException(status_code=400, detail="Session sociale invalide")
+        social_email = normalize_and_validate_email(social_payload.get("email") or "")
+        if email != social_email:
+            raise HTTPException(
+                status_code=400,
+                detail=f"L'email du formulaire doit correspondre à l'email {_social_provider_label(provider)}"
+            )
+        password = _generate_social_placeholder_password()
 
     # ── 1. Vérification du code événement ─────────────────────────────────────
     event = find_event_by_code(db, event_code)
@@ -7733,10 +8224,21 @@ async def register_complete(
             errors.append("Email déjà utilisé pour cet événement")
 
     # ── 3. Force du mot de passe ───────────────────────────────────────────────
-    try:
-        assert_password_valid(password)
-    except HTTPException as e:
-        errors.append(str(e.detail) if hasattr(e, "detail") else "Mot de passe invalide")
+    if not social_payload:
+        try:
+            assert_password_valid(password)
+        except HTTPException as e:
+            errors.append(str(e.detail) if hasattr(e, "detail") else "Mot de passe invalide")
+
+    if social_payload:
+        existing_social = db.query(User).filter(
+            (User.auth_provider == provider) &
+            (User.auth_provider_subject == subject) &
+            (User.event_id == event.id) &
+            (User.is_active == True)
+        ).first()
+        if existing_social:
+            errors.append(f"Un compte {_social_provider_label(provider)} existe déjà pour cet événement")
 
     if not terms_accepted or not privacy_accepted:
         errors.append("Vous devez accepter les CGU et la Politique de confidentialité")
@@ -7783,6 +8285,9 @@ async def register_complete(
         username=username,
         email=email,
         hashed_password=hashed_password,
+        auth_provider=provider,
+        auth_provider_subject=subject,
+        auth_provider_email=email if social_payload else None,
         user_type=UserType.USER,
         event_id=event.id,
         selfie_status="valid",
@@ -8264,8 +8769,12 @@ async def catch_all(full_path: str):
                 with open("static/photographer.html", "r", encoding="utf-8") as f:
                     return HTMLResponse(content=f.read())
             elif full_path == "register":
-                with open("static/register.html", "r", encoding="utf-8") as f:
-                    return HTMLResponse(content=f.read())
+                return HTMLResponse(
+                    content=_load_static_html(
+                        "static/register.html",
+                        replacements={"{{EVENT_CODE}}": ""},
+                    )
+                )
             elif full_path == "forgot-password":
                 with open("static/forgot-password.html", "r", encoding="utf-8") as f:
                     return HTMLResponse(content=f.read())
@@ -8273,8 +8782,7 @@ async def catch_all(full_path: str):
                 with open("static/reset-password.html", "r", encoding="utf-8") as f:
                     return HTMLResponse(content=f.read())
             else:  # Route racine
-                with open("static/index.html", "r", encoding="utf-8") as f:
-                    return HTMLResponse(content=f.read())
+                return HTMLResponse(content=_load_static_html("static/index.html"))
         except FileNotFoundError:
             return HTMLResponse(content="<h1>Face Recognition API</h1><p>Frontend not found</p>")
     

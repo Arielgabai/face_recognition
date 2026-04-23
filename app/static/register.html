@@ -258,6 +258,137 @@
             box-shadow: 0 0 16px rgba(57, 255, 20, 0.25);
         }
 
+        .social-auth-section {
+            margin-bottom: 28px;
+        }
+
+        .social-auth-copy {
+            color: #cfd2ff;
+            font-size: 0.92rem;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .social-auth-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .social-auth-btn {
+            width: 100%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 14px 16px;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 700;
+        }
+
+        .social-auth-btn.google {
+            background: #ffffff;
+            color: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+
+        .social-auth-btn.facebook {
+            background: #1877f2;
+            color: #ffffff;
+            border: 1px solid rgba(24, 119, 242, 0.55);
+        }
+
+        .social-auth-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+        }
+
+        .social-auth-icon {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .social-auth-btn.google .social-auth-icon {
+            background: rgba(17, 24, 39, 0.08);
+            color: #111827;
+        }
+
+        .social-auth-btn.facebook .social-auth-icon {
+            background: rgba(255, 255, 255, 0.16);
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+        }
+
+        .or-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 18px 0 0;
+            color: #8d90c9;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .or-divider::before,
+        .or-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: rgba(138, 43, 226, 0.22);
+        }
+
+        .social-auth-state,
+        .social-auth-note {
+            margin-top: 14px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(138, 43, 226, 0.24);
+            background: rgba(138, 43, 226, 0.08);
+            color: #d8dbff;
+            font-size: 0.9rem;
+        }
+
+        .social-auth-state {
+            display: none;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .social-auth-state.visible {
+            display: flex;
+        }
+
+        .social-auth-state-text {
+            flex: 1;
+        }
+
+        .social-switch-btn {
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text);
+            border-radius: 999px;
+            padding: 8px 12px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .social-switch-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .form-group.is-hidden {
+            display: none;
+        }
+
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
@@ -573,6 +704,15 @@
             .logo {
                 font-size: 2rem;
             }
+
+            .social-auth-buttons {
+                grid-template-columns: 1fr;
+            }
+
+            .social-auth-state.visible {
+                flex-direction: column;
+                align-items: stretch;
+            }
         }
     </style>
 </head>
@@ -606,6 +746,27 @@
 
             <div id="registrationForm">
                 <h3 style="text-align: center; margin-bottom: 30px; color: var(--text);">Créer votre compte</h3>
+
+                <div class="social-auth-section">
+                    <p class="social-auth-copy">
+                        Inscrivez-vous avec Google ou Facebook. Le selfie reste obligatoire pour finaliser votre compte.
+                    </p>
+                    <div class="social-auth-buttons">
+                        <button type="button" class="btn social-auth-btn google" onclick="startSocialAuth('google')">
+                            <span class="social-auth-icon">G</span>
+                            <span>Continuer avec Google</span>
+                        </button>
+                        <button type="button" class="btn social-auth-btn facebook" onclick="startSocialAuth('facebook')">
+                            <span class="social-auth-icon">f</span>
+                            <span>Continuer avec Facebook</span>
+                        </button>
+                    </div>
+                    <div id="socialAuthState" class="social-auth-state" role="status" aria-live="polite">
+                        <span id="socialAuthStateText" class="social-auth-state-text"></span>
+                        <button type="button" class="social-switch-btn" onclick="clearSocialAuth()">Utiliser un mot de passe</button>
+                    </div>
+                    <div class="or-divider">ou avec email et mot de passe</div>
+                </div>
                 
                 <div class="form-group">
                     <label for="eventCode">Code événement</label>
@@ -625,7 +786,7 @@
                     <div id="emailError" class="field-error"></div>
                 </div>
                 
-                <div class="form-group">
+                <div class="form-group" id="passwordGroup">
                     <label for="password">Mot de passe</label>
                     <div class="password-wrapper">
                         <input type="password" id="password" class="form-input" required placeholder="Choisissez un mot de passe">
@@ -649,6 +810,7 @@
                 <p style="text-align: center; color: var(--muted); margin-bottom: 20px;">
                     Prenez une photo claire de votre visage pour la reconnaissance faciale
                 </p>
+                <div id="selfieSocialReminder" class="social-auth-note" style="display: none;"></div>
 
                 <!-- Android camera capture: Two options for better UX -->
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
@@ -733,12 +895,26 @@
     </div>
 
     <script>
+        window.__SOCIAL_AUTH_CONFIG__ = {{SOCIAL_AUTH_CONFIG}};
         let currentStep = 1;
         let selfieFile = null;
         let selfieValidated = false;
         let validationSeq = 0;
         let currentValidationController = null;
         let isRegistering = false;
+        const SOCIAL_AUTH_CONFIG = window.__SOCIAL_AUTH_CONFIG__ || { providers: {} };
+        const SOCIAL_AUTH_META = {
+            google: { label: 'Google' },
+            facebook: { label: 'Facebook' }
+        };
+        let socialAuth = {
+            provider: null,
+            email: '',
+            name: '',
+            token: '',
+            active: false
+        };
+        let socialGeneratedPassword = '';
 
         // Préremplir et verrouiller le code événement depuis l'URL ou injection serveur.
         // Détecte aussi un token orphelin laissé par une inscription interrompue entre
@@ -765,7 +941,166 @@
                     if (banner) banner.classList.add('visible');
                 }
             } catch {}
+
+            restoreRegistrationDraft();
+            initSocialAuth();
+            maybeShowSocialError();
         });
+
+        function normalizeSocialProvider(provider) {
+            const normalized = String(provider || '').trim().toLowerCase();
+            return SOCIAL_AUTH_META[normalized] ? normalized : '';
+        }
+
+        function getProviderConfig(provider) {
+            const resolvedProvider = normalizeSocialProvider(provider);
+            return SOCIAL_AUTH_CONFIG.providers && SOCIAL_AUTH_CONFIG.providers[resolvedProvider]
+                ? SOCIAL_AUTH_CONFIG.providers[resolvedProvider]
+                : null;
+        }
+
+        function maybeShowSocialError() {
+            const params = new URLSearchParams(window.location.search);
+            const socialError = (params.get('social_error') || '').trim();
+            if (socialError) {
+                showAlert(socialError, 'error');
+            }
+        }
+
+        function saveRegistrationDraft() {
+            try {
+                const draft = {
+                    eventCode: document.getElementById('eventCode').value.trim(),
+                    username: document.getElementById('username').value.trim(),
+                    email: document.getElementById('email').value.trim()
+                };
+                sessionStorage.setItem('registerDraft', JSON.stringify(draft));
+            } catch {}
+        }
+
+        function restoreRegistrationDraft() {
+            try {
+                const raw = sessionStorage.getItem('registerDraft');
+                if (!raw) return;
+                const draft = JSON.parse(raw);
+                const eventCode = document.getElementById('eventCode');
+                const username = document.getElementById('username');
+                const email = document.getElementById('email');
+                if (draft && !eventCode.value && draft.eventCode) eventCode.value = draft.eventCode;
+                if (draft && !username.value && draft.username) username.value = draft.username;
+                if (draft && !email.value && draft.email) email.value = draft.email;
+            } catch {}
+        }
+
+        function clearRegistrationDraft() {
+            try { sessionStorage.removeItem('registerDraft'); } catch {}
+        }
+
+        function suggestUsernameFromName(name) {
+            return String(name || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-zA-Z0-9]+/g, '')
+                .toLowerCase()
+                .slice(0, 24);
+        }
+
+        function buildSocialPassword() {
+            if (socialGeneratedPassword) return socialGeneratedPassword;
+            const bytes = new Uint32Array(4);
+            if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+                window.crypto.getRandomValues(bytes);
+            } else {
+                for (let i = 0; i < bytes.length; i += 1) {
+                    bytes[i] = Math.floor(Math.random() * 0xffffffff);
+                }
+            }
+            socialGeneratedPassword = `Sm!${Array.from(bytes, part => part.toString(36)).join('')}`;
+            return socialGeneratedPassword;
+        }
+
+        function updateSocialUi() {
+            const passwordGroup = document.getElementById('passwordGroup');
+            const passwordInput = document.getElementById('password');
+            const emailInput = document.getElementById('email');
+            const usernameInput = document.getElementById('username');
+            const socialState = document.getElementById('socialAuthState');
+            const socialStateText = document.getElementById('socialAuthStateText');
+            const selfieReminder = document.getElementById('selfieSocialReminder');
+            const registerBtn = document.getElementById('registerBtn');
+            const providerMeta = socialAuth.provider ? SOCIAL_AUTH_META[socialAuth.provider] : null;
+
+            if (socialAuth.active && providerMeta) {
+                passwordGroup.classList.add('is-hidden');
+                passwordInput.value = '';
+                passwordInput.disabled = true;
+                passwordInput.removeAttribute('required');
+                if (socialAuth.email) {
+                    emailInput.value = socialAuth.email;
+                    emailInput.readOnly = true;
+                    emailInput.setAttribute('aria-readonly', 'true');
+                    emailInput.title = `Adresse récupérée depuis ${providerMeta.label}`;
+                }
+                if (socialAuth.name && !usernameInput.value.trim()) {
+                    usernameInput.value = suggestUsernameFromName(socialAuth.name);
+                }
+                socialStateText.textContent = `${providerMeta.label} connecté${socialAuth.email ? ` : ${socialAuth.email}` : ''}. Il reste à choisir votre nom d'utilisateur et à envoyer votre selfie.`;
+                socialState.classList.add('visible');
+                selfieReminder.textContent = `Inscription ${providerMeta.label} détectée : le selfie reste obligatoire pour activer votre compte.`;
+                selfieReminder.style.display = 'block';
+                registerBtn.textContent = `Créer mon compte avec ${providerMeta.label}`;
+                return;
+            }
+
+            passwordGroup.classList.remove('is-hidden');
+            passwordInput.disabled = false;
+            passwordInput.setAttribute('required', 'required');
+            emailInput.readOnly = false;
+            emailInput.removeAttribute('aria-readonly');
+            emailInput.title = '';
+            socialState.classList.remove('visible');
+            socialStateText.textContent = '';
+            selfieReminder.style.display = 'none';
+            registerBtn.textContent = 'Créer mon compte';
+        }
+
+        function initSocialAuth() {
+            const params = new URLSearchParams(window.location.search);
+            const provider = normalizeSocialProvider(params.get('social_provider') || params.get('provider'));
+            const email = (params.get('social_email') || '').trim();
+            const name = (params.get('social_name') || '').trim();
+            const token = (params.get('social_auth_token') || '').trim();
+            if (provider && email && token) {
+                socialAuth = { provider, email, name, token, active: true };
+            }
+            updateSocialUi();
+        }
+
+        function clearSocialAuth() {
+            socialAuth = { provider: null, email: '', name: '', token: '', active: false };
+            socialGeneratedPassword = '';
+            updateSocialUi();
+        }
+
+        function startSocialAuth(provider) {
+            const resolvedProvider = normalizeSocialProvider(provider);
+            const providerMeta = SOCIAL_AUTH_META[resolvedProvider];
+            if (!providerMeta) return;
+            const providerConfig = getProviderConfig(resolvedProvider);
+            if (!providerConfig || !providerConfig.enabled) {
+                showAlert(`La connexion ${providerMeta.label} n'est pas encore configurée.`, 'warning');
+                return;
+            }
+            saveRegistrationDraft();
+            const eventCode = document.getElementById('eventCode').value.trim();
+            const url = new URL(providerConfig.start_path || `/api/auth/social/start?provider=${resolvedProvider}`, window.location.origin);
+            url.searchParams.set('provider', resolvedProvider);
+            url.searchParams.set('mode', 'register');
+            if (eventCode) {
+                url.searchParams.set('event_code', eventCode);
+            }
+            window.location.href = url.toString();
+        }
 
         function dismissResumeBanner() {
             try { localStorage.removeItem('_reg_token'); } catch {}
@@ -789,8 +1124,10 @@
             if (!eventCode) { cErr.textContent='Le code événement est obligatoire'; cErr.style.display='block'; hasError = true; }
             if (!username) { uErr.textContent='Le nom d\'utilisateur est obligatoire'; uErr.style.display='block'; hasError = true; }
             if (!email) { eErr.textContent='L\'email est obligatoire'; eErr.style.display='block'; hasError = true; }
-            const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
-            if (!strongPw.test(password)) { pErr.textContent='Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial'; pErr.style.display='block'; hasError = true; }
+            if (!socialAuth.active) {
+                const strongPw = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+                if (!strongPw.test(password)) { pErr.textContent='Mot de passe invalide: 8 caractères minimum, au moins 1 majuscule, 1 chiffre et 1 caractère spécial'; pErr.style.display='block'; hasError = true; }
+            }
             // Vérifier la validité du code événement côté serveur (afficher l'erreur mais ne pas retourner avant d'avoir vérifié username/email)
             try {
                 const resp = await fetch('/api/check-event-code', {
@@ -1022,7 +1359,7 @@
             // ── Lecture des valeurs AVANT tout await ──────────────────────────
             const username  = document.getElementById('username').value.trim();
             const email     = document.getElementById('email').value.trim();
-            const password  = document.getElementById('password').value;
+            const password  = socialAuth.active ? buildSocialPassword() : document.getElementById('password').value;
             const eventCode = document.getElementById('eventCode').value.trim();
 
             // ── Lock UI immédiatement ──────────────────────────────────────────
@@ -1057,6 +1394,9 @@
                 form.append('terms_accepted', String(termsConsent));
                 form.append('privacy_accepted', String(termsConsent));
                 form.append('biometric_consent', String(biometricConsent));
+                if (socialAuth.active && socialAuth.token) {
+                    form.append('social_auth_token', socialAuth.token);
+                }
 
                 let registerResp, registerData;
                 try {
@@ -1117,6 +1457,7 @@
                 // ── ÉTAPE 3 : Redirection ──────────────────────────────────────
                 overlayText.textContent = 'Compte créé avec succès !';
                 console.log(`[${reqId}] redirect /`);
+                clearRegistrationDraft();
                 await new Promise(r => setTimeout(r, 800));
                 window.location.href = '/';
 

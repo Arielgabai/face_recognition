@@ -113,6 +113,14 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 1440
     # Marge avant expiration pour renouvellement anticipé (en minutes)
     TOKEN_REFRESH_MARGIN_MINUTES: int = 5
+
+    # ========== Social Auth (User static HTML frontend) ==========
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    GOOGLE_OAUTH_REDIRECT_URI: str = ""
+    FACEBOOK_OAUTH_CLIENT_ID: str = ""
+    FACEBOOK_OAUTH_CLIENT_SECRET: str = ""
+    FACEBOOK_OAUTH_REDIRECT_URI: str = ""
     
     # ========== Photo Processing ==========
     # Seuil minimum de similarité pour créer un FaceMatch

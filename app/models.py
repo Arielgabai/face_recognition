@@ -66,6 +66,9 @@ class User(Base):
     logo_data = Column(LargeBinary, nullable=True)
     logo_content_type = Column(String, nullable=True)
     hashed_password = Column(String)
+    auth_provider = Column(String, nullable=True, index=True)
+    auth_provider_subject = Column(String, nullable=True, index=True)
+    auth_provider_email = Column(String, nullable=True)
     user_type = Column(String, default=UserType.USER)
     event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True)  # NEW: événement principal
     selfie_path = Column(String, nullable=True)
@@ -85,6 +88,7 @@ class User(Base):
     __table_args__ = (
         Index('users_email_event_unique', 'email', func.coalesce(event_id, -1), unique=True),
         Index('users_username_event_unique', 'username', func.coalesce(event_id, -1), unique=True),
+        Index('users_provider_subject_event_unique', 'auth_provider', 'auth_provider_subject', func.coalesce(event_id, -1), unique=True),
         # Index composites pour accélérer les checks par événement
         Index('idx_users_event_username', 'event_id', 'username'),
         Index('idx_users_event_email', 'event_id', 'email'),
