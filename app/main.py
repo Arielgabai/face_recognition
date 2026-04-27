@@ -1726,6 +1726,10 @@ def _shutdown_services():
 @app.on_event("startup")
 def _startup_autostart_gdrive_listeners():
     try:
+        if os.environ.get("DISABLE_BACKGROUND_TASKS") == "1":
+            print("[Startup] GDrive listeners not started: DISABLE_BACKGROUND_TASKS=1")
+            return
+
         db = next(get_db())
         try:
             # S'assurer que le schéma est prêt
@@ -1735,12 +1739,9 @@ def _startup_autostart_gdrive_listeners():
             for integ in rows:
                 try:
                     if not GDRIVE_LISTENERS.get(int(integ.id), {}).get("running"):
-                        if os.environ.get("DISABLE_BACKGROUND_TASKS") == "1":
-                            _gdrive_listener_loop(int(integ.id))
-                        else:
-                            import threading as _threading
-                            t = _threading.Thread(target=_gdrive_listener_loop, args=(int(integ.id),), daemon=True)
-                            t.start()
+                        import threading as _threading
+                        t = _threading.Thread(target=_gdrive_listener_loop, args=(int(integ.id),), daemon=True)
+                        t.start()
                 except Exception:
                     pass
         finally:
@@ -2289,7 +2290,12 @@ async def gdrive_link_folder(
     # Si listening=True, démarrer le listener si pas déjà en cours
     try:
         if integ.listening and not GDRIVE_LISTENERS.get(integ.id, {}).get("running"):
-            _gdrive_listener_loop(integ.id) if (os.environ.get("DISABLE_BACKGROUND_TASKS") == "1") else None
+            if os.environ.get("DISABLE_BACKGROUND_TASKS") == "1":
+                print(f"[GDrive] Listener not started for integration {integ.id}: DISABLE_BACKGROUND_TASKS=1")
+            else:
+                import threading as _threading
+                t = _threading.Thread(target=_gdrive_listener_loop, args=(int(integ.id),), daemon=True)
+                t.start()
     except Exception:
         pass
     return {"linked": True}
@@ -2492,10 +2498,12 @@ async def gdrive_listen_start(
             GDRIVE_LISTENERS.pop(integration_id, None)
     except Exception:
         pass
-    if background_tasks is not None:
-        background_tasks.add_task(_gdrive_listener_loop, integ.id)
+    if os.environ.get("DISABLE_BACKGROUND_TASKS") == "1":
+        print(f"[GDrive] Listener not started for integration {integ.id}: DISABLE_BACKGROUND_TASKS=1")
     else:
-        _gdrive_listener_loop(integ.id)
+        import threading as _threading
+        t = _threading.Thread(target=_gdrive_listener_loop, args=(int(integ.id),), daemon=True)
+        t.start()
     return {"listening": True}
 
 
@@ -2555,7 +2563,12 @@ async def gdrive_integration_stats(
     # Auto-start listener if expected to listen but not running
     try:
         if integ.listening and not GDRIVE_LISTENERS.get(integration_id, {}).get("running"):
-            _gdrive_listener_loop(integration_id) if (os.environ.get("DISABLE_BACKGROUND_TASKS") == "1") else None
+            if os.environ.get("DISABLE_BACKGROUND_TASKS") == "1":
+                print(f"[GDrive] Listener not started for integration {integration_id}: DISABLE_BACKGROUND_TASKS=1")
+            else:
+                import threading as _threading
+                t = _threading.Thread(target=_gdrive_listener_loop, args=(int(integration_id),), daemon=True)
+                t.start()
     except Exception:
         pass
     total_logs = db.query(GoogleDriveIngestionLog).filter(GoogleDriveIngestionLog.integration_id == integration_id).count()

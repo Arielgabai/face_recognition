@@ -6,58 +6,69 @@ Script de test pour vérifier que toutes les importations fonctionnent correctem
 def test_imports():
     """Teste toutes les importations critiques"""
     try:
+        import os
+        provider = os.environ.get("FACE_RECOGNIZER_PROVIDER", "local").strip().lower()
         print("Test d'importation des modules...")
+        print(f"  Provider reconnaissance: {provider or 'local'}")
         
         # Test NumPy
         import numpy as np
-        print("✓ NumPy importé avec succès")
+        print("[OK] NumPy importe avec succes")
         print(f"  Version NumPy: {np.__version__}")
         
         # Test OpenCV
         import cv2
-        print("✓ OpenCV importé avec succès")
+        print("[OK] OpenCV importe avec succes")
         print(f"  Version OpenCV: {cv2.__version__}")
         
         # Test Pillow (PIL)
         from PIL import Image
-        print("✓ Pillow (PIL) importé avec succès")
+        print("[OK] Pillow (PIL) importe avec succes")
         print(f"  Version Pillow: {Image.__version__}")
         
-        # Appliquer le patch face_recognition_models avant l'importation
-        import face_recognition_patch
-        print("✓ Patch face_recognition_models appliqué")
-        
-        # Test face_recognition
-        import face_recognition
-        print("✓ face_recognition importé avec succès")
+        if provider in {"aws", "azure"}:
+            print("[OK] face_recognition local ignore (provider distant configure)")
+        else:
+            # Appliquer le patch face_recognition_models avant l'importation
+            import face_recognition_patch
+            print("[OK] Patch face_recognition_models applique")
+
+            # Test face_recognition
+            import face_recognition
+            print("[OK] face_recognition importe avec succes")
         
         # Test FastAPI
         from fastapi import FastAPI
-        print("✓ FastAPI importé avec succès")
+        print("[OK] FastAPI importe avec succes")
         
         # Test SQLAlchemy
         from sqlalchemy import create_engine
-        print("✓ SQLAlchemy importé avec succès")
+        print("[OK] SQLAlchemy importe avec succes")
         
         # Test des modules locaux
         from database import get_db
-        print("✓ Module database importé avec succès")
+        print("[OK] Module database importe avec succes")
         
         from models import User, Photo, FaceMatch
-        print("✓ Module models importé avec succès")
+        print("[OK] Module models importe avec succes")
         
-        from face_recognizer import FaceRecognizer
-        print("✓ Module face_recognizer importé avec succès")
+        if provider in {"aws", "azure"}:
+            from recognizer_factory import get_face_recognizer
+            print("[OK] Module recognizer_factory importe avec succes")
+        else:
+            from face_recognizer import FaceRecognizer
+            print("[OK] Module face_recognizer importe avec succes")
         
-        print("\n🎉 Toutes les importations fonctionnent correctement!")
+        print("\n[OK] Toutes les importations fonctionnent correctement!")
         return True
         
     except ImportError as e:
-        print(f"❌ Erreur d'importation: {e}")
+        print(f"[ERROR] Erreur d'importation: {e}")
         return False
     except Exception as e:
-        print(f"❌ Erreur inattendue: {e}")
+        print(f"[ERROR] Erreur inattendue: {e}")
         return False
 
 if __name__ == "__main__":
-    test_imports() 
+    import sys
+    sys.exit(0 if test_imports() else 1)

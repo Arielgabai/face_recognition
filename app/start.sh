@@ -15,14 +15,19 @@ else
     exit 1
 fi
 
-# Appliquer le patch face_recognition_models
-echo "Application du patch face_recognition_models..."
-python -c "import face_recognition_patch"
-
-if [ $? -eq 0 ]; then
-    echo "Patch face_recognition_models applique avec succes"
+# Appliquer le patch face_recognition_models seulement pour le provider local.
+RECOGNIZER_PROVIDER="$(printf '%s' "${FACE_RECOGNIZER_PROVIDER:-local}" | tr '[:upper:]' '[:lower:]')"
+if [ "$RECOGNIZER_PROVIDER" = "aws" ] || [ "$RECOGNIZER_PROVIDER" = "azure" ]; then
+    echo "Patch face_recognition_models ignore (provider ${RECOGNIZER_PROVIDER} actif)"
 else
-    echo "Patch face_recognition_models non applique (peut etre normal)"
+    echo "Application du patch face_recognition_models..."
+    python -c "import face_recognition_patch"
+
+    if [ $? -eq 0 ]; then
+        echo "Patch face_recognition_models applique avec succes"
+    else
+        echo "Patch face_recognition_models non applique (peut etre normal)"
+    fi
 fi
 
 # Créer les dossiers nécessaires
