@@ -36,6 +36,10 @@ import os
 _ssm_loaded = False
 
 
+def _log(message: str) -> None:
+    print(message, flush=True)
+
+
 def load_ssm_parameters() -> bool:
     """
     Charge les paramètres depuis AWS SSM Parameter Store et les injecte dans os.environ.
@@ -59,15 +63,15 @@ def load_ssm_parameters() -> bool:
     
     # Idempotence: ne s'exécute qu'une fois
     if _ssm_loaded:
-        print("[SSM] Paramètres déjà chargés, skip")
+        _log("[SSM] Paramètres déjà chargés, skip")
         return True
     
     # Lire le préfixe de configuration
     prefix = os.environ.get("APP_CONFIG_PREFIX", "").strip()
     
     if not prefix:
-        print("[SSM] APP_CONFIG_PREFIX non défini, chargement SSM désactivé")
-        print("[SSM] Les paramètres seront lus depuis les variables d'environnement standard")
+        _log("[SSM] APP_CONFIG_PREFIX non défini, chargement SSM désactivé")
+        _log("[SSM] Les paramètres seront lus depuis les variables d'environnement standard")
         _ssm_loaded = True
         return False
     
@@ -76,14 +80,30 @@ def load_ssm_parameters() -> bool:
     
     # Région AWS (Paris par défaut pour SSM)
     region = os.environ.get("AWS_REGION", "eu-west-3")
-    
-    print(f"[SSM] Chargement des paramètres depuis {prefix} (région: {region})")
+
+    connect_timeout = int(os.environ.get("SSM_CONNECT_TIMEOUT", "2") or "2")
+    read_timeout = int(os.environ.get("SSM_READ_TIMEOUT", "5") or "5")
+    max_attempts = int(os.environ.get("SSM_MAX_ATTEMPTS", "2") or "2")
+
+    _log(
+        f"[SSM] Chargement des paramètres depuis {prefix} "
+        f"(région: {region}, timeout={connect_timeout}/{read_timeout}s, attempts={max_attempts})"
+    )
     
     try:
         import boto3
+        from botocore.config import Config as BotoConfig
         from botocore.exceptions import ClientError, NoCredentialsError
-        
-        ssm = boto3.client("ssm", region_name=region)
+
+        ssm = boto3.client(
+            "ssm",
+            region_name=region,
+            config=BotoConfig(
+                connect_timeout=connect_timeout,
+                read_timeout=read_timeout,
+                retries={"max_attempts": max_attempts, "mode": "standard"},
+            ),
+        )
         
         # Utiliser un paginator pour gérer un grand nombre de paramètres
         paginator = ssm.get_paginator("get_parameters_by_path")
@@ -117,41 +137,41 @@ def load_ssm_parameters() -> bool:
                 loaded_count += 1
         
         if loaded_count > 0:
-            print(f"[SSM] {loaded_count} paramètre(s) chargé(s):")
+            _log(f"[SSM] {loaded_count} paramètre(s) chargé(s):")
             for param_name in sorted(loaded_params):
                 # Ne pas logger la valeur (potentiellement sensible)
-                print(f"[SSM]   - {param_name}")
+                _log(f"[SSM]   - {param_name}")
         else:
-            print(f"[SSM] Aucun paramètre trouvé sous {prefix}")
-            print("[SSM] Vérifiez que les paramètres existent dans SSM Parameter Store")
+            _log(f"[SSM] Aucun paramètre trouvé sous {prefix}")
+            _log("[SSM] Vérifiez que les paramètres existent dans SSM Parameter Store")
         
         _ssm_loaded = True
         return loaded_count > 0
         
     except NoCredentialsError:
-        print("[SSM] ⚠️  Aucune credential AWS trouvée")
-        print("[SSM] Assurez-vous que l'instance a un rôle IAM avec les permissions ssm:GetParametersByPath")
+        _log("[SSM] Aucune credential AWS trouvée")
+        _log("[SSM] Assurez-vous que l'instance a un rôle IAM avec les permissions ssm:GetParametersByPath")
         _ssm_loaded = True
         return False
         
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
         error_msg = e.response.get("Error", {}).get("Message", str(e))
-        print(f"[SSM] ⚠️  Erreur AWS SSM ({error_code}): {error_msg}")
+        _log(f"[SSM] Erreur AWS SSM ({error_code}): {error_msg}")
         
         if error_code == "AccessDeniedException":
-            print("[SSM] Vérifiez les permissions IAM: ssm:GetParametersByPath, ssm:GetParameter")
+            _log("[SSM] Vérifiez les permissions IAM: ssm:GetParametersByPath, ssm:GetParameter")
         
         _ssm_loaded = True
         return False
         
     except ImportError:
-        print("[SSM] ⚠️  boto3 non installé, chargement SSM impossible")
+        _log("[SSM] boto3 non installé, chargement SSM impossible")
         _ssm_loaded = True
         return False
         
     except Exception as e:
-        print(f"[SSM] ⚠️  Erreur inattendue: {type(e).__name__}: {e}")
+        _log(f"[SSM] Erreur inattendue: {type(e).__name__}: {e}")
         _ssm_loaded = True
         return False
 

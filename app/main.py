@@ -8,11 +8,14 @@
 # 1. Charger les paramètres SSM AVANT les autres imports
 #    Cela injecte les valeurs SSM dans os.environ
 from ssm_loader import load_ssm_parameters
+print("[BOOT] main.py import started", flush=True)
 load_ssm_parameters()
+print("[BOOT] SSM load step finished", flush=True)
 
 # 3. Charger le fichier .env local (les valeurs SSM ont priorité car déjà dans os.environ)
 from dotenv import load_dotenv
 load_dotenv()
+print("[BOOT] dotenv load step finished", flush=True)
 from markupsafe import Markup
 
 # =============================================================================
@@ -55,6 +58,7 @@ from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from database import SessionLocal  # là où tu l’as défini
 from settings import settings
+print("[BOOT] core imports finished", flush=True)
 
 
 # NOTE: Les semaphores dlib/face_recognition ont été supprimés

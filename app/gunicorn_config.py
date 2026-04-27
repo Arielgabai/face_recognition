@@ -5,9 +5,9 @@ Utilisation:
     gunicorn main:app -c gunicorn_config.py
 
 Variables d'environnement:
-    GUNICORN_WORKERS      : Nombre de workers (défaut: 3)
-    GUNICORN_THREADS      : Threads par worker (défaut: 2)
-    GUNICORN_TIMEOUT      : Timeout requête en secondes (défaut: 90)
+    GUNICORN_WORKERS      : Nombre de workers (défaut: 1)
+    GUNICORN_THREADS      : Threads par worker (défaut: 1)
+    GUNICORN_TIMEOUT      : Timeout requête en secondes (défaut: 180)
     GUNICORN_LOGLEVEL     : Niveau de log (défaut: info)
     GUNICORN_MAX_REQUESTS : Nombre de requêtes avant recyclage (défaut: 0 = désactivé)
     PORT                  : Port d'écoute (défaut: 10000)
@@ -17,17 +17,17 @@ Variables d'environnement:
 import os
 
 # ========== WORKERS ==========
-workers = int(os.getenv("GUNICORN_WORKERS", "3"))
+workers = int(os.getenv("GUNICORN_WORKERS", "1"))
 worker_class = "uvicorn.workers.UvicornWorker"
 worker_connections = 1000
-threads = int(os.getenv("GUNICORN_THREADS", "2"))
+threads = int(os.getenv("GUNICORN_THREADS", "1"))
 
 # Recyclage des workers (0 = désactivé)
 max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "0"))
 max_requests_jitter = 50 if max_requests > 0 else 0
 
 # ========== TIMEOUTS ==========
-timeout = int(os.getenv("GUNICORN_TIMEOUT", "90"))
+timeout = int(os.getenv("GUNICORN_TIMEOUT", "180"))
 graceful_timeout = int(os.getenv("GUNICORN_GRACEFUL_TIMEOUT", "30"))
 
 # ========== CONNEXIONS ==========

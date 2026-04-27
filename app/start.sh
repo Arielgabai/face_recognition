@@ -3,6 +3,8 @@
 
 echo "Demarrage de l'application Face Recognition..."
 
+export PYTHONUNBUFFERED=1
+
 # Test des importations Python
 echo "Test des importations Python..."
 python test_imports.py
@@ -53,9 +55,9 @@ if [ -n "$DATABASE_URL" ]; then
 else
     echo "  - DATABASE_URL: (not set)"
 fi
-echo "  - GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}"
-echo "  - GUNICORN_THREADS: ${GUNICORN_THREADS:-2}"
-echo "  - GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-90}"
+echo "  - GUNICORN_WORKERS: ${GUNICORN_WORKERS:-1}"
+echo "  - GUNICORN_THREADS: ${GUNICORN_THREADS:-1}"
+echo "  - GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-180}"
 echo "  - MATCHING_THREAD_POOL_SIZE: ${MATCHING_THREAD_POOL_SIZE:-1}"
 
 # Démarrer l'application avec Gunicorn
