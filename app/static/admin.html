@@ -337,8 +337,8 @@
                             <input type="text" id="eventName" placeholder="ex: Mariage de Marie et Paul" required>
                         </div>
                         <div class="form-group">
-                            <label for="eventCode">Code événement:</label>
-                            <input type="text" id="eventCode" placeholder="ex: MARIAGE2024" required>
+                            <label>Code événement:</label>
+                            <input type="text" value="Généré automatiquement à la création" readonly disabled>
                         </div>
                     </div>
                     <div class="form-row">
@@ -1095,7 +1095,7 @@
                             <p><strong>Date:</strong> ${event.date ? new Date(event.date).toLocaleDateString() : 'Non définie'}</p>
                             <p><strong>Photographe ID:</strong> ${event.photographer_id}</p>
                             <div class="card-actions">
-                                <button onclick="editEvent(${event.id}, '${event.name}', '${event.event_code}', '${event.date || ''}', ${event.photographer_id})" class="success">Modifier</button>
+                                <button onclick="editEvent(${event.id}, '${event.name}', '${event.date || ''}', ${event.photographer_id})" class="success">Modifier</button>
                                 <button onclick="deleteEvent(${event.id}, '${event.name}')" class="danger">Supprimer</button>
                                 <button onclick="rematchEvent(${event.id})" class="success">Relancer le matching</button>
                             </div>
@@ -1627,13 +1627,12 @@
         async function createNewEvent() {
             console.log('createNewEvent() appelée');
             const name = document.getElementById('eventName').value;
-            const eventCode = document.getElementById('eventCode').value;
             const date = document.getElementById('eventDate').value;
             const photographerId = document.getElementById('eventPhotographer').value;
 
-            console.log('Valeurs:', { name, eventCode, date, photographerId, token });
+            console.log('Valeurs:', { name, date, photographerId, token });
 
-            if (!name || !eventCode || !photographerId) {
+            if (!name || !photographerId) {
                 showAlert('Veuillez remplir tous les champs obligatoires', 'error');
                 return;
             }
@@ -1648,7 +1647,6 @@
                     },
                     body: JSON.stringify({ 
                         name, 
-                        event_code: eventCode, 
                         date: date || null, 
                         photographer_id: parseInt(photographerId) 
                     }),
@@ -1659,10 +1657,10 @@
                 console.log('Données reçues:', data);
 
                 if (response.ok) {
-                    showAlert('Événement créé avec succès !', 'success');
+                    const generatedCode = data.event_code ? ` Code généré : ${data.event_code}` : '';
+                    showAlert(`Événement créé avec succès !${generatedCode}`, 'success');
                     // Vider les champs
                     document.getElementById('eventName').value = '';
-                    document.getElementById('eventCode').value = '';
                     document.getElementById('eventDate').value = '';
                     document.getElementById('eventPhotographer').value = '';
                     // Recharger les listes
@@ -1948,12 +1946,9 @@
             }
         }
 
-        async function editEvent(eventId, currentName, currentEventCode, currentDate, currentPhotographerId) {
+        async function editEvent(eventId, currentName, currentDate, currentPhotographerId) {
             const newName = prompt('Nouveau nom de l\'événement:', currentName);
             if (!newName) return;
-
-            const newEventCode = prompt('Nouveau code événement:', currentEventCode);
-            if (!newEventCode) return;
 
             const newDate = prompt('Nouvelle date (YYYY-MM-DD, laissez vide si pas de date):', currentDate);
             
@@ -1982,7 +1977,6 @@
                     },
                     body: JSON.stringify({ 
                         name: newName, 
-                        event_code: newEventCode, 
                         date: newDate || null, 
                         photographer_id: parseInt(newPhotographerId) 
                     }),

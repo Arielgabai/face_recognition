@@ -1185,6 +1185,76 @@ def find_event_by_code(db: Session, code: str) -> Event:
             return db.query(Event).filter(Event.event_code == event_code).first()
     return None
 
+
+_EVENT_CODE_PATTERN = re.compile(r"^M(\d+)$")
+_EVENT_CODE_MAX_RETRIES = 8
+_EVENT_CODE_IMMUTABLE_DETAIL = "event_code est généré à la création et ne peut plus être modifié"
+
+
+def _compute_next_generated_event_code(db: Session) -> str:
+    max_sequence = 0
+
+    for (event_code,) in db.query(Event.event_code).filter(
+        Event.event_code.isnot(None),
+        Event.event_code.like("M%"),
+    ).all():
+        match = _EVENT_CODE_PATTERN.fullmatch(str(event_code).strip())
+        if not match:
+            continue
+        max_sequence = max(max_sequence, int(match.group(1)))
+
+    return f"M{max_sequence + 1}"
+
+
+def _is_event_code_unique_violation(exc: IntegrityError) -> bool:
+    error_text = str(getattr(exc, "orig", exc)).lower()
+    mentions_uniqueness = any(token in error_text for token in ("unique", "duplicate", "constraint failed"))
+    return mentions_uniqueness and "event_code" in error_text
+
+
+def _create_event_with_generated_code(
+    db: Session,
+    *,
+    name: str,
+    date_value,
+    photographer_id: int,
+) -> Event:
+    for attempt in range(1, _EVENT_CODE_MAX_RETRIES + 1):
+        event = Event(
+            name=name,
+            event_code=_compute_next_generated_event_code(db),
+            date=date_value,
+            photographer_id=photographer_id,
+        )
+        db.add(event)
+
+        try:
+            db.commit()
+            db.refresh(event)
+            return event
+        except IntegrityError as exc:
+            db.rollback()
+            if not _is_event_code_unique_violation(exc):
+                raise
+            logger.warning(
+                "[event-code] Collision lors de la création d'événement, retry %s/%s",
+                attempt,
+                _EVENT_CODE_MAX_RETRIES,
+            )
+
+    raise HTTPException(
+        status_code=409,
+        detail="Impossible de générer un code événement unique pour le moment, veuillez réessayer",
+    )
+
+
+def _assert_event_code_is_not_modified(event: Event, requested_event_code: str | None) -> None:
+    if requested_event_code is None:
+        return
+
+    if str(requested_event_code).strip() != str(event.event_code or "").strip():
+        raise HTTPException(status_code=400, detail=_EVENT_CODE_IMMUTABLE_DETAIL)
+
 # Validation de mot de passe (côté serveur)
 def assert_password_valid(password: str) -> None:
     if not isinstance(password, str) or len(password) < 8 \
@@ -6733,7 +6803,6 @@ async def admin_delete_user(
 @app.post("/api/admin/create-event")
 async def admin_create_event(
     name: str = Body(...),
-    event_code: str = Body(...),
     date: str = Body(None),
     photographer_id: int = Body(...),
     current_user: User = Depends(get_current_user),
@@ -6742,24 +6811,22 @@ async def admin_create_event(
     """Cr+�er un +�v+�nement (mariage) et l'assigner +� un photographe (admin uniquement)"""
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Seuls les admins peuvent cr+�er des +�v+�nements")
-    # V+�rifier unicit+� du code
-    if db.query(Event).filter_by(event_code=event_code).first():
-        raise HTTPException(status_code=400, detail="event_code d+�j+� utilis+�")
     # V+�rifier que le photographe existe
     photographer = db.query(User).filter_by(id=photographer_id, user_type=UserType.PHOTOGRAPHER).first()
     if not photographer:
         raise HTTPException(status_code=404, detail="Photographe non trouv+�")
     # Cr+�er l'+�v+�nement
     from datetime import datetime as dt
-    event = Event(
+    try:
+        parsed_date = dt.fromisoformat(date) if date else None
+    except Exception:
+        raise HTTPException(status_code=400, detail="Date invalide")
+    event = _create_event_with_generated_code(
+        db,
         name=name,
-        event_code=event_code,
-        date=dt.fromisoformat(date) if date else None,
-        photographer_id=photographer_id
+        date_value=parsed_date,
+        photographer_id=photographer_id,
     )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
     return {"message": "+�v+�nement cr+�+�", "event_id": event.id, "event_code": event.event_code}
 
 @app.post("/api/admin/register-admin")
@@ -6854,7 +6921,6 @@ async def create_photographer(
 @app.post("/api/photographer/events/create")
 async def photographer_create_event(
     name: str = Body(...),
-    event_code: str = Body(...),
     date: str = Body(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -6867,11 +6933,8 @@ async def photographer_create_event(
     if current_user.user_type != UserType.PHOTOGRAPHER:
         raise HTTPException(status_code=403, detail="Seuls les photographes peuvent créer un événement via cette route")
 
-    if not name or not event_code:
-        raise HTTPException(status_code=400, detail="Nom et code événement requis")
-
-    if db.query(Event).filter_by(event_code=event_code).first():
-        raise HTTPException(status_code=400, detail="event_code déjà utilisé")
+    if not name:
+        raise HTTPException(status_code=400, detail="Nom de l'événement requis")
 
     from datetime import datetime as dt
     try:
@@ -6879,15 +6942,12 @@ async def photographer_create_event(
     except Exception:
         raise HTTPException(status_code=400, detail="Date invalide")
 
-    event = Event(
+    event = _create_event_with_generated_code(
+        db,
         name=name,
-        event_code=event_code,
-        date=parsed_date,
+        date_value=parsed_date,
         photographer_id=current_user.id,
     )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
     return {
         "message": "Événement créé",
         "event_id": event.id,
@@ -8438,20 +8498,8 @@ async def generate_complex_event_code(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
-    
-    # G+�n+�rer un code complexe (8 caract+�res alphanum+�riques)
-    import random
-    import string
-    new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    
-    # V+�rifier l'unicit+�
-    while db.query(Event).filter(Event.event_code == new_code).first():
-        new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    
-    event.event_code = new_code
-    db.commit()
-    
-    return {"message": "Code +�v+�nement g+�n+�r+�", "event_code": new_code}
+
+    raise HTTPException(status_code=400, detail=_EVENT_CODE_IMMUTABLE_DETAIL)
 
 @app.post("/api/admin/set-event-code")
 async def set_custom_event_code(
@@ -8467,19 +8515,8 @@ async def set_custom_event_code(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
-    
-    # V+�rifier l'unicit+�
-    existing_event = db.query(Event).filter(
-        Event.event_code == event_code,
-        Event.id != event_id
-    ).first()
-    if existing_event:
-        raise HTTPException(status_code=400, detail="Ce code +�v+�nement est d+�j+� utilis+�")
-    
-    event.event_code = event_code
-    db.commit()
-    
-    return {"message": "Code +�v+�nement d+�fini", "event_code": event_code}
+
+    raise HTTPException(status_code=400, detail=_EVENT_CODE_IMMUTABLE_DETAIL)
 
 # === NOUVELLES ROUTES POUR LA GESTION DES PHOTOGRAPHES ET +�V+�NEMENTS ===
 
@@ -8523,7 +8560,7 @@ async def delete_event(
 async def admin_update_event(
     event_id: int,
     name: str = Body(...),
-    event_code: str = Body(...),
+    event_code: str | None = Body(None),
     date: str = Body(None),
     photographer_id: int = Body(...),
     current_user: User = Depends(get_current_user),
@@ -8537,14 +8574,8 @@ async def admin_update_event(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
-    
-    # V+�rifier unicit+� du code (sauf pour l'+�v+�nement actuel)
-    existing_event = db.query(Event).filter(
-        Event.event_code == event_code,
-        Event.id != event_id
-    ).first()
-    if existing_event:
-        raise HTTPException(status_code=400, detail="event_code d+�j+� utilis+�")
+
+    _assert_event_code_is_not_modified(event, event_code)
     
     # V+�rifier que le photographe existe
     photographer = db.query(User).filter_by(id=photographer_id, user_type=UserType.PHOTOGRAPHER).first()
@@ -8553,9 +8584,12 @@ async def admin_update_event(
     
     # Mettre +� jour l'+�v+�nement
     from datetime import datetime as dt
+    try:
+        parsed_date = dt.fromisoformat(date) if date else None
+    except Exception:
+        raise HTTPException(status_code=400, detail="Date invalide")
     event.name = name
-    event.event_code = event_code
-    event.date = dt.fromisoformat(date) if date else None
+    event.date = parsed_date
     event.photographer_id = photographer_id
     
     db.commit()

@@ -861,8 +861,8 @@
                             <input type="text" id="createEventName" placeholder="ex: Mariage de Marie et Paul" required>
                         </div>
                         <div class="form-group">
-                            <label for="createEventCode">Code événement :</label>
-                            <input type="text" id="createEventCode" placeholder="ex: MARIAGE2024" required>
+                            <label>Code événement :</label>
+                            <input type="text" value="Généré automatiquement à la création" readonly disabled>
                         </div>
                     </div>
                     <div class="form-row">
@@ -1297,11 +1297,10 @@ let photographerLightbox = null;
 
         async function createPhotographerEvent() {
             const name = (document.getElementById('createEventName').value || '').trim();
-            const eventCode = (document.getElementById('createEventCode').value || '').trim();
             const date = document.getElementById('createEventDate').value;
 
-            if (!name || !eventCode) {
-                showAlert('Veuillez remplir le nom et le code événement', 'error');
+            if (!name) {
+                showAlert('Veuillez remplir le nom de l\'événement', 'error');
                 return;
             }
 
@@ -1314,16 +1313,15 @@ let photographerLightbox = null;
                     },
                     body: JSON.stringify({
                         name,
-                        event_code: eventCode,
                         date: date || null,
                     }),
                 });
 
                 const data = await response.json().catch(() => ({}));
                 if (response.ok) {
-                    showAlert('Événement créé avec succès !', 'success');
+                    const generatedCode = data.event_code ? ` Code généré : ${data.event_code}` : '';
+                    showAlert(`Événement créé avec succès !${generatedCode}`, 'success');
                     document.getElementById('createEventName').value = '';
-                    document.getElementById('createEventCode').value = '';
                     document.getElementById('createEventDate').value = '';
                     // Recharger la liste des événements et mettre à jour les sélecteurs
                     await loadPhotographerEvents();
