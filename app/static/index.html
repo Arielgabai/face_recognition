@@ -396,84 +396,6 @@
             background: rgba(255, 255, 255, 0.15);
         }
 
-        .social-login-divider {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin: 18px 0;
-            color: #8d90c9;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-        }
-
-        .social-login-divider::before,
-        .social-login-divider::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: rgba(138, 43, 226, 0.22);
-        }
-
-        .social-login-buttons {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-            margin-top: 18px;
-        }
-
-        .social-login-btn {
-            width: 100%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            padding: 14px 16px;
-            text-transform: none;
-            letter-spacing: 0;
-            font-weight: 700;
-        }
-
-        .social-login-btn.google {
-            background: #ffffff;
-            color: #111827;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-        }
-
-        .social-login-btn.facebook {
-            background: #1877f2;
-            color: #ffffff;
-            border: 1px solid rgba(24, 119, 242, 0.55);
-        }
-
-        .social-login-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
-        }
-
-        .social-login-icon {
-            width: 26px;
-            height: 26px;
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1rem;
-            font-weight: 800;
-            flex-shrink: 0;
-        }
-
-        .social-login-btn.google .social-login-icon {
-            background: rgba(17, 24, 39, 0.08);
-            color: #111827;
-        }
-
-        .social-login-btn.facebook .social-login-icon {
-            background: rgba(255, 255, 255, 0.16);
-            color: #ffffff;
-            font-family: Arial, sans-serif;
-        }
-
         .btn-danger {
             background: linear-gradient(135deg, #ff3b3b, #dc2626 60%);
             color: #ffffff;
@@ -2208,12 +2130,6 @@
         .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; color: var(--muted); opacity: 0.85; padding: 4px; line-height: 0; }
         .toggle-password svg { width: 22px; height: 22px; stroke: currentColor; }
         .toggle-password:hover { color: var(--text); opacity: 1; }
-
-        @media (max-width: 640px) {
-            .social-login-buttons {
-                grid-template-columns: 1fr;
-            }
-        }
     </style>
 </head>
 <body>
@@ -2302,18 +2218,6 @@
                     <div class="loading-spinner" style="display: none;"></div>
                 </button>
 
-                <div class="social-login-divider">ou</div>
-                <div class="social-login-buttons">
-                    <button type="button" class="btn social-login-btn google" onclick="startSocialLogin('google')">
-                        <span class="social-login-icon">G</span>
-                        <span>Google</span>
-                    </button>
-                    <button type="button" class="btn social-login-btn facebook" onclick="startSocialLogin('facebook')">
-                        <span class="social-login-icon">f</span>
-                        <span>Facebook</span>
-                    </button>
-                </div>
-                
                 <div style="text-align: center; margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
                     <a href="/register-with-code" style="color: var(--neon-purple); text-decoration: none; font-size: 0.9rem; transition: color 0.3s ease; text-shadow: 0 0 8px rgba(138, 43, 226, 0.45);" 
                        onmouseover="this.style.color='#b28cff'" onmouseout="this.style.color='var(--neon-purple)'">
@@ -2581,14 +2485,11 @@
     </div>
 
     <script>
-        window.__SOCIAL_AUTH_CONFIG__ = {{SOCIAL_AUTH_CONFIG}};
         let token = localStorage.getItem('token');
         let currentUser = null;
         let userRole = localStorage.getItem('userRole');
         let selfieUpdateController = null;
         let selfieRefreshController = null;
-        const SOCIAL_AUTH_CONFIG = window.__SOCIAL_AUTH_CONFIG__ || { providers: {} };
-        let socialLoginInFlight = false;
 
         async function apiFetch(input, init = {}) {
             init.headers = init.headers || {};
@@ -2620,8 +2521,6 @@
                 loginForm.style.display = 'none';
             }
             loadDashboard();
-        } else {
-            handleSocialLoginCallback();
         }
 
         // Toast global, persistant (au-dessus du drawer)
@@ -2660,22 +2559,6 @@
             `;
         }
 
-        function getSocialProviderConfig(provider) {
-            return SOCIAL_AUTH_CONFIG.providers && SOCIAL_AUTH_CONFIG.providers[provider]
-                ? SOCIAL_AUTH_CONFIG.providers[provider]
-                : null;
-        }
-
-        function clearSocialQueryParams() {
-            try {
-                const url = new URL(window.location.href);
-                ['social_provider', 'social_email', 'social_name', 'social_auth_token', 'social_error'].forEach((key) => {
-                    url.searchParams.delete(key);
-                });
-                window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
-            } catch {}
-        }
-
         function setLoginLoading(isLoading) {
             const loginBtn = document.getElementById('loginBtn');
             if (!loginBtn) return;
@@ -2690,86 +2573,8 @@
         function finishLoginSuccess(data) {
             token = data.access_token;
             localStorage.setItem('token', token);
-            clearSocialQueryParams();
             try { window.scrollTo({ top: 0, behavior: 'instant' }); } catch { window.scrollTo(0,0); }
             loadDashboard();
-        }
-
-        function startSocialLogin(provider) {
-            const providerConfig = getSocialProviderConfig(provider);
-            if (!providerConfig || !providerConfig.enabled) {
-                showAlert(`La connexion ${provider} n'est pas configurée.`, 'error');
-                return;
-            }
-            const url = new URL(providerConfig.start_path || `/api/auth/social/start?provider=${provider}`, window.location.origin);
-            url.searchParams.set('provider', provider);
-            url.searchParams.set('mode', 'login');
-            window.location.href = url.toString();
-        }
-
-        async function submitSocialLogin(socialAuthToken, userId = null) {
-            if (!socialAuthToken) return;
-            if (socialLoginInFlight) return;
-            socialLoginInFlight = true;
-            setLoginLoading(true);
-
-            try {
-                const payload = { social_auth_token: socialAuthToken };
-                if (userId) {
-                    payload.user_id = userId;
-                }
-
-                const response = await fetch('/api/auth/social/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(payload),
-                });
-                const data = await response.json().catch(() => ({}));
-
-                if (!response.ok) {
-                    showAlert(data.detail || 'Erreur de connexion sociale', 'error');
-                    return;
-                }
-
-                if (data.multiple_accounts && data.accounts) {
-                    showAccountSelector(data.accounts, null, null, socialAuthToken);
-                    return;
-                }
-
-                if (data.needs_registration && data.register_url) {
-                    window.location.href = data.register_url;
-                    return;
-                }
-
-                if (data.access_token) {
-                    finishLoginSuccess(data);
-                    return;
-                }
-
-                showAlert(data.message || 'Connexion sociale incomplète', 'error');
-            } catch (error) {
-                showAlert('Erreur de connexion sociale', 'error');
-            } finally {
-                socialLoginInFlight = false;
-                setLoginLoading(false);
-            }
-        }
-
-        function handleSocialLoginCallback() {
-            const params = new URLSearchParams(window.location.search);
-            const socialError = (params.get('social_error') || '').trim();
-            if (socialError) {
-                showAlert(socialError, 'error');
-                clearSocialQueryParams();
-                return;
-            }
-
-            const socialAuthToken = (params.get('social_auth_token') || '').trim();
-            if (socialAuthToken) {
-                submitSocialLogin(socialAuthToken);
-            }
         }
 
         async function login(userId = null) {
@@ -2822,12 +2627,12 @@
         // Stocker temporairement les credentials pour la sélection d'événement
         let tempLoginCredentials = null;
 
-        function showAccountSelector(accounts, username, password, socialAuthToken = null) {
+        function showAccountSelector(accounts, username, password) {
             // Masquer le spinner du bouton de connexion
             setLoginLoading(false);
 
             // Stocker les credentials
-            tempLoginCredentials = { username, password, socialAuthToken };
+            tempLoginCredentials = { username, password };
             console.log('[Account Selector] Credentials stored');
 
             // Créer l'overlay de sélection avec design sombre harmonieux
@@ -2978,7 +2783,7 @@
                 if (card) {
                     card.addEventListener('click', function() {
                         console.log('[Account Selector] Card clicked for user_id:', account.user_id);
-                        selectAccount(account.user_id, username, password, socialAuthToken);
+                        selectAccount(account.user_id, username, password);
                     });
                 }
             });
@@ -3006,25 +2811,18 @@
                 overlay.style.opacity = '0';
                 setTimeout(() => {
                     overlay.remove();
-                    // Nettoyer les credentials seulement après fermeture complète
-                    if (tempLoginCredentials && tempLoginCredentials.socialAuthToken) {
-                        clearSocialQueryParams();
-                    }
                     tempLoginCredentials = null;
                 }, 200);
             } else {
-                if (tempLoginCredentials && tempLoginCredentials.socialAuthToken) {
-                    clearSocialQueryParams();
-                }
                 tempLoginCredentials = null;
             }
         }
 
-        async function selectAccount(userId, username, password, socialAuthToken = null) {
+        async function selectAccount(userId, username, password) {
             console.log('[Account Selection] userId:', userId);
             
             // Utiliser les paramètres passés directement plutôt que tempLoginCredentials
-            if (!socialAuthToken && (!username || !password)) {
+            if (!username || !password) {
                 // Fallback sur tempLoginCredentials si les paramètres ne sont pas passés
                 if (!tempLoginCredentials) {
                     showAlert('Erreur: informations de connexion manquantes', 'error');
@@ -3032,7 +2830,6 @@
                 }
                 username = tempLoginCredentials.username;
                 password = tempLoginCredentials.password;
-                socialAuthToken = tempLoginCredentials.socialAuthToken || socialAuthToken;
             }
 
             closeAccountSelector();
@@ -3041,16 +2838,10 @@
             setLoginLoading(true);
 
             try {
-                const endpoint = socialAuthToken ? '/api/auth/social/login' : '/api/login';
-                const loginPayload = socialAuthToken
-                    ? { social_auth_token: socialAuthToken, user_id: userId }
-                    : { username: username, password: password, user_id: userId };
-                console.log('[Account Selection] Login payload:', socialAuthToken
-                    ? { social_auth_token: '***', user_id: userId }
-                    : { username, user_id: userId, password: '***' }
-                );
+                const loginPayload = { username: username, password: password, user_id: userId };
+                console.log('[Account Selection] Login payload:', { username, user_id: userId, password: '***' });
 
-                const response = await fetch(endpoint, {
+                const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
