@@ -49,6 +49,7 @@ import jwt
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
 from email.utils import formataddr
 import secrets
 import hashlib
@@ -1376,11 +1377,38 @@ def _get_smtp_config() -> Dict[str, Any]:
     }
 
 
-def _build_email_message(from_name: str, from_email: str, to_email: str, subject: str, text_body: str, html_body: str | None = None) -> Any:
+def _build_email_message(
+    from_name: str,
+    from_email: str,
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str | None = None,
+    inline_images: List[Dict[str, Any]] | None = None,
+) -> Any:
     if html_body:
-        msg = MIMEMultipart("alternative")
-        msg.attach(MIMEText(text_body, "plain", "utf-8"))
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
+        alternative = MIMEMultipart("alternative")
+        alternative.attach(MIMEText(text_body, "plain", "utf-8"))
+        alternative.attach(MIMEText(html_body, "html", "utf-8"))
+        if inline_images:
+            msg = MIMEMultipart("related")
+            msg.attach(alternative)
+            for image in inline_images:
+                try:
+                    cid = str(image.get("cid") or "").strip()
+                    data = image.get("data")
+                    if not cid or not data:
+                        continue
+                    content_type = str(image.get("content_type") or "image/jpeg")
+                    subtype = content_type.split("/", 1)[1] if "/" in content_type else "jpeg"
+                    part = MIMEImage(bytes(data), _subtype=subtype)
+                    part.add_header("Content-ID", f"<{cid}>")
+                    part.add_header("Content-Disposition", "inline", filename=str(image.get("filename") or "image"))
+                    msg.attach(part)
+                except Exception:
+                    logger.exception("[EMAIL] inline image attachment failed")
+        else:
+            msg = alternative
     else:
         msg = MIMEText(text_body, "plain", "utf-8")  # type: ignore[assignment]
     msg["Subject"] = subject
@@ -1389,7 +1417,13 @@ def _build_email_message(from_name: str, from_email: str, to_email: str, subject
     return msg
 
 
-def _send_bulk_email_smtp(recipients: List[str], subject: str, text_body: str, html_body: str | None = None) -> Dict[str, Any]:
+def _send_bulk_email_smtp(
+    recipients: List[str],
+    subject: str,
+    text_body: str,
+    html_body: str | None = None,
+    inline_images: List[Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
     cfg = _get_smtp_config()
     results: Dict[str, Any] = {"attempted": len(recipients), "sent": 0, "failed": 0, "dry_run": cfg["dry_run"], "errors": []}
     if not recipients:
@@ -1423,7 +1457,15 @@ def _send_bulk_email_smtp(recipients: List[str], subject: str, text_body: str, h
 
             for to_email in recipients:
                 try:
-                    msg = _build_email_message(cfg["from_name"], cfg["from_email"], to_email, subject, text_body, html_body)
+                    msg = _build_email_message(
+                        cfg["from_name"],
+                        cfg["from_email"],
+                        to_email,
+                        subject,
+                        text_body,
+                        html_body,
+                        inline_images=inline_images,
+                    )
                     s.sendmail(cfg["from_email"], [to_email], msg.as_string())
                     results["sent"] += 1
                 except Exception as e:
@@ -1478,6 +1520,23 @@ def _photo_is_email_renderable(photo: Photo | None) -> bool:
     file_path = getattr(photo, "file_path", None)
     return bool(file_path and os.path.exists(file_path))
 
+def _photo_email_bytes(photo: Photo | None) -> bytes | None:
+    if not photo:
+        return None
+    if getattr(photo, "photo_data", None):
+        try:
+            return bytes(photo.photo_data)
+        except Exception:
+            return None
+    file_path = getattr(photo, "file_path", None)
+    if file_path and os.path.exists(file_path):
+        try:
+            with open(file_path, "rb") as f:
+                return f.read()
+        except Exception:
+            return None
+    return None
+
 def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
     """Envoie les emails de notification aux utilisateurs d'un événement (tâche de fond)."""
     session = next(get_db())
@@ -1512,14 +1571,24 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
             if photographer_name else "FindMe x votre photographe"
         )
 
-        featured_photo_url = None
+        featured_photo_src = None
+        inline_images: List[Dict[str, Any]] = []
         if getattr(event, "email_featured_photo_id", None):
             featured_photo = session.query(Photo).filter(
                 Photo.id == event.email_featured_photo_id,
                 Photo.event_id == event_id,
             ).first()
             if _photo_is_email_renderable(featured_photo):
-                featured_photo_url = _absolute_public_url(f"/api/photo/{featured_photo.id}")
+                featured_photo_bytes = _photo_email_bytes(featured_photo)
+                if featured_photo_bytes:
+                    featured_photo_cid = f"event-photo-{featured_photo.id}@findme"
+                    featured_photo_src = f"cid:{featured_photo_cid}"
+                    inline_images.append({
+                        "cid": featured_photo_cid,
+                        "data": featured_photo_bytes,
+                        "content_type": featured_photo.content_type or "image/jpeg",
+                        "filename": featured_photo.original_filename or featured_photo.filename or f"photo-{featured_photo.id}.jpg",
+                    })
 
         findme_logo_url = None
         findme_logo_path = Path(__file__).resolve().parent / "static" / "img" / "findme-logo.png"
@@ -1564,11 +1633,11 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
             f"""
             <tr>
                 <td align="center" style="padding: 0 28px 28px 28px;">
-                    <img src="{featured_photo_url}" alt="Aperçu de l'événement {escape(event.name)}" width="560" style="display:block; width:100%; max-width:560px; height:auto; border:0; outline:none; text-decoration:none;">
+                    <img src="{featured_photo_src}" alt="Aperçu de l'événement {escape(event.name)}" width="560" style="display:block; width:100%; max-width:560px; height:auto; border:0; outline:none; text-decoration:none;">
                 </td>
             </tr>
             """
-            if featured_photo_url else ""
+            if featured_photo_src else ""
         )
         html_body = f"""
         <html>
@@ -1620,7 +1689,7 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
             </body>
         </html>
         """
-        return _send_bulk_email_smtp(list(emails), subject, text_body, html_body)
+        return _send_bulk_email_smtp(list(emails), subject, text_body, html_body, inline_images=inline_images)
     finally:
         try:
             session.close()
