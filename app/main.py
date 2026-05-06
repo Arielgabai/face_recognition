@@ -1590,21 +1590,6 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
                         "filename": featured_photo.original_filename or featured_photo.filename or f"photo-{featured_photo.id}.jpg",
                     })
 
-        findme_logo_url = None
-        findme_logo_path = Path(__file__).resolve().parent / "static" / "img" / "findme-logo.png"
-        if findme_logo_path.exists():
-            try:
-                findme_logo_cid = "findme-logo@findme"
-                findme_logo_url = f"cid:{findme_logo_cid}"
-                inline_images.append({
-                    "cid": findme_logo_cid,
-                    "data": findme_logo_path.read_bytes(),
-                    "content_type": "image/png",
-                    "filename": "findme-logo.png",
-                })
-            except Exception:
-                logger.exception("[EMAIL] failed to attach FindMe logo inline")
-                findme_logo_url = None
         photographer_logo_url = None
         if (
             photographer
@@ -1622,9 +1607,9 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
             f"À très vite,\n{photographer_signature}"
         )
         findme_brand_html = (
-            f'<span style="display:inline-block; padding:8px 12px; background-color:#000000; border-radius:12px;"><img src="{findme_logo_url}" alt="FindMe" height="44" style="display:block; height:44px; width:auto; border:0;"></span>'
-            if findme_logo_url else
-            '<span style="font-size:24px; font-weight:700; color:#111827;">FindMe</span>'
+            '<span style="display:inline-block; padding:10px 14px; background-color:#000000; '
+            'border-radius:12px; color:#ffffff; font-size:24px; line-height:1; '
+            'font-weight:800; letter-spacing:-0.02em;">FindMe</span>'
         )
         photographer_brand_html = (
             f'<img src="{photographer_logo_url}" alt="{escape(photographer_name or "Logo photographe")}" height="34" style="display:block; max-height:34px; max-width:160px; width:auto; border:0;">'
