@@ -1593,7 +1593,18 @@ def _notify_event_users_photos_available(event_id: int) -> Dict[str, Any]:
         findme_logo_url = None
         findme_logo_path = Path(__file__).resolve().parent / "static" / "img" / "findme-logo.png"
         if findme_logo_path.exists():
-            findme_logo_url = _absolute_public_url("/static/img/findme-logo.png")
+            try:
+                findme_logo_cid = "findme-logo@findme"
+                findme_logo_url = f"cid:{findme_logo_cid}"
+                inline_images.append({
+                    "cid": findme_logo_cid,
+                    "data": findme_logo_path.read_bytes(),
+                    "content_type": "image/png",
+                    "filename": "findme-logo.png",
+                })
+            except Exception:
+                logger.exception("[EMAIL] failed to attach FindMe logo inline")
+                findme_logo_url = None
         photographer_logo_url = None
         if (
             photographer
