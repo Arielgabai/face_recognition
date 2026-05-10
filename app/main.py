@@ -111,13 +111,20 @@ LEGAL_VERSION_CACHE: Dict[str, str] = {}
 CONSENT_TYPE_TERMS_PRIVACY = "terms_privacy"
 CONSENT_TYPE_BIOMETRIC_SELFIE = "biometric_selfie"
 QR_INVITE_TEMPLATE_PATH = Path(__file__).resolve().parent / "static" / "img" / "findme_template_qr_invites.pdf"
+QR_INVITE_EVENT_FONT_PATH = Path(__file__).resolve().parent / "static" / "fonts" / "GreatVibes-Regular.ttf"
+QR_INVITE_EVENT_FONT_NAME = "GreatVibes"
 
 
-def _fit_pdf_text(text: str, max_width: float, initial_size: float, min_size: float = 6.0) -> tuple[str, float]:
+def _fit_pdf_text(
+    text: str,
+    max_width: float,
+    initial_size: float,
+    min_size: float = 6.0,
+    font_name: str = "Helvetica-Bold",
+) -> tuple[str, float]:
     pdfmetrics = __import__("reportlab.pdfbase.pdfmetrics", fromlist=["stringWidth"])
 
     cleaned = " ".join(str(text or "Événement").split()) or "Événement"
-    font_name = "Helvetica-Bold"
     size = initial_size
     while size > min_size and pdfmetrics.stringWidth(cleaned, font_name, size) > max_width:
         size -= 0.25
@@ -130,6 +137,36 @@ def _fit_pdf_text(text: str, max_width: float, initial_size: float, min_size: fl
     while trimmed and pdfmetrics.stringWidth(trimmed + suffix, font_name, size) > max_width:
         trimmed = trimmed[:-1].rstrip()
     return (trimmed + suffix if trimmed else cleaned[:1]), size
+
+
+def _remove_pdf_template_text(page: Any, values: list[str]) -> None:
+    from pypdf.generic import DecodedStreamObject, NameObject
+
+    content = page.get_contents()
+    if content is None:
+        return
+
+    data = content.get_data()
+    for value in values:
+        data = data.replace(f"({value}) Tj".encode("latin-1"), b"() Tj")
+
+    stream = DecodedStreamObject()
+    stream.set_data(data)
+    page[NameObject("/Contents")] = stream
+
+
+def _get_qr_invite_event_font() -> str:
+    if not QR_INVITE_EVENT_FONT_PATH.exists():
+        return "Times-Italic"
+
+    try:
+        pdfmetrics = __import__("reportlab.pdfbase.pdfmetrics", fromlist=["registerFont"])
+        ttfonts = __import__("reportlab.pdfbase.ttfonts", fromlist=["TTFont"])
+        pdfmetrics.registerFont(ttfonts.TTFont(QR_INVITE_EVENT_FONT_NAME, str(QR_INVITE_EVENT_FONT_PATH)))
+        return QR_INVITE_EVENT_FONT_NAME
+    except Exception:
+        logger.exception("Impossible de charger la police d'événement pour l'invitation QR")
+        return "Times-Italic"
 
 
 def _generate_event_qr_invitation_pdf(event_name: str, registration_url: str) -> BytesIO:
@@ -147,17 +184,16 @@ def _generate_event_qr_invitation_pdf(event_name: str, registration_url: str) ->
 
     reader = PdfReader(str(QR_INVITE_TEMPLATE_PATH))
     page = reader.pages[0]
+    _remove_pdf_template_text(page, ["{{NOM_DE_L_EVENEMENT}}", "QR code exemple"])
     page_width = float(page.mediabox.width)
     page_height = float(page.mediabox.height)
 
     overlay_buf = BytesIO()
     overlay = pdf_canvas.Canvas(overlay_buf, pagesize=(page_width, page_height))
 
-    # Hide template placeholders/example elements before drawing live data.
+    # Hide the sample QR image; text placeholders are removed from the PDF stream above.
     overlay.setFillColor(colors.white)
     overlay.rect(92, 286, 154, 158, fill=1, stroke=0)
-    overlay.rect(126, 239, 96, 20, fill=1, stroke=0)
-    overlay.rect(352, 768, 190, 25, fill=1, stroke=0)
 
     qr = qrcode.QRCode(
         version=None,
@@ -173,10 +209,17 @@ def _generate_event_qr_invitation_pdf(event_name: str, registration_url: str) ->
     qr_buf.seek(0)
     overlay.drawImage(pdf_utils.ImageReader(qr_buf), 96, 292, width=146, height=146, preserveAspectRatio=True)
 
-    fitted_name, font_size = _fit_pdf_text(event_name, max_width=164, initial_size=9.5)
-    overlay.setFillColor(colors.HexColor("#111111"))
-    overlay.setFont("Helvetica-Bold", font_size)
-    overlay.drawString(375, 776, fitted_name)
+    event_font = _get_qr_invite_event_font()
+    fitted_name, font_size = _fit_pdf_text(
+        event_name,
+        max_width=166,
+        initial_size=18.5,
+        min_size=9.0,
+        font_name=event_font,
+    )
+    overlay.setFillColor(colors.HexColor("#D7FFCF"))
+    overlay.setFont(event_font, font_size)
+    overlay.drawCentredString(442.8, 773.4, fitted_name)
     overlay.save()
 
     overlay_buf.seek(0)
