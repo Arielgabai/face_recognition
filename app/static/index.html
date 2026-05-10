@@ -1052,7 +1052,10 @@
             color: #C3A6FF; /* violet doux */
             margin: 0;
             padding: 0 80px; /* Espace pour le hamburger menu */
-            white-space: nowrap; /* une seule ligne */
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow-wrap: anywhere;
+            line-height: 1.15;
             letter-spacing: 0.02em;
             /* lueur violet doux */
             text-shadow:
@@ -2108,6 +2111,11 @@
                 font-size: 1.8rem;
             }
 
+            .event-title {
+                font-size: 2.1rem;
+                padding: 0 64px;
+            }
+
             .photo-item {
                 border-radius: 16px;
             }
@@ -2153,6 +2161,11 @@
             .menu-item {
                 padding: 16px 18px;
                 min-height: 52px;
+            }
+
+            .event-title {
+                font-size: 1.9rem;
+                padding: 0 56px;
             }
 
             .photo-grid {
