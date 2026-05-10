@@ -110,6 +110,98 @@ LEGAL_PAGE_META: Dict[str, Dict[str, str]] = {
 LEGAL_VERSION_CACHE: Dict[str, str] = {}
 CONSENT_TYPE_TERMS_PRIVACY = "terms_privacy"
 CONSENT_TYPE_BIOMETRIC_SELFIE = "biometric_selfie"
+QR_INVITE_TEMPLATE_PATH = Path(__file__).resolve().parent / "static" / "img" / "findme_template_qr_invites.pdf"
+
+
+def _fit_pdf_text(text: str, max_width: float, initial_size: float, min_size: float = 6.0) -> tuple[str, float]:
+    pdfmetrics = __import__("reportlab.pdfbase.pdfmetrics", fromlist=["stringWidth"])
+
+    cleaned = " ".join(str(text or "Événement").split()) or "Événement"
+    font_name = "Helvetica-Bold"
+    size = initial_size
+    while size > min_size and pdfmetrics.stringWidth(cleaned, font_name, size) > max_width:
+        size -= 0.25
+
+    if pdfmetrics.stringWidth(cleaned, font_name, size) <= max_width:
+        return cleaned, size
+
+    suffix = "..."
+    trimmed = cleaned
+    while trimmed and pdfmetrics.stringWidth(trimmed + suffix, font_name, size) > max_width:
+        trimmed = trimmed[:-1].rstrip()
+    return (trimmed + suffix if trimmed else cleaned[:1]), size
+
+
+def _generate_event_qr_invitation_pdf(event_name: str, registration_url: str) -> BytesIO:
+    """Render the invitation template with the current event name and QR code."""
+    if not QR_INVITE_TEMPLATE_PATH.exists():
+        raise HTTPException(status_code=500, detail="Template d'invitation QR introuvable")
+
+    try:
+        from pypdf import PdfReader, PdfWriter
+        colors = __import__("reportlab.lib.colors", fromlist=["HexColor", "white"])
+        pdf_utils = __import__("reportlab.lib.utils", fromlist=["ImageReader"])
+        pdf_canvas = __import__("reportlab.pdfgen.canvas", fromlist=["Canvas"])
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail="Dépendances PDF manquantes") from exc
+
+    reader = PdfReader(str(QR_INVITE_TEMPLATE_PATH))
+    page = reader.pages[0]
+    page_width = float(page.mediabox.width)
+    page_height = float(page.mediabox.height)
+
+    overlay_buf = BytesIO()
+    overlay = pdf_canvas.Canvas(overlay_buf, pagesize=(page_width, page_height))
+
+    # Hide template placeholders/example elements before drawing live data.
+    overlay.setFillColor(colors.white)
+    overlay.rect(92, 286, 154, 158, fill=1, stroke=0)
+    overlay.rect(126, 239, 96, 20, fill=1, stroke=0)
+    overlay.rect(352, 768, 190, 25, fill=1, stroke=0)
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(registration_url)
+    qr.make(fit=True)
+    qr_image = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    qr_buf = BytesIO()
+    qr_image.save(qr_buf, format="PNG")
+    qr_buf.seek(0)
+    overlay.drawImage(pdf_utils.ImageReader(qr_buf), 96, 292, width=146, height=146, preserveAspectRatio=True)
+
+    fitted_name, font_size = _fit_pdf_text(event_name, max_width=164, initial_size=9.5)
+    overlay.setFillColor(colors.HexColor("#111111"))
+    overlay.setFont("Helvetica-Bold", font_size)
+    overlay.drawString(375, 776, fitted_name)
+    overlay.save()
+
+    overlay_buf.seek(0)
+    overlay_page = PdfReader(overlay_buf).pages[0]
+    page.merge_page(overlay_page)
+
+    writer = PdfWriter()
+    writer.add_page(page)
+    for extra_page in reader.pages[1:]:
+        writer.add_page(extra_page)
+
+    output = BytesIO()
+    writer.write(output)
+    output.seek(0)
+    return output
+
+
+def _event_qr_invitation_response(event: "Event", registration_url: str) -> StreamingResponse:
+    pdf_buf = _generate_event_qr_invitation_pdf(event.name, registration_url)
+    safe_code = re.sub(r"[^A-Za-z0-9_-]+", "-", str(event.event_code or "event")).strip("-") or "event"
+    return StreamingResponse(
+        pdf_buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="invitation-qr-{safe_code}.pdf"'},
+    )
 
 
 def get_legal_pages_for_audience(audience: str | None) -> Dict[str, Dict[str, str]]:
@@ -7058,11 +7150,7 @@ async def photographer_generate_event_qr(
         raise HTTPException(status_code=403, detail="Vous ne pouvez générer de QR code que pour vos propres événements")
 
     url = _absolute_public_url(f"/register?event_code={event_code}", request)
-    img = qrcode.make(url)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="image/png")
+    return _event_qr_invitation_response(event, url)
 
 
 @app.get("/api/admin/event-qr/{event_code}")
@@ -7070,31 +7158,20 @@ async def generate_event_qr(
     request: Request,
     event_code: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """G+�n+�rer un QR code pour l'inscription +� un +�v+�nement (admin uniquement)"""
+    """Générer une invitation PDF avec QR code pour l'inscription à un événement."""
     if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Seuls les admins peuvent g+�n+�rer un QR code")
-    
-    # V+�rifier que l'+�v+�nement existe
-    _db = next(get_db())
-    try:
-        event = _db.query(Event).filter(Event.event_code == event_code).first()
-        if not event:
-            raise HTTPException(status_code=404, detail="+�v+�nement non trouv+�")
-    finally:
-        try:
-            _db.close()
-        except Exception:
-            pass
+        raise HTTPException(status_code=403, detail="Seuls les admins peuvent générer un QR code")
+
+    event = db.query(Event).filter(Event.event_code == event_code).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Événement non trouvé")
     
     # Générer l'URL d'inscription en privilégiant le domaine réellement utilisé
     # par la requête courante (ex: domaine personnalisé AWS).
     url = _absolute_public_url(f"/register?event_code={event_code}", request)
-    img = qrcode.make(url)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="image/png")
+    return _event_qr_invitation_response(event, url)
 
 # === NOUVELLES ROUTES POUR LA GESTION DES +�V+�NEMENTS ===
 
